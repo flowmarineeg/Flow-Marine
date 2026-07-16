@@ -1,0 +1,50 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: logistics_backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persist uploaded expense receipts across container restarts
+      - uploads_data:/app/src/uploads/expenses
+    networks:
+      - logistics_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/v1/health"]
+      interval: 30s
+      timeout:  5s
+      retries:  3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+    container_name: logistics_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+    networks:
+      - logistics_net
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  uploads_data:
+    driver: local
+
+networks:
+  logistics_net:
+    driver: bridge
