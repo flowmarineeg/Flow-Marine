@@ -90,7 +90,7 @@ export default function InvoiceForm({ item }) {
   });
 
   return (
-    <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="flex flex-col gap-5 max-w-2xl">
+    <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="flex flex-col gap-5">
 
       {/* Paid warning */}
       {isPaid && (

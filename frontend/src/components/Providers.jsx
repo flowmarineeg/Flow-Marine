@@ -24,7 +24,14 @@ export default function Providers({ children }) {
       <AuthProvider>
         <PermissionProvider>
           {children}
-          <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              style: { zIndex: 99999 },
+            }}
+            containerStyle={{ zIndex: 99999 }}
+          />
         </PermissionProvider>
       </AuthProvider>
     </QueryClientProvider>

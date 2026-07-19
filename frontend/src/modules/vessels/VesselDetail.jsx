@@ -260,34 +260,84 @@ export default function VesselDetail({ id }) {
 
         {/* Vessel overview — 3 cols */}
         <div className="lg:col-span-3 card overflow-hidden">
-          <SectionHeader icon={MdAnchor} title="Vessel Overview" />
-          <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-            {[
-              { label: 'Vessel Code',  val: vessel.vesselCode },
-              { label: 'Vessel Name',  val: vessel.vesselName },
-              { label: 'IMO Number',   val: vessel.imoNumber },
-              { label: 'Flag',         val: vessel.flag },
-              { label: 'Call Sign',    val: vessel.callSign },
-              { label: 'Ownership',    val: vessel.ownershipType },
-              { label: 'Owner',        val: vessel.ownerName },
-              { label: 'Capacity',     val: vessel.capacity != null ? `${vessel.capacity.toLocaleString()} TEU` : null },
-              { label: 'DWT',          val: vessel.dwt != null ? `${vessel.dwt.toLocaleString()} t` : null },
-              { label: 'Built Year',   val: vessel.builtYear },
-              { label: 'Status',       val: vessel.status },
-            ].map(({ label, val }) => (
-              <div key={label}>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
-                <p className="text-[13px] font-medium text-gray-700">{val || <span className="text-gray-300">—</span>}</p>
+          <SectionHeader icon={MdAnchor} title="Vessel Particular" />
+          <div className="p-5 flex flex-col gap-6">
+
+            {/* Identity & Ownership */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+              {[
+                { label: 'Vessel Code',  val: vessel.vesselCode },
+                { label: 'Vessel Name',  val: vessel.vesselName },
+                { label: 'IMO Number',   val: vessel.imoNumber },
+                { label: 'Flag',         val: vessel.flag },
+                { label: 'Call Sign',    val: vessel.callSign },
+                { label: 'Ownership',    val: vessel.ownershipType },
+                { label: 'Owner',        val: vessel.ownerName },
+                { label: 'Manager',      val: vessel.manager },
+                { label: 'Status',       val: vessel.status },
+              ].map(({ label, val }) => (
+                <div key={label}>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+                  <p className="text-[13px] font-medium text-gray-700">{val || <span className="text-gray-300">—</span>}</p>
+                </div>
+              ))}
+              {vessel.ownershipDescription && (
+                <div className="col-span-2 sm:col-span-3">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Ownership Notes</p>
+                  <p className="text-[13px] text-gray-600 leading-relaxed">{vessel.ownershipDescription}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Dimensions & Tonnage */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest mb-3 border-t border-gray-100 pt-4">Dimensions &amp; Tonnage</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4">
+                {[
+                  { label: 'Capacity',      val: vessel.capacity     != null ? `${vessel.capacity.toLocaleString()} TEU` : null },
+                  { label: 'DWT',           val: vessel.dwt          != null ? `${vessel.dwt.toLocaleString()} t`        : null },
+                  { label: 'Built Year',    val: vessel.builtYear },
+                  { label: 'LOA',           val: vessel.loa          != null ? `${vessel.loa} m`                         : null },
+                  { label: 'Beam',          val: vessel.beam         != null ? `${vessel.beam} m`                        : null },
+                  { label: 'Summer Draft',  val: vessel.summerDraft  != null ? `${vessel.summerDraft} m`                 : null },
+                  { label: 'Gross Tonnage', val: vessel.grossTonnage != null ? vessel.grossTonnage.toLocaleString()      : null },
+                  { label: 'Net Tonnage',   val: vessel.netTonnage   != null ? vessel.netTonnage.toLocaleString()        : null },
+                  { label: 'Suez GT',       val: vessel.suezGT       != null ? vessel.suezGT.toLocaleString()            : null },
+                  { label: 'Suez NT',       val: vessel.suezNT       != null ? vessel.suezNT.toLocaleString()            : null },
+                ].map(({ label, val }) => (
+                  <div key={label}>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+                    <p className="text-[13px] font-medium text-gray-700">{val || <span className="text-gray-300">—</span>}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-            {vessel.ownershipDescription && (
-              <div className="col-span-2 sm:col-span-3">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Ownership Notes</p>
-                <p className="text-[13px] text-gray-600 leading-relaxed">{vessel.ownershipDescription}</p>
+            </div>
+
+            {/* Bunker Capacities */}
+            {(vessel.totalBunkerCapacity != null || vessel.vlsfoCapacity != null || vessel.mdoCapacity != null || vessel.fwCapacity != null) && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest mb-3 border-t border-gray-100 pt-4">Bunker Capacities (MT)</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total Bunker',  val: vessel.totalBunkerCapacity, color: 'text-gray-700',  bg: 'bg-gray-50' },
+                    { label: 'VLSFO',         val: vessel.vlsfoCapacity,        color: 'text-blue-700',  bg: 'bg-blue-50' },
+                    { label: 'MDO',           val: vessel.mdoCapacity,          color: 'text-amber-700', bg: 'bg-amber-50' },
+                    { label: 'F.W. Tank',     val: vessel.fwCapacity,           color: 'text-cyan-700',  bg: 'bg-cyan-50' },
+                  ].map(({ label, val, color, bg }) => (
+                    <div key={label} className={`${bg} rounded-xl px-3 py-3 text-center`}>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+                      <p className={`text-[15px] font-bold ${color}`}>
+                        {val != null ? val.toLocaleString() : <span className="text-gray-300 text-sm font-normal">—</span>}
+                      </p>
+                      {val != null && <p className="text-[10px] text-gray-400 mt-0.5">MT</p>}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
+
             {vessel.notes && (
-              <div className="col-span-2 sm:col-span-3">
+              <div className="border-t border-gray-100 pt-4">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Notes</p>
                 <p className="text-[13px] text-gray-600 leading-relaxed">{vessel.notes}</p>
               </div>

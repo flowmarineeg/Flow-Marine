@@ -170,7 +170,7 @@ export default function ExportPanel() {
   };
 
   return (
-    <div className="animate-fadeIn max-w-3xl">
+    <div className="animate-fadeIn">
       <PageHeader
         title="Bulk Export"
         subtitle="Select one or more modules to download as Excel or ZIP"

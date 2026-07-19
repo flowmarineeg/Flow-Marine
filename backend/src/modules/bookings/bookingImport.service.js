@@ -4,23 +4,45 @@ const Booking       = require('./booking.model');
 const Voyage        = require('../voyages/voyage.model');
 const ContainerType = require('../containerTypes/containerType.model');
 const Port          = require('../locations/port.model');
-const { nextNumber, nextNumberBatch } = require('../../utils/autoNumber');
+const { nextNumberBatch } = require('../../utils/autoNumber');
 
-// ─── Validate a single row ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const parseDg = (val) =>
+  val === true || val === 'true' || val === 'yes' || val === '1' || val === 1;
+
+const parseNum = (val) =>
+  val !== undefined && val !== '' && val !== null && !isNaN(Number(val))
+    ? Number(val)
+    : null;
+
+const normCntr = (val) =>
+  val ? String(val).trim().toUpperCase() : '';
+
+// ── Validate a single row ─────────────────────────────────────────────────────
 const validateRow = (row) => {
   const errors = [];
-  if (!row.pol)       errors.push('POL is required');
-  if (!row.pod)       errors.push('POD is required');
+  // containerNumber is now required — it is the primary match key
+  if (!row.containerNumber || !row.containerNumber.trim())
+    errors.push('Container Number is required');
+  if (!row.pol) errors.push('POL is required');
+  if (!row.pod) errors.push('POD is required');
   if (!row.containerType && !row.containerSize) errors.push('Container Type is required');
   if (!row.quantity || isNaN(Number(row.quantity)) || Number(row.quantity) < 1)
     errors.push('Quantity must be a positive number');
   if (row.rate === undefined || row.rate === '' || isNaN(Number(row.rate)) || Number(row.rate) < 0)
     errors.push('Rate must be a non-negative number');
   if (!row.currency) errors.push('Currency is required');
+  // containerStatus: only Full or Empty
+  if (row.containerStatus && !['Full', 'Empty'].includes(row.containerStatus))
+    errors.push('Container Status must be Full or Empty');
+  if (parseDg(row.dg) && row.dgPercent !== undefined && row.dgPercent !== '') {
+    const pct = Number(row.dgPercent);
+    if (isNaN(pct) || pct < 0 || pct > 100) errors.push('DG percent must be 0-100');
+  }
   return errors;
 };
 
-// ─── Preview ──────────────────────────────────────────────────────────────────
+// ── Preview ───────────────────────────────────────────────────────────────────
 const previewImport = async ({ rows, agentId, voyageId, importType }) => {
   if (!rows?.length) throw { status: 400, message: 'No rows provided' };
   if (!agentId)      throw { status: 400, message: 'Agent is required' };
@@ -50,13 +72,21 @@ const previewImport = async ({ rows, agentId, voyageId, importType }) => {
     if (p.code) portMap[p.code.trim().toUpperCase()] = p;
   });
 
-  const incomingNumbers = rows.map(r => r.bookingNumber).filter(Boolean);
-  const existingBookings = await Booking.find({ bookingNumber: { $in: incomingNumbers }, isDeleted: false }).lean();
-  const existingMap = {};
-  existingBookings.forEach(b => { existingMap[b.bookingNumber] = b; });
+  // Match by containerNumber (primary key) within this voyage
+  const incomingCntrs = rows.map(r => normCntr(r.containerNumber)).filter(Boolean);
+  const existingBookings = await Booking.find({
+    containerNumber: { $in: incomingCntrs },
+    voyageId,
+    isDeleted: false,
+  }).lean();
+  const existingMap = {}; // containerNumber -> booking doc
+  existingBookings.forEach(b => {
+    if (b.containerNumber) existingMap[b.containerNumber] = b;
+  });
 
   return rows.map((row, idx) => {
     const validationErrors = validateRow(row);
+    const cntr = normCntr(row.containerNumber);
 
     const ct =
       ctMap[`${row.containerType}:${row.containerSize}`.toUpperCase()] ||
@@ -64,7 +94,7 @@ const previewImport = async ({ rows, agentId, voyageId, importType }) => {
       ctMap[(row.containerSize || '').toUpperCase()]                    ||
       null;
     if (!ct && (row.containerType || row.containerSize)) {
-      validationErrors.push(`Container type "${(row.containerType || '') + ' ' + (row.containerSize || '')}".trim() not found in system`);
+      validationErrors.push(`Container type "${((row.containerType || '') + ' ' + (row.containerSize || '')).trim()}" not found in system`);
     }
 
     const polPort = portMap[(row.pol || '').trim().toUpperCase()] || null;
@@ -73,13 +103,15 @@ const previewImport = async ({ rows, agentId, voyageId, importType }) => {
     const podPort = portMap[(row.pod || '').trim().toUpperCase()] || null;
     if (row.pod && !podPort) validationErrors.push(`POD "${row.pod}" not found in system`);
 
-    if (polPort && podPort && String(polPort._id) === String(podPort._id)) {
+    if (polPort && podPort && String(polPort._id) === String(podPort._id))
       validationErrors.push('POL and POD cannot be the same port');
-    }
 
-    const hasError    = validationErrors.length > 0;
-    const isDuplicate = importType === 'booking'      && !!existingMap[row.bookingNumber];
-    const isUpdate    = importType === 'finalLoading' && !!existingMap[row.bookingNumber];
+    const existingDoc  = cntr ? existingMap[cntr] : null;
+    const hasError     = validationErrors.length > 0;
+    // booking mode: duplicate = container already exists on this voyage
+    const isDuplicate  = importType === 'booking'      && !!existingDoc;
+    // finalLoading mode: update = container already exists on this voyage
+    const isUpdate     = importType === 'finalLoading' && !!existingDoc;
 
     let rowStatus;
     if (hasError)                           rowStatus = 'invalid';
@@ -89,27 +121,37 @@ const previewImport = async ({ rows, agentId, voyageId, importType }) => {
     else                                    rowStatus = 'valid';
 
     return {
-      _rowIndex: idx,
-      bookingNumber: row.bookingNumber || '',
-      containerNumber: row.containerNumber || '',
-      containerType: row.containerType || '',
-      containerSize: row.containerSize || '',
-      pol: row.pol || '', pod: row.pod || '',
-      quantity:  row.quantity  != null ? String(row.quantity) : '',
-      rate:      row.rate      != null ? String(row.rate)     : '',
-      currency:  row.currency  || 'USD',
-      shipper:   row.shipper   || '', consignee: row.consignee || '',
-      carrierName: row.carrierName || '',
+      _rowIndex:       idx,
+      bookingNumber:   row.bookingNumber   || '',   // kept for display — auto-generated if blank
+      containerNumber: cntr,
+      containerType:   row.containerType   || '',
+      containerSize:   row.containerSize   || '',
+      pol:             row.pol             || '',
+      pod:             row.pod             || '',
+      quantity:        row.quantity  != null ? String(row.quantity)  : '',
+      rate:            row.rate      != null ? String(row.rate)      : '',
+      currency:        row.currency  || 'USD',
+      shipper:         row.shipper   || '',
+      consignee:       row.consignee || '',
+      carrierName:     row.carrierName     || '',
+      commodity:       row.commodity       || '',
+      vgm:             row.vgm      != null ? String(row.vgm)       : '',
+      dg:              row.dg              || '',
+      dgPercent:       row.dgPercent != null ? String(row.dgPercent) : '',
+      containerStatus: row.containerStatus || '',
       _resolvedCt:  ct      ? { _id: String(ct._id), code: ct.code, size: ct.size, type: ct.type } : null,
       _resolvedPol: polPort ? { _id: String(polPort._id), name: polPort.name, code: polPort.code } : null,
       _resolvedPod: podPort ? { _id: String(podPort._id), name: podPort.name, code: podPort.code } : null,
-      _errors: validationErrors, _rowStatus: rowStatus,
-      _existingId: existingMap[row.bookingNumber]?._id || null,
+      _errors:     validationErrors,
+      _rowStatus:  rowStatus,
+      _existingId: existingDoc?._id || null,
+      // expose existing booking number so it can be reused on update
+      _existingBookingNumber: existingDoc?.bookingNumber || null,
     };
   });
 };
 
-// ─── Save — Sprint020 PERF-004: bulkWrite + insertMany ───────────────────────
+// ── Save ──────────────────────────────────────────────────────────────────────
 const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) => {
   if (!rows?.length) throw { status: 400, message: 'No rows to save' };
   if (!voyageId)     throw { status: 400, message: 'Voyage is required' };
@@ -119,7 +161,6 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
   );
   if (!saveable.length) throw { status: 400, message: 'No valid rows to save' };
 
-  // Separate inserts and updates
   const toInsert = saveable.filter(r => r._rowStatus === 'valid' || r._rowStatus === 'new');
   const toUpdate = saveable.filter(r => r._rowStatus === 'update');
 
@@ -129,21 +170,17 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
 
   // ── BATCH INSERT via insertMany ───────────────────────────────────────────
   if (toInsert.length > 0) {
-    // Validate all refs present
     const validInserts = toInsert.filter(r => {
-      if (!r._resolvedCt || !r._resolvedPol || !r._resolvedPod) {
-        failed.push({ bookingNumber: r.bookingNumber, reason: 'Unresolved references — re-validate before saving' });
+      if (!r._resolvedCt || !r._resolvedPol || !r._resolvedPod || !r.containerNumber) {
+        failed.push({ containerNumber: r.containerNumber, reason: 'Unresolved references — re-validate before saving' });
         return false;
       }
       return true;
     });
 
     if (validInserts.length > 0) {
-      // Rows with explicit booking numbers vs rows that need auto-numbers
+      // All inserts need a booking number — auto-generate if not supplied
       const needsNumber = validInserts.filter(r => !r.bookingNumber?.trim());
-      const hasNumber   = validInserts.filter(r =>  r.bookingNumber?.trim());
-
-      // Pre-generate all needed numbers in one round-trip
       const autoNumbers = await nextNumberBatch('booking', needsNumber.length);
       let autoIdx = 0;
 
@@ -151,6 +188,7 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
         const bookingNumber = r.bookingNumber?.trim() || autoNumbers[autoIdx++];
         const quantity      = Number(r.quantity);
         const freightRate   = Number(r.rate);
+        const dgFlag        = parseDg(r.dg);
         return {
           bookingNumber,
           voyageId,
@@ -164,31 +202,34 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
           quantity,
           freightRate,
           totalFreight:    quantity * freightRate,
-          commodity:       r.containerNumber || null,
+          commodity:       r.commodity       || null,
+          containerNumber: r.containerNumber,           // always set — required field
+          vgm:             parseNum(r.vgm),
+          dg:              dgFlag,
+          dgPercent:       dgFlag ? parseNum(r.dgPercent) : null,
+          containerStatus: ['Full', 'Empty'].includes(r.containerStatus) ? r.containerStatus : null,
           remarks:         `Imported (${importType})`,
           status:          'Pending',
           createdBy,
-          updatedBy:       createdBy,
+          updatedBy: createdBy,
         };
       });
 
       try {
-        // ordered:false — continue on partial failure, collect writeErrors
         const result = await Booking.insertMany(docs, { ordered: false });
-        result.forEach(b => created.push(b.bookingNumber));
+        result.forEach(b => created.push(b.containerNumber));
       } catch (err) {
-        // insertMany with ordered:false throws on any error but still inserts valid docs
-        if (err.insertedDocs) err.insertedDocs.forEach(b => created.push(b.bookingNumber));
-        if (err.writeErrors)  err.writeErrors.forEach(e => failed.push({ bookingNumber: docs[e.index]?.bookingNumber, reason: e.errmsg }));
+        if (err.insertedDocs) err.insertedDocs.forEach(b => created.push(b.containerNumber));
+        if (err.writeErrors)  err.writeErrors.forEach(e => failed.push({ containerNumber: docs[e.index]?.containerNumber, reason: e.errmsg }));
       }
     }
   }
 
-  // ── BATCH UPDATE via bulkWrite ────────────────────────────────────────────
+  // ── BATCH UPDATE via bulkWrite — match by containerNumber (_existingId) ───
   if (toUpdate.length > 0) {
     const validUpdates = toUpdate.filter(r => {
       if (!r._resolvedCt || !r._resolvedPol || !r._resolvedPod || !r._existingId) {
-        failed.push({ bookingNumber: r.bookingNumber, reason: 'Unresolved references — re-validate before saving' });
+        failed.push({ containerNumber: r.containerNumber, reason: 'Unresolved references — re-validate before saving' });
         return false;
       }
       return true;
@@ -198,55 +239,73 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
       const ops = validUpdates.map(r => {
         const quantity    = Number(r.quantity);
         const freightRate = Number(r.rate);
+        const dgFlag      = parseDg(r.dg);
         const $set = {
           voyageId, agentId,
           containerTypeId: r._resolvedCt._id,
           polId:           r._resolvedPol._id,
           podId:           r._resolvedPod._id,
-          quantity, freightRate, totalFreight: quantity * freightRate,
-          updatedBy: createdBy,
+          quantity, freightRate,
+          totalFreight:    quantity * freightRate,
+          dg:              dgFlag,
+          dgPercent:       dgFlag ? parseNum(r.dgPercent) : null,
+          updatedBy:       createdBy,
         };
-        if (r.shipper)    $set.shipper    = r.shipper;
-        if (r.consignee)  $set.consignee  = r.consignee;
-        if (r.carrierName !== undefined) $set.carrierName = r.carrierName || null;
+        if (r.shipper        !== undefined) $set.shipper        = r.shipper        || null;
+        if (r.consignee      !== undefined) $set.consignee      = r.consignee      || null;
+        if (r.carrierName    !== undefined) $set.carrierName    = r.carrierName    || null;
+        if (r.commodity      !== undefined) $set.commodity      = r.commodity      || null;
+        // containerNumber stays as-is on update — it IS the key
+        if (r.vgm            !== undefined) $set.vgm            = parseNum(r.vgm);
+        if (r.containerStatus !== undefined)
+          $set.containerStatus = ['Full', 'Empty'].includes(r.containerStatus) ? r.containerStatus : null;
         return { updateOne: { filter: { _id: r._existingId }, update: { $set } } };
       });
 
       try {
         await Booking.bulkWrite(ops, { ordered: false });
-        validUpdates.forEach(r => updated.push(r.bookingNumber));
+        validUpdates.forEach(r => updated.push(r.containerNumber));
       } catch (err) {
-        if (err.result?.nModified > 0) validUpdates.slice(0, err.result.nModified).forEach(r => updated.push(r.bookingNumber));
-        failed.push({ bookingNumber: 'batch-update', reason: err.message });
+        if (err.result?.nModified > 0) validUpdates.slice(0, err.result.nModified).forEach(r => updated.push(r.containerNumber));
+        failed.push({ containerNumber: 'batch-update', reason: err.message });
       }
     }
   }
 
-  // ── Final Loading reconciliation (sequential — only 2 queries total) ──────
+  // ── Final Loading reconciliation — by containerNumber ────────────────────
   const markedFinalLoading = [];
   const cancelled          = [];
-  const savedBookingNumbers = new Set([...created, ...updated]);
+  // savedContainerNumbers = the set imported in this run
+  const savedContainerNumbers = new Set([...created, ...updated]);
 
   if (importType === 'finalLoading') {
-    if (savedBookingNumbers.size > 0) {
+    if (savedContainerNumbers.size > 0) {
+      // Mark all imported containers on this voyage as Final Loading
       await Booking.updateMany(
-        { bookingNumber: { $in: [...savedBookingNumbers] }, voyageId, isDeleted: false },
+        { containerNumber: { $in: [...savedContainerNumbers] }, voyageId, isDeleted: false },
         { $set: { status: 'Final Loading', updatedBy: createdBy } }
       );
-      savedBookingNumbers.forEach(n => markedFinalLoading.push(n));
+      savedContainerNumbers.forEach(n => markedFinalLoading.push(n));
     }
 
+    // Cancel every booking on this voyage whose containerNumber is NOT in the manifest
     const cancelResult = await Booking.updateMany(
-      { voyageId, isDeleted: false, bookingNumber: { $nin: [...savedBookingNumbers] } },
+      {
+        voyageId,
+        isDeleted: false,
+        status:    { $nin: ['Cancelled'] },
+        containerNumber: { $nin: [...savedContainerNumbers] },
+      },
       { $set: { status: 'Cancelled', updatedBy: createdBy } }
     );
     if (cancelResult.modifiedCount > 0) {
       const cancelledDocs = await Booking.find(
         { voyageId, isDeleted: false, status: 'Cancelled' },
-        { bookingNumber: 1 }
+        { containerNumber: 1 }
       ).lean();
       cancelledDocs.forEach(b => {
-        if (!savedBookingNumbers.has(b.bookingNumber)) cancelled.push(b.bookingNumber);
+        if (b.containerNumber && !savedContainerNumbers.has(b.containerNumber))
+          cancelled.push(b.containerNumber);
       });
     }
   }

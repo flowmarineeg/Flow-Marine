@@ -51,16 +51,16 @@ const NAV = [
 ];
 
 export default function Sidebar() {
-  const pathname       = usePathname();
+  const pathname = usePathname();
   const { isHidden, can } = usePermission();
   const { user } = useAuth();
-  const isSuperAdmin   = user?.roleId?.isSystem === true;
+  const isSuperAdmin = user?.roleId?.isSystem === true;
 
   return (
     <aside className="sidebar hide_scrollbar" style={{ width: 240, display: 'flex', flexDirection: 'column', height: '100vh', flexShrink: 0, overflowY: 'auto' }}>
 
       {/* Logo */}
-      <div className='p-1 flex items-center justify-center' style={{ borderBottom: '1px solid var(--navy-border)' }}>
+      <div className='p-4 flex flex-col items-center justify-center' style={{ borderBottom: '1px solid var(--navy-border)' }}>
         {/* <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div>
             <div style={{ fontSize: 13.5, fontWeight: 700, color: '#F1F5F9', letterSpacing: '-0.2px' }}>
@@ -71,7 +71,7 @@ export default function Sidebar() {
             </div>
           </div>
         </div> */}
-        <img src="/images/logo-white.png" alt="logo" className='w-60 h-30'/>
+        <img src="/images/logo-white.png" alt="logo" className='w-40 object-contain' />
       </div>
 
       {/* Nav */}
@@ -99,7 +99,7 @@ export default function Sidebar() {
       {/* User footer */}
       <div style={{ padding: '12px 16px 16px', borderTop: '1px solid var(--navy-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          
+
           <div style={{ overflow: 'hidden' }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user?.name}
@@ -109,7 +109,7 @@ export default function Sidebar() {
             </p>
           </div>
         </div>
-       
+
       </div>
     </aside>
   );

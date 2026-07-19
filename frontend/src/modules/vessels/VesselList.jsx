@@ -8,44 +8,44 @@ import { vesselsService } from '@/services/vessels.service';
 import { usePermission } from '@/context/PermissionContext';
 import { downloadFile } from '@/utils/exportHelper';
 import { VESSEL_STATUS } from '@/utils/constants';
-import PageHeader    from '@/components/ui/PageHeader';
-import Button        from '@/components/ui/Button';
-import Badge         from '@/components/ui/Badge';
-import SearchBar     from '@/components/ui/SearchBar';
-import Select        from '@/components/ui/Select';
-import Pagination    from '@/components/ui/Pagination';
-import EmptyState    from '@/components/ui/EmptyState';
+import PageHeader from '@/components/ui/PageHeader';
+import Button from '@/components/ui/Button';
+import Badge from '@/components/ui/Badge';
+import SearchBar from '@/components/ui/SearchBar';
+import Select from '@/components/ui/Select';
+import Pagination from '@/components/ui/Pagination';
+import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function VesselList() {
-  const router  = useRouter();
-  const qc      = useQueryClient();
+  const router = useRouter();
+  const qc = useQueryClient();
   const { can } = usePermission();
 
-  const [page,         setPage]         = useState(1);
-  const [search,       setSearch]       = useState('');
-  const [status,       setStatus]       = useState('');
-  const [selected,     setSelected]     = useState([]);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [selected, setSelected] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [exporting,    setExporting]    = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['vessels', page, search, status],
-    queryFn:  () => vesselsService.list({ page, limit: 20, search, status }).then(r => r.data),
+    queryFn: () => vesselsService.list({ page, limit: 20, search, status }).then(r => r.data),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => vesselsService.remove(id),
-    onSuccess:  () => { toast.success('Vessel deleted'); qc.invalidateQueries(['vessels']); setDeleteTarget(null); setSelected([]); },
-    onError:    (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onSuccess: () => { toast.success('Vessel deleted'); qc.invalidateQueries(['vessels']); setDeleteTarget(null); setSelected([]); },
+    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
   });
 
-  const vessels    = data?.data || [];
+  const vessels = data?.data || [];
   const pagination = data?.pagination;
 
   const toggleSelect = (id) => setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
-  const toggleAll    = () => setSelected(p => p.length === vessels.length ? [] : vessels.map(v => v._id));
+  const toggleAll = () => setSelected(p => p.length === vessels.length ? [] : vessels.map(v => v._id));
 
   const handleExport = async (type) => {
     setExporting(true);
@@ -62,7 +62,7 @@ export default function VesselList() {
   return (
     <div className="animate-fadeIn">
       <PageHeader
-        title="Vessels"
+        title="Vessels - Particular"
         subtitle="Manage your fleet master data"
         action={can('vessels', 'create') && (
           <Button onClick={() => router.push('/vessels/new')}>+ New Vessel</Button>
@@ -82,7 +82,7 @@ export default function VesselList() {
               <button onClick={() => handleExport('all')} disabled={exporting}
                 className="btn btn-secondary btn-sm flex items-center gap-1.5">
                 <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  <path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
                 Export
               </button>

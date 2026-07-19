@@ -98,7 +98,7 @@ export default function ExpenseForm({ item }) {
   const today = new Date().toISOString().split('T')[0];
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5 max-w-2xl">
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
 
       {/* ── Link type toggle ─────────────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">

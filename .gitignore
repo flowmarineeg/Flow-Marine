@@ -5,3 +5,4 @@ system-report.txt
 claude.md
 /sprints/*
 /sprints
+.env

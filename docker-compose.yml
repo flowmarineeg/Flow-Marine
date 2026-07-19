@@ -11,7 +11,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Persist uploaded expense receipts across container restarts
+      # Persist uploaded expense receipts across container restarts       
       - uploads_data:/app/src/uploads/expenses
     networks:
       - logistics_net
@@ -19,7 +19,34 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/v1/health"]
       interval: 30s
       timeout:  5s
+      - logistics_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/v1/health"]
+      interval: 30s
+      timeout:  5s
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/v1/health"]
+      interval: 30s
+      timeout:  5s
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/v1/health"]
+      interval: 30s
+      timeout:  5s
       retries:  3
+      interval: 30s
+      timeout:  5s
+      retries:  3
+      start_period: 15s
+      timeout:  5s
+      retries:  3
+      start_period: 15s
+
+  frontend:
+      retries:  3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
       start_period: 15s
 
   frontend:
@@ -27,14 +54,32 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     container_name: logistics_frontend
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    container_name: logistics_frontend
+    restart: unless-stopped
+    container_name: logistics_frontend
+    restart: unless-stopped
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     networks:
       - logistics_net
     depends_on:

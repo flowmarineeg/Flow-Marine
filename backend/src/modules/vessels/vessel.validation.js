@@ -27,6 +27,20 @@ const validateCreate = [
   body('status').optional().isIn(VESSEL_STATUS).withMessage(`Must be one of: ${VESSEL_STATUS.join(', ')}`),
   body('charterStartDate').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid charter start date'),
   body('charterEndDate').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid charter end date'),
+  // Extended particulars
+  body('manager').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('loa').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('LOA must be a positive number'),
+  body('beam').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('Beam must be a positive number'),
+  body('summerDraft').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('Summer draft must be a positive number'),
+  body('grossTonnage').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('Gross tonnage must be a positive number'),
+  body('netTonnage').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('Net tonnage must be a positive number'),
+  body('suezGT').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('Suez GT must be a positive number'),
+  body('suezNT').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('Suez NT must be a positive number'),
+  // Bunker capacities
+  body('totalBunkerCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('Total bunker capacity must be a positive number'),
+  body('vlsfoCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('VLSFO capacity must be a positive number'),
+  body('mdoCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('MDO capacity must be a positive number'),
+  body('fwCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('F.W. tank capacity must be a positive number'),
   handle,
 ];
 
@@ -41,6 +55,20 @@ const validateUpdate = [
   body('dwt').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
   body('builtYear').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1800, max: new Date().getFullYear() + 1 }),
   body('status').optional().isIn(VESSEL_STATUS),
+  // Extended particulars
+  body('manager').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('loa').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('beam').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('summerDraft').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('grossTonnage').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('netTonnage').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('suezGT').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('suezNT').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  // Bunker capacities
+  body('totalBunkerCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('vlsfoCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('mdoCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
+  body('fwCapacity').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
   handle,
 ];
 

@@ -7,8 +7,6 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { vesselsService } from '@/services/vessels.service';
 import { VESSEL_STATUS, OWNERSHIP_TYPES } from '@/utils/constants';
-import Input from '@/components/ui/Input';
-import Select from '@/components/ui/Select';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
@@ -53,6 +51,20 @@ export default function VesselForm({ id = null }) {
         capacity:             vesselData.capacity  ?? '',
         dwt:                  vesselData.dwt       ?? '',
         builtYear:            vesselData.builtYear ?? '',
+        // Extended particulars
+        manager:              vesselData.manager              || '',
+        loa:                  vesselData.loa                  ?? '',
+        beam:                 vesselData.beam                 ?? '',
+        summerDraft:          vesselData.summerDraft          ?? '',
+        grossTonnage:         vesselData.grossTonnage         ?? '',
+        netTonnage:           vesselData.netTonnage           ?? '',
+        suezGT:               vesselData.suezGT               ?? '',
+        suezNT:               vesselData.suezNT               ?? '',
+        // Bunker capacities
+        totalBunkerCapacity:  vesselData.totalBunkerCapacity  ?? '',
+        vlsfoCapacity:        vesselData.vlsfoCapacity        ?? '',
+        mdoCapacity:          vesselData.mdoCapacity          ?? '',
+        fwCapacity:           vesselData.fwCapacity           ?? '',
         status:               vesselData.status,
         notes:                vesselData.notes || '',
       });
@@ -68,7 +80,7 @@ export default function VesselForm({ id = null }) {
   if (isEdit && isLoading) return <LoadingSpinner fullPage />;
 
   return (
-    <div className="animate-fadeIn max-w-3xl">
+    <div className="animate-fadeIn">
       <PageHeader
         title={isEdit ? 'Edit Vessel' : 'New Vessel'}
         subtitle={isEdit ? `Editing: ${vesselData?.vesselName || '…'}` : 'Register a vessel in your fleet'}
@@ -186,6 +198,84 @@ export default function VesselForm({ id = null }) {
               <input type="number" min="1800"
                 {...register('builtYear')}
                 placeholder="e.g. 2015" className={ic(false)} />
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ── Vessel Particulars (extended) ───────────────────────────── */}
+        <SectionCard title="Vessel Particulars">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="sm:col-span-2">
+              <label className={lc}>Manager / Operator</label>
+              <input {...register('manager')} placeholder="e.g. MSL Ship Management Ltd" className={ic(false)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <label className={lc}>LOA (m)</label>
+              <input type="number" min="0" step="0.01"
+                {...register('loa')} placeholder="e.g. 299.95" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Beam (m)</label>
+              <input type="number" min="0" step="0.01"
+                {...register('beam')} placeholder="e.g. 48.20" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Summer Draft (m)</label>
+              <input type="number" min="0" step="0.01"
+                {...register('summerDraft')} placeholder="e.g. 14.50" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Built Year</label>
+              <input type="number" min="1800"
+                {...register('builtYear')} placeholder="e.g. 2015" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Gross Tonnage</label>
+              <input type="number" min="0"
+                {...register('grossTonnage')} placeholder="e.g. 141000" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Net Tonnage</label>
+              <input type="number" min="0"
+                {...register('netTonnage')} placeholder="e.g. 86000" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Suez GT</label>
+              <input type="number" min="0"
+                {...register('suezGT')} placeholder="e.g. 143500" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Suez NT</label>
+              <input type="number" min="0"
+                {...register('suezNT')} placeholder="e.g. 132000" className={ic(false)} />
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ── Bunker Capacities ────────────────────────────────────────── */}
+        <SectionCard title="Bunker Capacities (MT)">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <label className={lc}>Total Bunker Cap.</label>
+              <input type="number" min="0" step="0.1"
+                {...register('totalBunkerCapacity')} placeholder="e.g. 5800" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>VLSFO (MT)</label>
+              <input type="number" min="0" step="0.1"
+                {...register('vlsfoCapacity')} placeholder="e.g. 4200" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>MDO (MT)</label>
+              <input type="number" min="0" step="0.1"
+                {...register('mdoCapacity')} placeholder="e.g. 800" className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>F.W. Tank (MT)</label>
+              <input type="number" min="0" step="0.1"
+                {...register('fwCapacity')} placeholder="e.g. 350" className={ic(false)} />
             </div>
           </div>
         </SectionCard>

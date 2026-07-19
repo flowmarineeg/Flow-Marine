@@ -71,7 +71,7 @@ export default function AgentForm({ id = null }) {
   if (isEdit && isLoading) return <LoadingSpinner fullPage />;
 
   return (
-    <div className="animate-fadeIn max-w-3xl">
+    <div className="animate-fadeIn">
       <PageHeader
         title={isEdit ? 'Edit Agent' : 'New Agent'}
         subtitle={isEdit ? `Editing: ${agentData?.agentName || '…'}` : 'Register a new shipping agent'}

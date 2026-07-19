@@ -57,6 +57,11 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
       quantity:        item?.quantity            || 1,
       freightRate:     item?.freightRate         || 0,
       commodity:       item?.commodity           || '',
+      containerNumber: item?.containerNumber     || '',
+      vgm:             item?.vgm                ?? '',
+      dg:              item?.dg                  ?? false,
+      dgPercent:       item?.dgPercent           ?? '',
+      containerStatus: item?.containerStatus     || '',
       remarks:         item?.remarks             || '',
       status:          item?.status              || 'Pending',
     },
@@ -65,6 +70,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
   const watchedVoyageId = watch('voyageId');
   const watchedQuantity = watch('quantity');
   const watchedFreight  = watch('freightRate');
+  const watchedDg       = watch('dg');
   const liveTotal       = useMemo(
     () => (Number(watchedQuantity) || 0) * (Number(watchedFreight) || 0),
     [watchedQuantity, watchedFreight]
@@ -336,6 +342,92 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
             disabled={isLocked}
             className={ic(false)}
           />
+        </div>
+
+        {/* Container Number — required, primary ref */}
+        <div>
+          <FieldLabel required>Container Number</FieldLabel>
+          <input
+            {...register('containerNumber', { required: 'Container number is required' })}
+            placeholder="e.g. MSCU1234567"
+            disabled={isLocked}
+            className={`${ic(errors.containerNumber)} uppercase`}
+          />
+          {errors.containerNumber && <p className={ec}>{errors.containerNumber.message}</p>}
+        </div>
+
+        {/* VGM + Container Status in a row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <FieldLabel optional>VGM (kg)</FieldLabel>
+            <input
+              type="number" min="0" step="0.01"
+              {...register('vgm', { min: { value: 0, message: 'Min 0' } })}
+              placeholder="Verified Gross Mass in kg"
+              disabled={isLocked}
+              className={ic(errors.vgm)}
+            />
+            {errors.vgm && <p className={ec}>{errors.vgm.message}</p>}
+          </div>
+          <div>
+            <FieldLabel optional>Container Status</FieldLabel>
+            <select
+              {...register('containerStatus')}
+              disabled={isLocked}
+              className={`${ic(false)} cursor-pointer`}
+            >
+              <option value="">Select status…</option>
+              {['Full', 'Empty'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* DG toggle */}
+        <div className="rounded-xl border border-gray-100 bg-white p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[12px] font-semibold text-gray-700">Dangerous Goods (DG)</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Does this shipment contain dangerous goods?</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !watchedDg;
+                setValue('dg', next, { shouldValidate: true });
+                if (!next) setValue('dgPercent', '');
+              }}
+              disabled={isLocked}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                watchedDg ? 'bg-red-500' : 'bg-gray-200'
+              } disabled:opacity-50`}
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                watchedDg ? 'translate-x-6' : 'translate-x-1'
+              }`}/>
+            </button>
+          </div>
+
+          {watchedDg && (
+            <div>
+              <FieldLabel>DG Percentage (0–100%)</FieldLabel>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number" min="0" max="100" step="1"
+                  {...register('dgPercent', {
+                    min: { value: 0,   message: 'Min 0%' },
+                    max: { value: 100, message: 'Max 100%' },
+                  })}
+                  placeholder="e.g. 25"
+                  disabled={isLocked}
+                  className={`${ic(errors.dgPercent)} max-w-[160px]`}
+                />
+                <span className="text-sm font-semibold text-red-500">%</span>
+              </div>
+              {errors.dgPercent && <p className={ec}>{errors.dgPercent.message}</p>}
+            </div>
+          )}
         </div>
 
         <div>

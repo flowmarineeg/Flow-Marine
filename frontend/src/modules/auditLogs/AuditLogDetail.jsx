@@ -51,24 +51,79 @@ const getDiff = (oldVals, newVals) => {
   return new Set(changed);
 };
 
+/* ── Renders a single value as human-readable plain text ─────────────────── */
+function renderValue(val) {
+  if (val === null || val === undefined) {
+    return <span className="text-gray-300 italic">—</span>;
+  }
+  if (typeof val === 'boolean') {
+    return <span className="font-medium">{val ? 'Yes' : 'No'}</span>;
+  }
+  if (typeof val === 'number') {
+    return <span>{val.toLocaleString()}</span>;
+  }
+  if (typeof val === 'string') {
+    // ISO date string → format it nicely
+    if (/^\d{4}-\d{2}-\d{2}T/.test(val)) {
+      return (
+        <span>
+          {new Date(val).toLocaleString('en-GB', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          })}
+        </span>
+      );
+    }
+    return <span>{val}</span>;
+  }
+  if (Array.isArray(val)) {
+    if (val.length === 0) return <span className="text-gray-400 italic">empty list</span>;
+    return (
+      <ul className="list-disc list-inside space-y-0.5">
+        {val.map((item, i) => (
+          <li key={i} className="text-[11px] text-gray-600">
+            {typeof item === 'object' && item !== null
+              ? Object.entries(item)
+                  .filter(([k]) => !['_id', '__v', 'createdAt', 'updatedAt'].includes(k))
+                  .map(([k, v]) => `${k}: ${v ?? '—'}`)
+                  .join(' · ')
+              : String(item)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (typeof val === 'object') {
+    // Populated ref object — show meaningful fields, not raw JSON
+    const entries = Object.entries(val).filter(
+      ([k]) => !['_id', '__v', 'createdAt', 'updatedAt', 'password', 'resetToken', 'inviteToken'].includes(k)
+    );
+    if (entries.length === 0) return <span className="text-gray-400 italic">{val._id ?? '—'}</span>;
+    return (
+      <span className="text-gray-600">
+        {entries.map(([k, v]) => `${k}: ${v ?? '—'}`).join(' · ')}
+      </span>
+    );
+  }
+  return <span>{String(val)}</span>;
+}
+
 /* ── Value renderer ───────────────────────────────────────────────────────── */
 function ValueDisplay({ data, changedKeys, side }) {
   if (!data) return <p className="text-sm text-gray-400 italic">No data recorded</p>;
 
+  // Filter out internal Mongoose fields from display
+  const HIDDEN = new Set(['__v', 'password', 'resetToken', 'inviteToken']);
+  const entries = Object.entries(data).filter(([k]) => !HIDDEN.has(k));
+
   return (
     <div className="flex flex-col gap-1.5">
-      {Object.entries(data).map(([key, val]) => {
+      {entries.map(([key, val]) => {
         const isChanged = changedKeys?.has(key);
-        const displayVal = val === null || val === undefined
-          ? <span className="text-gray-300 italic">null</span>
-          : typeof val === 'object'
-            ? <span className="mono text-[11px] text-gray-500 break-all">{JSON.stringify(val)}</span>
-            : <span className="mono text-[12px] break-all">{String(val)}</span>;
-
         return (
           <div
             key={key}
-            className={`flex gap-2 px-3 py-1.5 rounded-lg text-[12px] ${
+            className={`flex gap-3 px-3 py-2 rounded-lg text-[12px] ${
               isChanged
                 ? side === 'old'
                   ? 'bg-red-50 border border-red-200'
@@ -76,10 +131,16 @@ function ValueDisplay({ data, changedKeys, side }) {
                 : 'bg-gray-50 border border-transparent'
             }`}
           >
-            <span className={`font-semibold w-36 flex-shrink-0 ${isChanged ? (side === 'old' ? 'text-red-500' : 'text-green-600') : 'text-gray-400'}`}>
+            <span
+              className={`font-semibold w-36 flex-shrink-0 pt-px ${
+                isChanged ? (side === 'old' ? 'text-red-500' : 'text-green-600') : 'text-gray-400'
+              }`}
+            >
               {key}
             </span>
-            <span className="text-gray-700 flex-1">{displayVal}</span>
+            <span className="text-gray-700 flex-1 leading-relaxed">
+              {renderValue(val)}
+            </span>
           </div>
         );
       })}

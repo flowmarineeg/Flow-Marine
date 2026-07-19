@@ -176,22 +176,24 @@ export default function RouteEditor({ serviceId, serviceName, serviceCode }) {
   const agents = agentsData || [];
 
   // Load existing route
-  const { isLoading } = useQuery({
+  const { isLoading, data: routeData } = useQuery({
     queryKey: ['route', serviceId],
     queryFn:  () => routesService.getRoute(serviceId).then(r => r.data.data),
-    onSuccess: (data) => {
-      if (data.legs && data.legs.length >= 2) {
-        setLegs(data.legs.map(l => ({
-          _key:       l._id,
-          countryId:  l.countryId?._id  || l.countryId  || '',
-          cityId:     l.cityId?._id     || l.cityId     || '',
-          portId:     l.portId?._id     || l.portId     || '',
-          terminalId: l.terminalId?._id || l.terminalId || '',
-          agentId:    l.agentId?._id    || l.agentId    || '',
-        })));
-      }
-    },
   });
+
+  // React Query v5 removed onSuccess — populate legs via useEffect instead
+  useEffect(() => {
+    if (routeData?.legs && routeData.legs.length >= 2) {
+      setLegs(routeData.legs.map(l => ({
+        _key:       l._id || Math.random().toString(36).slice(2),
+        countryId:  (typeof l.countryId  === 'object' ? l.countryId?._id  : l.countryId)  || '',
+        cityId:     (typeof l.cityId     === 'object' ? l.cityId?._id     : l.cityId)     || '',
+        portId:     (typeof l.portId     === 'object' ? l.portId?._id     : l.portId)     || '',
+        terminalId: (typeof l.terminalId === 'object' ? l.terminalId?._id : l.terminalId) || '',
+        agentId:    (typeof l.agentId    === 'object' ? l.agentId?._id    : l.agentId)    || '',
+      })));
+    }
+  }, [routeData]);
 
   const saveMutation = useMutation({
     mutationFn: (payload) => routesService.saveRoute(serviceId, payload),

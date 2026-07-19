@@ -18,6 +18,23 @@ const vesselSchema = new mongoose.Schema(
     capacity:              { type: Number, min: 0, default: null },
     dwt:                   { type: Number, min: 0, default: null },
     builtYear:             { type: Number, min: 1800, max: new Date().getFullYear() + 1, default: null },
+
+    // Vessel particulars — extended
+    manager:               { type: String, trim: true, default: null },
+    loa:                   { type: Number, min: 0, default: null },   // Length Overall (m)
+    beam:                  { type: Number, min: 0, default: null },   // Beam (m)
+    summerDraft:           { type: Number, min: 0, default: null },   // Summer Draft (m)
+    grossTonnage:          { type: Number, min: 0, default: null },   // Gross Tonnage
+    netTonnage:            { type: Number, min: 0, default: null },   // Net Tonnage
+    suezGT:                { type: Number, min: 0, default: null },   // Suez Canal GT
+    suezNT:                { type: Number, min: 0, default: null },   // Suez Canal NT
+
+    // Bunker capacities (metric tonnes)
+    totalBunkerCapacity:   { type: Number, min: 0, default: null },
+    vlsfoCapacity:         { type: Number, min: 0, default: null },   // VLSFO (MT)
+    mdoCapacity:           { type: Number, min: 0, default: null },   // MDO (MT)
+    fwCapacity:            { type: Number, min: 0, default: null },   // Fresh Water Tank (MT)
+
     status:                { type: String, enum: VESSEL_STATUS, default: 'Active' },
     notes:                 { type: String, trim: true, default: null },
     isDeleted:             { type: Boolean, default: false },

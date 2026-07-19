@@ -129,6 +129,9 @@ export default function BookingDetailCard({ booking, onMutated }) {
           <InfoRow label="Voyage"         value={booking.voyageId?.voyageNumber} mono />
           <InfoRow label="Agent"          value={[booking.agentId?.agentCode, booking.agentId?.agentName].filter(Boolean).join(' — ')} />
           <InfoRow label="Container Type" value={booking.containerTypeId ? `${booking.containerTypeId.code} (${booking.containerTypeId.size} ${booking.containerTypeId.type})` : null} />
+          <InfoRow label="Container No"   value={booking.containerNumber} mono />
+          <InfoRow label="Container Status" value={booking.containerStatus} />
+          <InfoRow label="VGM"            value={booking.vgm != null ? `${Number(booking.vgm).toLocaleString()} kg` : null} />
           <InfoRow label="Shipper"        value={booking.shipper} />
           <InfoRow label="Consignee"      value={booking.consignee} />
           <InfoRow label="Carrier Name"   value={booking.carrierName} />
@@ -137,7 +140,20 @@ export default function BookingDetailCard({ booking, onMutated }) {
           <InfoRow label="Commodity"      value={booking.commodity} />
           <InfoRow label="Quantity"       value={booking.quantity?.toLocaleString()} />
           <InfoRow label="Freight Rate"   value={fmtMoney(booking.freightRate)} />
-          {/* slotCount removed */}
+          {/* DG badge */}
+          <div className="flex flex-col gap-0.5">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Dangerous Goods</p>
+            {booking.dg ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">DG</span>
+                {booking.dgPercent != null && (
+                  <span className="text-[13px] font-semibold text-red-500">{booking.dgPercent}%</span>
+                )}
+              </div>
+            ) : (
+              <span className="text-[13.5px] font-medium text-gray-400">No</span>
+            )}
+          </div>
         </div>
 
         {/* ── Remarks ────────────────────────────────────────────────── */}

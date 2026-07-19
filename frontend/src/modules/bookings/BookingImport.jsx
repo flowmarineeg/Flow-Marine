@@ -19,7 +19,7 @@ const ROW_STYLES = {
   invalid:   { bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',      label: 'Invalid'     },
 };
 
-// ─── Excel column header → internal field (slotCount removed, carrierName added) ──
+// ─── Excel column header → internal field ────────────────────────────────────
 const EXCEL_COLUMN_MAP = {
   'booking number':    'bookingNumber',
   'booking no':        'bookingNumber',
@@ -39,15 +39,25 @@ const EXCEL_COLUMN_MAP = {
   'port of discharge': 'pod',
   'quantity':          'quantity',
   'qty':               'quantity',
-  // slot / slot count removed
   'rate':              'rate',
   'freight rate':      'rate',
   'currency':          'currency',
   'cur':               'currency',
   'shipper':           'shipper',
   'consignee':         'consignee',
-  'carrier name':      'carrierName',    // new
-  'carrier':           'carrierName',    // alias
+  'carrier name':      'carrierName',
+  'carrier':           'carrierName',
+  'commodity':         'commodity',
+  'vgm':               'vgm',
+  'verified gross mass': 'vgm',
+  'dg':                'dg',
+  'dangerous goods':   'dg',
+  'dg %':              'dgPercent',
+  'dg percent':        'dgPercent',
+  'dg percentage':     'dgPercent',
+  'container status':  'containerStatus',
+  'cntr status':       'containerStatus',
+  'status':            'containerStatus',
 };
 
 // ─── Parse Excel ─────────────────────────────────────────────────────────────
@@ -180,14 +190,22 @@ export default function BookingImport() {
     try {
       const res = await bookingsService.importPreview({
         rows: preview.map(r => ({
-          bookingNumber: r.bookingNumber, containerNumber: r.containerNumber,
-          containerType: r.containerType, containerSize: r.containerSize,
+          bookingNumber:   r.bookingNumber,
+          containerNumber: r.containerNumber,
+          containerType:   r.containerType,
+          containerSize:   r.containerSize,
           pol: r.pol, pod: r.pod,
-          quantity: r.quantity,
-          // slotCount removed
-          rate: r.rate, currency: r.currency,
-          shipper: r.shipper, consignee: r.consignee,
-          carrierName: r.carrierName,       // new
+          quantity:        r.quantity,
+          rate:            r.rate,
+          currency:        r.currency,
+          shipper:         r.shipper,
+          consignee:       r.consignee,
+          carrierName:     r.carrierName,
+          commodity:       r.commodity,
+          vgm:             r.vgm,
+          dg:              r.dg,
+          dgPercent:       r.dgPercent,
+          containerStatus: r.containerStatus,
         })),
         agentId, voyageId, importType,
       });
@@ -356,14 +374,15 @@ export default function BookingImport() {
           {importType === 'booking' ? (
             <span>
               <strong>Booking mode:</strong> Creates new bookings linked to the selected voyage.
-              Duplicate booking numbers are flagged red and skipped. Only valid green rows are saved.
+              Each row is matched by <strong>Container Number</strong> — duplicate container numbers on this voyage are flagged red and skipped.
+              Only valid green rows are saved.
             </span>
           ) : (
             <span>
-              <strong>Final Loading mode:</strong> Matches rows by booking number — existing bookings
+              <strong>Final Loading mode:</strong> Matches rows by <strong>Container Number</strong> — existing bookings with the same container number on this voyage
               are updated (orange), new ones created (green).
-              Bookings in this import are marked <strong>Final Loading</strong>.
-              Existing voyage bookings <strong>NOT</strong> in this file are marked <strong>Cancelled</strong>.
+              Matched bookings are marked <strong>Final Loading</strong>.
+              Bookings on this voyage whose container number is <strong>NOT</strong> in this file are marked <strong>Cancelled</strong>.
               Invalid rows (red) are always skipped.
             </span>
           )}
@@ -394,22 +413,28 @@ export default function BookingImport() {
           <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Expected Excel Columns</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {[
-              { col: 'Booking Number',   note: 'Optional for Booking; matches existing in Final Loading' },
-              { col: 'Container Number', note: 'Container ID or seal number' },
-              { col: 'Container Type',   note: 'e.g. 40HC, 20DRY, 40RF' },
+              { col: 'Container Number', note: 'REQUIRED — primary match key e.g. MSCU1234567', req: true },
+              { col: 'Container Type',   note: 'e.g. 40HC, 20DRY, 40RF', req: true },
               { col: 'Container Size',   note: 'e.g. 40ft, 20ft' },
-              { col: 'POL',              note: 'Port of Loading — name or UNLOCODE' },
-              { col: 'POD',              note: 'Port of Discharge — name or UNLOCODE' },
-              { col: 'Quantity',         note: 'Number of containers' },
-              // Slot removed
-              { col: 'Rate',             note: 'Freight rate per unit' },
-              { col: 'Currency',         note: 'e.g. USD, EUR, SGD' },
+              { col: 'Container Status', note: 'Full or Empty only' },
+              { col: 'POL',              note: 'Port of Loading — name or UNLOCODE', req: true },
+              { col: 'POD',              note: 'Port of Discharge — name or UNLOCODE', req: true },
+              { col: 'Quantity',         note: 'Number of containers', req: true },
+              { col: 'Rate',             note: 'Freight rate per unit', req: true },
+              { col: 'Currency',         note: 'e.g. USD, EUR, SGD', req: true },
+              { col: 'Booking Number',   note: 'Optional — auto-generated if blank' },
               { col: 'Shipper',          note: 'Optional — shipper company name' },
               { col: 'Consignee',        note: 'Optional — consignee company name' },
               { col: 'Carrier Name',     note: 'Optional — e.g. MSC, Maersk, COSCO' },
-            ].map(({ col, note }) => (
+              { col: 'Commodity',        note: 'Optional — cargo description' },
+              { col: 'VGM',              note: 'Optional — Verified Gross Mass in kg' },
+              { col: 'DG',               note: 'Optional — yes/no or true/false' },
+              { col: 'DG %',             note: 'Optional — DG percentage 0–100 (only if DG=yes)' },
+            ].map(({ col, note, req }) => (
               <div key={col} className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                <p className="text-[12px] font-semibold text-gray-700">{col}</p>
+                <p className="text-[12px] font-semibold text-gray-700">
+                  {col}{req && <span className="text-red-400 ml-0.5">*</span>}
+                </p>
                 <p className="text-[11px] text-gray-400 leading-snug">{note}</p>
               </div>
             ))}
@@ -478,8 +503,7 @@ export default function BookingImport() {
               <table className="w-full border-collapse text-[12px]">
                 <thead>
                   <tr className="table-header text-[11px]">
-                    {/* slotCount column removed; carrierName added */}
-                    {['#','Status','Booking No','Container No','Type','Size','POL','POD','Qty','Rate','Cur','Carrier','Shipper','Consignee','Issues'].map(h => (
+                    {['#','Status','Booking No','Cntr No *','Type','Size','Cntr Status','POL','POD','Qty','Rate','Cur','Carrier','Commodity','VGM','DG','DG%','Shipper','Consignee','Issues'].map(h => (
                       <th key={h} className="!py-2 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -493,19 +517,23 @@ export default function BookingImport() {
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.badge}`}>{st.label}</span>
                         </td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.bookingNumber}   onChange={v=>updateRow(idx,'bookingNumber',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.containerNumber} onChange={v=>updateRow(idx,'containerNumber',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[60px]"><EditableCell value={row.containerType}   onChange={v=>updateRow(idx,'containerType',v)} hasError={row._errors?.some(e=>e.includes('Container'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[55px]"><EditableCell value={row.containerSize}   onChange={v=>updateRow(idx,'containerSize',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pol}            onChange={v=>updateRow(idx,'pol',v)} hasError={row._errors?.some(e=>e.includes('POL'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pod}            onChange={v=>updateRow(idx,'pod',v)} hasError={row._errors?.some(e=>e.includes('POD'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.quantity}        onChange={v=>updateRow(idx,'quantity',v)} hasError={row._errors?.some(e=>e.includes('Quantity'))}/></td>
-                        {/* slotCount column removed */}
-                        <td className="px-1.5 py-1 min-w-[65px]"><EditableCell value={row.rate}            onChange={v=>updateRow(idx,'rate',v)} hasError={row._errors?.some(e=>e.includes('Rate'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[50px]"><EditableCell value={row.currency}        onChange={v=>updateRow(idx,'currency',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.carrierName}    onChange={v=>updateRow(idx,'carrierName',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.shipper}        onChange={v=>updateRow(idx,'shipper',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.consignee}      onChange={v=>updateRow(idx,'consignee',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.bookingNumber}    onChange={v=>updateRow(idx,'bookingNumber',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[120px]"><EditableCell value={row.containerNumber}  onChange={v=>updateRow(idx,'containerNumber',v)} hasError={row._errors?.some(e=>e.includes('Container Number'))}/></td>
+                        <td className="px-1.5 py-1 min-w-[60px]"><EditableCell  value={row.containerType}    onChange={v=>updateRow(idx,'containerType',v)}   hasError={row._errors?.some(e=>e.includes('Container type') || e.includes('Container Type'))}/></td>
+                        <td className="px-1.5 py-1 min-w-[55px]"><EditableCell  value={row.containerSize}    onChange={v=>updateRow(idx,'containerSize',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[80px]"><EditableCell  value={row.containerStatus}  onChange={v=>updateRow(idx,'containerStatus',v)} hasError={row._errors?.some(e=>e.includes('Container Status'))}/></td>
+                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pol}              onChange={v=>updateRow(idx,'pol',v)}             hasError={row._errors?.some(e=>e.includes('POL'))}/></td>
+                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pod}              onChange={v=>updateRow(idx,'pod',v)}             hasError={row._errors?.some(e=>e.includes('POD'))}/></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.quantity}         onChange={v=>updateRow(idx,'quantity',v)}        hasError={row._errors?.some(e=>e.includes('Quantity'))}/></td>
+                        <td className="px-1.5 py-1 min-w-[65px]"><EditableCell  value={row.rate}             onChange={v=>updateRow(idx,'rate',v)}            hasError={row._errors?.some(e=>e.includes('Rate'))}/></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.currency}         onChange={v=>updateRow(idx,'currency',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.carrierName}      onChange={v=>updateRow(idx,'carrierName',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.commodity}        onChange={v=>updateRow(idx,'commodity',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[60px]"><EditableCell  value={row.vgm}              onChange={v=>updateRow(idx,'vgm',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.dg}               onChange={v=>updateRow(idx,'dg',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.dgPercent}        onChange={v=>updateRow(idx,'dgPercent',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.shipper}          onChange={v=>updateRow(idx,'shipper',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.consignee}        onChange={v=>updateRow(idx,'consignee',v)}/></td>
                         <td className="px-2 py-1.5 min-w-[140px] max-w-[180px]">
                           {row._errors?.length > 0
                             ? <ul className="space-y-0.5">{row._errors.map((e,i)=><li key={i} className="text-[10px] text-red-600 leading-snug">• {e}</li>)}</ul>
