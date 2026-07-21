@@ -27,6 +27,17 @@ const REPORT_CARDS = [
     color: 'text-purple-600 bg-purple-50 border-purple-200',
   },
   {
+    href:     '/reports/round-capacity',
+    title:    'Round Capacity',
+    desc:     'Per-leg TEU utilisation for any round — onboard, loaded, discharged and remaining capacity at each port.',
+    icon: (
+      <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+      </svg>
+    ),
+    color: 'text-sky-600 bg-sky-50 border-sky-200',
+  },
+  {
     href:     '/reports/bookings',
     title:    'Booking Report',
     desc:     'Filterable booking list with freight totals, by voyage, agent or date range.',

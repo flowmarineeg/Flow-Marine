@@ -1,17 +1,28 @@
 'use strict';
 
-const express = require('express');
-const router  = express.Router();
-const ctrl    = require('./booking.controller');
+const express    = require('express');
+const router     = express.Router();
+const ctrl       = require('./booking.controller');
 const importCtrl = require('./bookingImport.controller');
-const auth    = require('../../middleware/auth');
-const rbac    = require('../../middleware/rbac');
-const audit   = require('../../middleware/auditLogger');
-const { validateCreate, validateUpdate } = require('./booking.validation');
+const manualCtrl = require('./manualBooking.controller');
+const auth       = require('../../middleware/auth');
+const rbac       = require('../../middleware/rbac');
+const audit      = require('../../middleware/auditLogger');
+const { validateCreate, validateUpdate }                           = require('./booking.validation');
+const { validateCreate: validateManualCreate,
+        validateUpdate: validateManualUpdate }                     = require('./manualBooking.validation');
 
 router.use(auth);
 
-// Import routes — BEFORE /:id to avoid shadowing
+// ── Layer 1 — Manual Bookings (commercial reservation) ──────────────────────
+// MUST be before /:id routes so 'manual' is not captured as an id param.
+router.get   ('/manual',     rbac('bookings'),                         manualCtrl.list);
+router.post  ('/manual',     rbac('bookings'), audit('bookings'), validateManualCreate, manualCtrl.create);
+router.get   ('/manual/:id', rbac('bookings'),                         manualCtrl.getById);
+router.put   ('/manual/:id', rbac('bookings'), audit('bookings'), validateManualUpdate, manualCtrl.update);
+router.delete('/manual/:id', rbac('bookings'), audit('bookings'),      manualCtrl.remove);
+
+// ── Import routes — BEFORE /:id to avoid shadowing ───────────────────────────
 // Sprint019: preview + save both require 'import' action on bookings
 // save in finalLoading mode additionally requires 'update' + 'delete'
 router.post('/import/preview', rbac('bookings', 'import'), importCtrl.preview);

@@ -4,6 +4,7 @@ const mongoose   = require('mongoose');
 const Round      = require('../rounds/round.model');
 const Voyage     = require('../voyages/voyage.model');
 const Booking    = require('../bookings/booking.model');
+const ManualBooking = require('../bookings/manualBooking.model');
 const Expense    = require('../expenses/expense.model');
 const Service    = require('../services/service.model');
 
@@ -73,6 +74,13 @@ const getRoundPnL = async ({ roundId } = {}) => {
 
   const rev = revenueAgg[0] || { totalRevenue: 0, bookingCount: 0, totalQty: 0 };
 
+  // Layer 1 — Manual Bookings (Pending + Confirmed + FL count toward revenue)
+  const l1Agg = await ManualBooking.aggregate([
+    { $match: { voyageId: { $in: voyageIds }, isDeleted: false, status: { $ne: 'Cancelled' } } },
+    { $group: { _id: null, totalRevenue: { $sum: '$totalFreight' }, totalUnits: { $sum: '$totalUnits' }, count: { $sum: 1 } } },
+  ]);
+  const l1 = l1Agg[0] || { totalRevenue: 0, totalUnits: 0, count: 0 };
+
   const expenseBreakdown = expenseAgg.map(e => ({
     category: e._id.category || 'Uncategorised',
     currency: e._id.currency,
@@ -96,9 +104,16 @@ const getRoundPnL = async ({ roundId } = {}) => {
       vessel:      round.vesselId,
     },
     voyageCount:   voyageIds.length,
+    // Layer 2 (operational) counts
     bookingCount:  rev.bookingCount,
     totalQuantity: rev.totalQty,
-    totalRevenue:  rev.totalRevenue,
+    // Layer 1 (manual / commercial) — added Sprint 023
+    manualBookingCount:    l1.count,
+    manualTotalUnits:      l1.totalUnits,
+    // Combined revenue (L1 + L2)
+    totalRevenue:  rev.totalRevenue + l1.totalRevenue,
+    l2Revenue:     rev.totalRevenue,
+    l1Revenue:     l1.totalRevenue,
     expenseTotals,
     expenseBreakdown,
   };
@@ -281,9 +296,6 @@ const getRevenueReport = async ({ serviceId, dateFrom, dateTo } = {}) => {
   return { rows, grandTotal };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Report 5 — Expense Report
-// ─────────────────────────────────────────────────────────────────────────────
 const getExpenseReport = async ({ category, expenseTypeId, roundId, voyageId, dateFrom, dateTo, currency } = {}) => {
   const match = {};
   if (roundId)       match.roundId       = toObjId(roundId);
@@ -317,4 +329,15 @@ const getExpenseReport = async ({ category, expenseTypeId, roundId, voyageId, da
   return { rows: filtered, summary };
 };
 
-module.exports = { getRoundPnL, getVoyagePerformance, getBookingReport, getRevenueReport, getExpenseReport };
+// ─────────────────────────────────────────────────────────────────────────────
+// Report 6 — Round Capacity (Sprint 022)
+// ─────────────────────────────────────────────────────────────────────────────
+const getRoundCapacityReport = async ({ roundId, statuses } = {}) => {
+  if (!roundId) throw { status: 400, message: 'roundId is required' };
+  const { computeRoundCapacity } = require('../capacity/capacity.service');
+  const opts = {};
+  if (statuses) opts.statuses = statuses.split(',').map(s => s.trim()).filter(Boolean);
+  return computeRoundCapacity(roundId, opts);
+};
+
+module.exports = { getRoundPnL, getVoyagePerformance, getBookingReport, getRevenueReport, getExpenseReport, getRoundCapacityReport };

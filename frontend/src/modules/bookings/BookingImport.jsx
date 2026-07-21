@@ -6,65 +6,65 @@ import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { bookingsService } from '@/services/bookings.service';
-import { agentsService }   from '@/services/agents.service';
-import { voyagesService }  from '@/services/voyages.service';
+import { agentsService } from '@/services/agents.service';
+import { voyagesService } from '@/services/voyages.service';
 import PageHeader from '@/components/ui/PageHeader';
 
 // ─── Row status → visual style ───────────────────────────────────────────────
 const ROW_STYLES = {
-  valid:     { bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',  label: 'Valid'       },
-  new:       { bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',  label: 'New'         },
-  update:    { bg: 'bg-amber-50',  badge: 'bg-amber-100 text-amber-700',  label: 'Will Update' },
-  duplicate: { bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',      label: 'Duplicate'   },
-  invalid:   { bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',      label: 'Invalid'     },
+  valid: { bg: 'bg-green-50', badge: 'bg-green-100 text-green-700', label: 'Valid' },
+  new: { bg: 'bg-green-50', badge: 'bg-green-100 text-green-700', label: 'New' },
+  update: { bg: 'bg-amber-50', badge: 'bg-amber-100 text-amber-700', label: 'Will Update' },
+  duplicate: { bg: 'bg-red-50', badge: 'bg-red-100 text-red-600', label: 'Duplicate' },
+  invalid: { bg: 'bg-red-50', badge: 'bg-red-100 text-red-600', label: 'Invalid' },
 };
 
 // ─── Excel column header → internal field ────────────────────────────────────
 const EXCEL_COLUMN_MAP = {
-  'booking number':    'bookingNumber',
-  'booking no':        'bookingNumber',
-  'bk no':             'bookingNumber',
-  'container number':  'containerNumber',
-  'container no':      'containerNumber',
-  'cntr no':           'containerNumber',
-  'container type':    'containerType',
-  'cntr type':         'containerType',
-  'type':              'containerType',
-  'container size':    'containerSize',
-  'cntr size':         'containerSize',
-  'size':              'containerSize',
-  'pol':               'pol',
-  'port of loading':   'pol',
-  'pod':               'pod',
+  'booking number': 'bookingNumber',
+  'booking no': 'bookingNumber',
+  'bk no': 'bookingNumber',
+  'container number': 'containerNumber',
+  'container no': 'containerNumber',
+  'cntr no': 'containerNumber',
+  'container type': 'containerType',
+  'cntr type': 'containerType',
+  'type': 'containerType',
+  'container size': 'containerSize',
+  'cntr size': 'containerSize',
+  'size': 'containerSize',
+  'pol': 'pol',
+  'port of loading': 'pol',
+  'pod': 'pod',
   'port of discharge': 'pod',
-  'quantity':          'quantity',
-  'qty':               'quantity',
-  'rate':              'rate',
-  'freight rate':      'rate',
-  'currency':          'currency',
-  'cur':               'currency',
-  'shipper':           'shipper',
-  'consignee':         'consignee',
-  'carrier name':      'carrierName',
-  'carrier':           'carrierName',
-  'commodity':         'commodity',
-  'vgm':               'vgm',
+  'quantity': 'quantity',
+  'qty': 'quantity',
+  'rate': 'rate',
+  'freight rate': 'rate',
+  'currency': 'currency',
+  'cur': 'currency',
+  'shipper': 'shipper',
+  'consignee': 'consignee',
+  'carrier name': 'carrierName',
+  'carrier': 'carrierName',
+  'commodity': 'commodity',
+  'vgm': 'vgm',
   'verified gross mass': 'vgm',
-  'dg':                'dg',
-  'dangerous goods':   'dg',
-  'dg %':              'dgPercent',
-  'dg percent':        'dgPercent',
-  'dg percentage':     'dgPercent',
-  'container status':  'containerStatus',
-  'cntr status':       'containerStatus',
-  'status':            'containerStatus',
+  'dg': 'dg',
+  'dangerous goods': 'dg',
+  'dg %': 'dgPercent',
+  'dg percent': 'dgPercent',
+  'dg percentage': 'dgPercent',
+  'container status': 'containerStatus',
+  'cntr status': 'containerStatus',
+  'status': 'containerStatus',
 };
 
 // ─── Parse Excel ─────────────────────────────────────────────────────────────
 const parseExcel = (buffer) => {
-  const wb    = XLSX.read(buffer, { type: 'array' });
+  const wb = XLSX.read(buffer, { type: 'array' });
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  const raw   = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
   if (raw.length < 2) return [];
   const headers = raw[0].map(h => String(h).trim().toLowerCase());
   return raw.slice(1).reduce((acc, rowArr) => {
@@ -85,11 +85,10 @@ function EditableCell({ value, onChange, hasError }) {
     <input
       value={value ?? ''}
       onChange={e => onChange(e.target.value)}
-      className={`w-full text-[12px] border rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 transition min-w-[60px] ${
-        hasError
-          ? 'border-red-300 focus:ring-red-400/30'
-          : 'border-gray-200 focus:border-teal-400 focus:ring-teal-400/20'
-      }`}
+      className={`w-full text-[12px] border rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 transition min-w-[60px] ${hasError
+        ? 'border-red-300 focus:ring-red-400/30'
+        : 'border-gray-200 focus:border-teal-400 focus:ring-teal-400/20'
+        }`}
     />
   );
 }
@@ -108,22 +107,22 @@ const fmt = (d) => d
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export default function BookingImport() {
-  const router  = useRouter();
+  const router = useRouter();
   const fileRef = useRef(null);
 
-  const [agentId,      setAgentId]      = useState('');
-  const [voyageId,     setVoyageId]     = useState('');
-  const [importType,   setImportType]   = useState('booking');
-  const [fileName,     setFileName]     = useState('');
-  const [rawRows,      setRawRows]      = useState([]);
-  const [preview,      setPreview]      = useState(null);
+  const [agentId, setAgentId] = useState('');
+  const [voyageId, setVoyageId] = useState('');
+  const [importType, setImportType] = useState('booking');
+  const [fileName, setFileName] = useState('');
+  const [rawRows, setRawRows] = useState([]);
+  const [preview, setPreview] = useState(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [confirmed,    setConfirmed]    = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
 
   // Agents
   const { data: agentsData } = useQuery({
     queryKey: ['agents-import-dd'],
-    queryFn:  () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
+    queryFn: () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
     staleTime: 5 * 60 * 1000,
   });
   const agents = agentsData || [];
@@ -131,7 +130,7 @@ export default function BookingImport() {
   // Voyages — fetch all, filter Cancelled client-side
   const { data: voyagesData, isLoading: voyagesLoading } = useQuery({
     queryKey: ['voyages-import-dd'],
-    queryFn:  () => voyagesService.list({ limit: 500, page: 1 }).then(r => r.data.data),
+    queryFn: () => voyagesService.list({ limit: 500, page: 1 }).then(r => r.data.data),
     staleTime: 2 * 60 * 1000,
   });
   const voyages = (voyagesData || []).filter(v => v.status !== 'Cancelled');
@@ -165,8 +164,8 @@ export default function BookingImport() {
 
   // Preview
   const handlePreview = async () => {
-    if (!agentId)        { toast.error('Please select an agent');      return; }
-    if (!voyageId)       { toast.error('Please select a voyage');      return; }
+    if (!agentId) { toast.error('Please select an agent'); return; }
+    if (!voyageId) { toast.error('Please select a voyage'); return; }
     if (!rawRows.length) { toast.error('Please upload an Excel file'); return; }
     setIsPreviewing(true);
     setConfirmed(false);
@@ -181,7 +180,7 @@ export default function BookingImport() {
   };
 
   const updateRow = (idx, field, value) =>
-    setPreview(prev => { const n=[...prev]; n[idx]={...n[idx],[field]:value}; return n; });
+    setPreview(prev => { const n = [...prev]; n[idx] = { ...n[idx], [field]: value }; return n; });
 
   // Re-validate
   const handleReValidate = async () => {
@@ -190,21 +189,21 @@ export default function BookingImport() {
     try {
       const res = await bookingsService.importPreview({
         rows: preview.map(r => ({
-          bookingNumber:   r.bookingNumber,
+          bookingNumber: r.bookingNumber,
           containerNumber: r.containerNumber,
-          containerType:   r.containerType,
-          containerSize:   r.containerSize,
+          containerType: r.containerType,
+          containerSize: r.containerSize,
           pol: r.pol, pod: r.pod,
-          quantity:        r.quantity,
-          rate:            r.rate,
-          currency:        r.currency,
-          shipper:         r.shipper,
-          consignee:       r.consignee,
-          carrierName:     r.carrierName,
-          commodity:       r.commodity,
-          vgm:             r.vgm,
-          dg:              r.dg,
-          dgPercent:       r.dgPercent,
+          quantity: r.quantity,
+          rate: r.rate,
+          currency: r.currency,
+          shipper: r.shipper,
+          consignee: r.consignee,
+          carrierName: r.carrierName,
+          commodity: r.commodity,
+          vgm: r.vgm,
+          dg: r.dg,
+          dgPercent: r.dgPercent,
           containerStatus: r.containerStatus,
         })),
         agentId, voyageId, importType,
@@ -224,11 +223,11 @@ export default function BookingImport() {
     onSuccess: (res) => {
       const d = res.data.data;
       const parts = [];
-      if (d.created?.length)           parts.push(`${d.created.length} created`);
-      if (d.updated?.length)           parts.push(`${d.updated.length} updated`);
-      if (d.failed?.length)            parts.push(`${d.failed.length} failed`);
+      if (d.created?.length) parts.push(`${d.created.length} created`);
+      if (d.updated?.length) parts.push(`${d.updated.length} updated`);
+      if (d.failed?.length) parts.push(`${d.failed.length} failed`);
       if (d.markedFinalLoading?.length) parts.push(`${d.markedFinalLoading.length} marked Final Loading`);
-      if (d.cancelled?.length)         parts.push(`${d.cancelled.length} cancelled`);
+      if (d.cancelled?.length) parts.push(`${d.cancelled.length} cancelled`);
       toast.success(`Import complete — ${parts.join(' · ')}`);
       setConfirmed(true);
     },
@@ -236,15 +235,15 @@ export default function BookingImport() {
   });
 
   const counts = preview ? {
-    valid:     preview.filter(r => r._rowStatus === 'valid').length,
-    new:       preview.filter(r => r._rowStatus === 'new').length,
-    update:    preview.filter(r => r._rowStatus === 'update').length,
+    valid: preview.filter(r => r._rowStatus === 'valid').length,
+    new: preview.filter(r => r._rowStatus === 'new').length,
+    update: preview.filter(r => r._rowStatus === 'update').length,
     duplicate: preview.filter(r => r._rowStatus === 'duplicate').length,
-    invalid:   preview.filter(r => r._rowStatus === 'invalid').length,
+    invalid: preview.filter(r => r._rowStatus === 'invalid').length,
   } : null;
 
   const saveableCount = preview
-    ? preview.filter(r => ['valid','new','update'].includes(r._rowStatus)).length
+    ? preview.filter(r => ['valid', 'new', 'update'].includes(r._rowStatus)).length
     : 0;
 
   const sc = 'w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition cursor-pointer disabled:opacity-60';
@@ -259,7 +258,7 @@ export default function BookingImport() {
         <button onClick={() => router.push('/bookings')}
           className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition">
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" d="M15 19l-7-7 7-7"/>
+            <path strokeLinecap="round" d="M15 19l-7-7 7-7" />
           </svg>
           Bookings
         </button>
@@ -352,24 +351,22 @@ export default function BookingImport() {
             {selectedVoyage.podId?.name && <span className="text-xs text-teal-600">POD: {selectedVoyage.podId.name}</span>}
             {selectedVoyage.etd && <span className="text-xs text-teal-600">ETD: {fmt(selectedVoyage.etd)}</span>}
             {selectedVoyage.eta && <span className="text-xs text-teal-600">ETA: {fmt(selectedVoyage.eta)}</span>}
-            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-              selectedVoyage.status === 'Departed'   ? 'bg-amber-100 text-amber-700' :
-              selectedVoyage.status === 'In Transit' ? 'bg-blue-100 text-blue-700'  :
-              selectedVoyage.status === 'Arrived'    ? 'bg-green-100 text-green-700':
-              selectedVoyage.status === 'Completed'  ? 'bg-teal-100 text-teal-700'  :
-                                                       'bg-gray-100 text-gray-600'
-            }`}>{selectedVoyage.status}</span>
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${selectedVoyage.status === 'Departed' ? 'bg-amber-100 text-amber-700' :
+              selectedVoyage.status === 'In Transit' ? 'bg-blue-100 text-blue-700' :
+                selectedVoyage.status === 'Arrived' ? 'bg-green-100 text-green-700' :
+                  selectedVoyage.status === 'Completed' ? 'bg-teal-100 text-teal-700' :
+                    'bg-gray-100 text-gray-600'
+              }`}>{selectedVoyage.status}</span>
           </div>
         )}
 
         {/* Import type description */}
-        <div className={`rounded-xl px-4 py-3 text-xs flex items-start gap-2 mb-4 ${
-          importType === 'booking'
-            ? 'bg-blue-50 border border-blue-200 text-blue-700'
-            : 'bg-amber-50 border border-amber-200 text-amber-700'
-        }`}>
+        <div className={`rounded-xl px-4 py-3 text-xs flex items-start gap-2 mb-4 ${importType === 'booking'
+          ? 'bg-blue-50 border border-blue-200 text-blue-700'
+          : 'bg-amber-50 border border-amber-200 text-amber-700'
+          }`}>
           <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            <path strokeLinecap="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           {importType === 'booking' ? (
             <span>
@@ -394,13 +391,13 @@ export default function BookingImport() {
             className="btn btn-primary btn-md flex items-center gap-2">
             {isPreviewing ? (
               <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
               </svg>Validating…</>
             ) : (
               <><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                <path strokeLinecap="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                <path strokeLinecap="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>Preview Import</>
             )}
           </button>
@@ -414,22 +411,22 @@ export default function BookingImport() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {[
               { col: 'Container Number', note: 'REQUIRED — primary match key e.g. MSCU1234567', req: true },
-              { col: 'Container Type',   note: 'e.g. 40HC, 20DRY, 40RF', req: true },
-              { col: 'Container Size',   note: 'e.g. 40ft, 20ft' },
+              { col: 'Container Type', note: 'e.g. 40HC, 20DRY, 40RF', req: true },
+              { col: 'Container Size', note: 'e.g. 40ft, 20ft' },
               { col: 'Container Status', note: 'Full or Empty only' },
-              { col: 'POL',              note: 'Port of Loading — name or UNLOCODE', req: true },
-              { col: 'POD',              note: 'Port of Discharge — name or UNLOCODE', req: true },
-              { col: 'Quantity',         note: 'Number of containers', req: true },
-              { col: 'Rate',             note: 'Freight rate per unit', req: true },
-              { col: 'Currency',         note: 'e.g. USD, EUR, SGD', req: true },
-              { col: 'Booking Number',   note: 'Optional — auto-generated if blank' },
-              { col: 'Shipper',          note: 'Optional — shipper company name' },
-              { col: 'Consignee',        note: 'Optional — consignee company name' },
-              { col: 'Carrier Name',     note: 'Optional — e.g. MSC, Maersk, COSCO' },
-              { col: 'Commodity',        note: 'Optional — cargo description' },
-              { col: 'VGM',              note: 'Optional — Verified Gross Mass in kg' },
-              { col: 'DG',               note: 'Optional — yes/no or true/false' },
-              { col: 'DG %',             note: 'Optional — DG percentage 0–100 (only if DG=yes)' },
+              { col: 'POL', note: 'Port of Loading — name or UNLOCODE', req: true },
+              { col: 'POD', note: 'Port of Discharge — name or UNLOCODE', req: true },
+              { col: 'Quantity', note: 'Number of containers', req: true },
+              { col: 'Rate', note: 'Freight rate per unit', req: true },
+              { col: 'Currency', note: 'e.g. USD, EUR, SGD', req: true },
+              { col: 'Booking Number', note: 'Optional — auto-generated if blank' },
+              { col: 'Shipper', note: 'Optional — shipper company name' },
+              { col: 'Consignee', note: 'Optional — consignee company name' },
+              { col: 'Carrier Name', note: 'Optional — e.g. MSC, Maersk, COSCO' },
+              { col: 'Commodity', note: 'Optional — cargo description' },
+              { col: 'VGM', note: 'Optional — Verified Gross Mass in kg' },
+              { col: 'DG', note: 'Optional — yes/no or true/false' },
+              { col: 'DG %', note: 'Optional — DG percentage 0–100 (only if DG=yes)' },
             ].map(({ col, note, req }) => (
               <div key={col} className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
                 <p className="text-[12px] font-semibold text-gray-700">
@@ -451,22 +448,22 @@ export default function BookingImport() {
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mr-1">Preview</p>
             {importType === 'booking' ? (
               <>
-                {counts.valid     > 0 && <SummaryBadge label="Valid"     count={counts.valid}     color="bg-green-100 text-green-700"/>}
-                {counts.duplicate > 0 && <SummaryBadge label="Duplicate" count={counts.duplicate} color="bg-red-100 text-red-600"/>}
-                {counts.invalid   > 0 && <SummaryBadge label="Invalid"   count={counts.invalid}   color="bg-red-100 text-red-600"/>}
+                {counts.valid > 0 && <SummaryBadge label="Valid" count={counts.valid} color="bg-green-100 text-green-700" />}
+                {counts.duplicate > 0 && <SummaryBadge label="Duplicate" count={counts.duplicate} color="bg-red-100 text-red-600" />}
+                {counts.invalid > 0 && <SummaryBadge label="Invalid" count={counts.invalid} color="bg-red-100 text-red-600" />}
               </>
             ) : (
               <>
-                {counts.new    > 0 && <SummaryBadge label="New"         count={counts.new}    color="bg-green-100 text-green-700"/>}
-                {counts.update > 0 && <SummaryBadge label="Will Update" count={counts.update} color="bg-amber-100 text-amber-700"/>}
-                {counts.invalid> 0 && <SummaryBadge label="Invalid"     count={counts.invalid} color="bg-red-100 text-red-600"/>}
+                {counts.new > 0 && <SummaryBadge label="New" count={counts.new} color="bg-green-100 text-green-700" />}
+                {counts.update > 0 && <SummaryBadge label="Will Update" count={counts.update} color="bg-amber-100 text-amber-700" />}
+                {counts.invalid > 0 && <SummaryBadge label="Invalid" count={counts.invalid} color="bg-red-100 text-red-600" />}
               </>
             )}
             <div className="ml-auto">
               <button onClick={handleReValidate} disabled={isPreviewing}
                 className="btn btn-secondary btn-sm flex items-center gap-1.5">
                 <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  <path strokeLinecap="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 Re-validate
               </button>
@@ -476,11 +473,11 @@ export default function BookingImport() {
           {/* Legend */}
           <div className="flex flex-wrap gap-x-4 gap-y-1 items-center text-[11px] text-gray-500">
             <span className="font-semibold text-gray-400">Legend:</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-300 inline-block"/>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-300 inline-block" />
               {importType === 'booking' ? 'Valid — will be created' : 'New — will be created'}</span>
-            {importType === 'finalLoading' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-300 inline-block"/>Existing — will be updated + marked Final Loading</span>}
-            {importType === 'booking'      && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block"/>Duplicate — skipped</span>}
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block"/>Invalid — skipped</span>
+            {importType === 'finalLoading' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-300 inline-block" />Existing — will be updated + marked Final Loading</span>}
+            {importType === 'booking' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block" />Duplicate — skipped</span>}
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block" />Invalid — skipped</span>
             <span className="text-gray-400">· Edit any cell then Re-validate.</span>
           </div>
 
@@ -488,7 +485,7 @@ export default function BookingImport() {
           {importType === 'finalLoading' && (
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
               <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <path strokeLinecap="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
               </svg>
               <span>
                 After confirming: all imported bookings will be marked <strong>Final Loading</strong>.
@@ -498,12 +495,12 @@ export default function BookingImport() {
           )}
 
           {/* Table */}
-          <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="card overflow-hidden max-w-full">
+            <div className="">
               <table className="w-full border-collapse text-[12px]">
                 <thead>
                   <tr className="table-header text-[11px]">
-                    {['#','Status','Booking No','Cntr No *','Type','Size','Cntr Status','POL','POD','Qty','Rate','Cur','Carrier','Commodity','VGM','DG','DG%','Shipper','Consignee','Issues'].map(h => (
+                    {['#', 'Status', 'Booking No', 'Cntr No *', 'Type', 'Size', 'Cntr Status', 'POL', 'POD', 'Qty', 'Rate', 'Cur', 'Carrier', 'Commodity', 'VGM', 'DG', 'DG%', 'Shipper', 'Consignee', 'Issues'].map(h => (
                       <th key={h} className="!py-2 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -517,26 +514,26 @@ export default function BookingImport() {
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.badge}`}>{st.label}</span>
                         </td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.bookingNumber}    onChange={v=>updateRow(idx,'bookingNumber',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[120px]"><EditableCell value={row.containerNumber}  onChange={v=>updateRow(idx,'containerNumber',v)} hasError={row._errors?.some(e=>e.includes('Container Number'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[60px]"><EditableCell  value={row.containerType}    onChange={v=>updateRow(idx,'containerType',v)}   hasError={row._errors?.some(e=>e.includes('Container type') || e.includes('Container Type'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[55px]"><EditableCell  value={row.containerSize}    onChange={v=>updateRow(idx,'containerSize',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[80px]"><EditableCell  value={row.containerStatus}  onChange={v=>updateRow(idx,'containerStatus',v)} hasError={row._errors?.some(e=>e.includes('Container Status'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pol}              onChange={v=>updateRow(idx,'pol',v)}             hasError={row._errors?.some(e=>e.includes('POL'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pod}              onChange={v=>updateRow(idx,'pod',v)}             hasError={row._errors?.some(e=>e.includes('POD'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.quantity}         onChange={v=>updateRow(idx,'quantity',v)}        hasError={row._errors?.some(e=>e.includes('Quantity'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[65px]"><EditableCell  value={row.rate}             onChange={v=>updateRow(idx,'rate',v)}            hasError={row._errors?.some(e=>e.includes('Rate'))}/></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.currency}         onChange={v=>updateRow(idx,'currency',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.carrierName}      onChange={v=>updateRow(idx,'carrierName',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.commodity}        onChange={v=>updateRow(idx,'commodity',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[60px]"><EditableCell  value={row.vgm}              onChange={v=>updateRow(idx,'vgm',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.dg}               onChange={v=>updateRow(idx,'dg',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell  value={row.dgPercent}        onChange={v=>updateRow(idx,'dgPercent',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.shipper}          onChange={v=>updateRow(idx,'shipper',v)}/></td>
-                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.consignee}        onChange={v=>updateRow(idx,'consignee',v)}/></td>
+                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.bookingNumber} onChange={v => updateRow(idx, 'bookingNumber', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[120px]"><EditableCell value={row.containerNumber} onChange={v => updateRow(idx, 'containerNumber', v)} hasError={row._errors?.some(e => e.includes('Container Number'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[60px]"><EditableCell value={row.containerType} onChange={v => updateRow(idx, 'containerType', v)} hasError={row._errors?.some(e => e.includes('Container type') || e.includes('Container Type'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[55px]"><EditableCell value={row.containerSize} onChange={v => updateRow(idx, 'containerSize', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[80px]"><EditableCell value={row.containerStatus} onChange={v => updateRow(idx, 'containerStatus', v)} hasError={row._errors?.some(e => e.includes('Container Status'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pol} onChange={v => updateRow(idx, 'pol', v)} hasError={row._errors?.some(e => e.includes('POL'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pod} onChange={v => updateRow(idx, 'pod', v)} hasError={row._errors?.some(e => e.includes('POD'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.quantity} onChange={v => updateRow(idx, 'quantity', v)} hasError={row._errors?.some(e => e.includes('Quantity'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[65px]"><EditableCell value={row.rate} onChange={v => updateRow(idx, 'rate', v)} hasError={row._errors?.some(e => e.includes('Rate'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.currency} onChange={v => updateRow(idx, 'currency', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.carrierName} onChange={v => updateRow(idx, 'carrierName', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.commodity} onChange={v => updateRow(idx, 'commodity', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[60px]"><EditableCell value={row.vgm} onChange={v => updateRow(idx, 'vgm', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.dg} onChange={v => updateRow(idx, 'dg', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.dgPercent} onChange={v => updateRow(idx, 'dgPercent', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.shipper} onChange={v => updateRow(idx, 'shipper', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.consignee} onChange={v => updateRow(idx, 'consignee', v)} /></td>
                         <td className="px-2 py-1.5 min-w-[140px] max-w-[180px]">
                           {row._errors?.length > 0
-                            ? <ul className="space-y-0.5">{row._errors.map((e,i)=><li key={i} className="text-[10px] text-red-600 leading-snug">• {e}</li>)}</ul>
+                            ? <ul className="space-y-0.5">{row._errors.map((e, i) => <li key={i} className="text-[10px] text-red-600 leading-snug">• {e}</li>)}</ul>
                             : <span className="text-[10px] text-green-600">—</span>
                           }
                         </td>
@@ -565,12 +562,12 @@ export default function BookingImport() {
                 className="btn btn-primary btn-md flex items-center gap-2 flex-shrink-0">
                 {saveMutation.isPending ? (
                   <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>Saving…</>
                 ) : (
                   <><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" d="M5 13l4 4L19 7"/>
+                    <path strokeLinecap="round" d="M5 13l4 4L19 7" />
                   </svg>Confirm Import</>
                 )}
               </button>
@@ -583,7 +580,7 @@ export default function BookingImport() {
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                   <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                    <path strokeLinecap="round" d="M5 13l4 4L19 7"/>
+                    <path strokeLinecap="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
                 <div>
@@ -622,7 +619,7 @@ export default function BookingImport() {
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
                   <p className="text-[11px] font-bold text-red-600 mb-1.5">Failed rows:</p>
                   {importResult.failed.map((f, i) => (
-                    <p key={i} className="text-[11px] text-red-600">{f.bookingNumber || `Row ${i+1}`}: {f.reason}</p>
+                    <p key={i} className="text-[11px] text-red-600">{f.bookingNumber || `Row ${i + 1}`}: {f.reason}</p>
                   ))}
                 </div>
               )}
@@ -630,7 +627,7 @@ export default function BookingImport() {
               <div className="flex gap-2 flex-wrap">
                 <button onClick={() => router.push('/bookings')} className="btn btn-primary btn-md">Go to Bookings</button>
                 <button
-                  onClick={() => { setPreview(null); setRawRows([]); setFileName(''); setConfirmed(false); if (fileRef.current) fileRef.current.value=''; }}
+                  onClick={() => { setPreview(null); setRawRows([]); setFileName(''); setConfirmed(false); if (fileRef.current) fileRef.current.value = ''; }}
                   className="btn btn-secondary btn-md">
                   Import Another File
                 </button>

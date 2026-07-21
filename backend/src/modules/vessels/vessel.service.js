@@ -99,7 +99,7 @@ const getAll = async (filters = {}, selectedIds = []) => {
   return Vessel.find(query).sort({ createdAt: -1 }).lean();
 };
 
-// ─── Vessel stats (for detail page) ─────────────────────────────────────────────
+// ─── Vessel stats (for detail page) ─────────────────────────────────────────────────
 const getVesselStats = async (id) => {
   const vessel = await Vessel.findOne({ _id: id, isDeleted: false }).lean();
   if (!vessel) throw { status: 404, message: 'Vessel not found' };
@@ -108,6 +108,8 @@ const getVesselStats = async (id) => {
   const Voyage          = require('../voyages/voyage.model');
   const Booking         = require('../bookings/booking.model');
   const TrackingHistory = require('../tracking/trackingHistory.model');
+  // Lazy require to avoid circular dep (capacity → vessel → capacity)
+  const { computeVesselActiveCapacity } = require('../capacity/capacity.service');
 
   // All rounds for this vessel
   const rounds = await Round.find({ vesselId: id, isDeleted: false })
@@ -115,10 +117,9 @@ const getVesselStats = async (id) => {
     .sort({ startDate: -1 })
     .limit(20)
     .lean();
-  const roundIds  = rounds.map(r => r._id);
+  const roundIds    = rounds.map(r => r._id);
   const totalRounds = await Round.countDocuments({ vesselId: id, isDeleted: false });
 
-  // Count by round status
   const activeRoundsCount    = rounds.filter(r => r.status === 'Active').length;
   const plannedRoundsCount   = rounds.filter(r => r.status === 'Planned').length;
   const completedRoundsCount = rounds.filter(r => r.status === 'Completed').length;
@@ -130,40 +131,47 @@ const getVesselStats = async (id) => {
     .sort({ etd: -1 })
     .limit(30)
     .lean();
-  const voyageIds   = voyages.map(v => v._id);
-  const totalVoyages  = await Voyage.countDocuments({ roundId: { $in: roundIds.length ? roundIds : ['000000000000000000000000'] } });
+  const voyageIds    = voyages.map(v => v._id);
+  const totalVoyages = await Voyage.countDocuments({ roundId: { $in: roundIds.length ? roundIds : ['000000000000000000000000'] } });
   const activeVoyages = voyages.filter(v => ['Scheduled','Departed','In Transit'].includes(v.status)).length;
 
-  // Booking stats — guard empty voyageIds
+  // Booking stats
   const bookingStats = voyageIds.length ? await Booking.aggregate([
     { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
     { $group: { _id: '$status', count: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' }, totalQty: { $sum: '$quantity' } } },
   ]) : [];
 
   let totalBookings = 0, confirmedBookings = 0, pendingBookings = 0, cancelledBookings = 0, finalLoadingBookings = 0;
-  let totalRevenue = 0;
+  let totalRevenue  = 0;
   bookingStats.forEach(s => {
     totalBookings += s.count;
     totalRevenue  += s.totalFreight || 0;
-    if (s._id === 'Confirmed')      confirmedBookings    = s.count;
-    if (s._id === 'Pending')        pendingBookings      = s.count;
-    if (s._id === 'Cancelled')      cancelledBookings    = s.count;
-    if (s._id === 'Final Loading')  finalLoadingBookings = s.count;
+    if (s._id === 'Confirmed')     confirmedBookings    = s.count;
+    if (s._id === 'Pending')       pendingBookings      = s.count;
+    if (s._id === 'Cancelled')     cancelledBookings    = s.count;
+    if (s._id === 'Final Loading') finalLoadingBookings = s.count;
   });
 
-  // Capacity utilisation — units booked on active/planned rounds
-  const activeRoundIds  = rounds.filter(r => ['Active','Planned'].includes(r.status)).map(r => r._id);
-  const activeVoyageIds = activeRoundIds.length
-    ? await Voyage.find({ roundId: { $in: activeRoundIds } }).distinct('_id')
-    : [];
-  const capacityAgg = activeVoyageIds.length ? await Booking.aggregate([
-    { $match: { voyageId: { $in: activeVoyageIds }, isDeleted: false, status: { $in: ['Confirmed','Final Loading'] } } },
-    { $group: { _id: null, totalQty: { $sum: '$quantity' } } },
-  ]) : [];
-  const capacityUsed = capacityAgg[0]?.totalQty || 0;
-  const capacityPct  = vessel.capacity > 0 ? Math.round((capacityUsed / vessel.capacity) * 100) : null;
+  // Sprint 022 — per-leg TEU capacity from the capacity engine
+  // capacityUsed and capacityPct now reflect peak TEU on the active round,
+  // not a flat sum of container quantities. Field names kept for backward compat.
+  let capacityUsed  = 0;
+  let capacityPct   = null;
+  let activeRound   = null;
 
-  // Agent usage — guard empty voyageIds
+  try {
+    const capResult = await computeVesselActiveCapacity(id);
+    activeRound = capResult.activeRound || null;
+    if (activeRound) {
+      capacityUsed = activeRound.totals?.peakOnboardTEU ?? 0;
+      const cap    = vessel.capacity;
+      capacityPct  = cap && cap > 0 ? Math.round((capacityUsed / cap) * 100) : null;
+    }
+  } catch (_) {
+    // Non-blocking: capacity engine failure does not break the stats page
+  }
+
+  // Agent usage
   const agentAgg = voyageIds.length ? await Booking.aggregate([
     { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
     { $group: { _id: '$agentId', bookingCount: { $sum: 1 } } },
@@ -191,13 +199,17 @@ const getVesselStats = async (id) => {
       totalVoyages, activeVoyages,
       totalBookings, confirmedBookings, pendingBookings, cancelledBookings, finalLoadingBookings,
       totalRevenue,
-      capacityUsed, capacityPct,
+      // Sprint 022: now TEU-based peak from capacity engine (backward-compat field names)
+      capacityUsed,
+      capacityPct,
     },
-    rounds:         rounds.slice(0, 10),
-    voyages:        voyages.slice(0, 10),
-    agents:         agentAgg,
+    // Sprint 022: full per-leg capacity payload for the active round
+    activeRound,
+    rounds:           rounds.slice(0, 10),
+    voyages:          voyages.slice(0, 10),
+    agents:           agentAgg,
     recentTracking,
-    lastPosition:   recentTracking[0] || null,
+    lastPosition:     recentTracking[0] || null,
     bookingsByStatus: bookingStats.map(s => ({ label: s._id, count: s.count })),
   };
 };

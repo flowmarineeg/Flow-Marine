@@ -5,6 +5,7 @@ const Voyage        = require('../voyages/voyage.model');
 const ContainerType = require('../containerTypes/containerType.model');
 const Port          = require('../locations/port.model');
 const { nextNumberBatch } = require('../../utils/autoNumber');
+const { invalidateRoundCache } = require('../capacity/capacity.service');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const parseDg = (val) =>
@@ -309,6 +310,12 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
       });
     }
   }
+
+  // Invalidate capacity cache — bookings for this voyage's round changed
+  try {
+    const affectedVoyage = await Voyage.findById(voyageId).select('roundId').lean();
+    if (affectedVoyage) invalidateRoundCache(affectedVoyage.roundId);
+  } catch (_) { /* non-blocking */ }
 
   return { created, updated, failed, markedFinalLoading, cancelled, total: saveable.length };
 };

@@ -22,3 +22,25 @@ const validate = () => {
 };
 
 module.exports = { validate };
+
+/**
+ * ENABLE_CAPACITY_ENFORCEMENT (Sprint 022)
+ * Controls pre-flight capacity checks on booking create and import preview.
+ *
+ * Values:
+ *   unset / '' / 'off'  → disabled (default): no capacity check, zero overhead
+ *   'warn'              → check runs; overbooked bookings are created with a
+ *                         warning in the response body (capacityWarning field)
+ *   'strict'            → check runs; overbooked bookings are REJECTED with 400
+ *
+ * Set in your .env file:
+ *   ENABLE_CAPACITY_ENFORCEMENT=warn
+ */
+const capacityEnforcement = () => {
+  const val = (process.env.ENABLE_CAPACITY_ENFORCEMENT || '').trim().toLowerCase();
+  if (val === 'strict') return 'strict';
+  if (val === 'warn')   return 'warn';
+  return null; // disabled
+};
+
+module.exports = { validate, capacityEnforcement };

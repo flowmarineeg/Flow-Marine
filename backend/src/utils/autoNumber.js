@@ -3,9 +3,10 @@
 const Counter = require('../modules/counters/counter.model');
 
 const formats = {
-  round:   (seq) => `R${String(seq).padStart(6, '0')}`,
-  booking: (seq) => `BK-${String(seq).padStart(6, '0')}`,
-  invoice: (seq) => `INV-${String(seq).padStart(6, '0')}`,
+  round:         (seq) => `R${String(seq).padStart(6, '0')}`,
+  booking:       (seq) => `BK-${String(seq).padStart(6, '0')}`,
+  manualBooking: (seq) => `MB-${String(seq).padStart(6, '0')}`,
+  invoice:       (seq) => `INV-${String(seq).padStart(6, '0')}`,
 };
 
 /**

@@ -33,4 +33,10 @@ const getExpenseReport = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { getRoundPnL, getVoyagePerformance, getBookingReport, getRevenueReport, getExpenseReport };
+const getRoundCapacityReport = async (req, res, next) => {
+  try {
+    return success(res, await reportsService.getRoundCapacityReport(req.query), 'Round capacity report generated');
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+module.exports = { getRoundPnL, getVoyagePerformance, getBookingReport, getRevenueReport, getExpenseReport, getRoundCapacityReport };

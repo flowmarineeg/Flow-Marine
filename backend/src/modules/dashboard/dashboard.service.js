@@ -5,6 +5,7 @@ const Agent    = require('../agents/agent.model');
 const Round    = require('../rounds/round.model');
 const Voyage   = require('../voyages/voyage.model');
 const Booking  = require('../bookings/booking.model');
+const ManualBooking = require('../bookings/manualBooking.model');
 const Invoice  = require('../invoices/invoice.model');
 const Expense  = require('../expenses/expense.model');
 const AuditLog = require('../auditLogs/auditLog.model');
@@ -79,6 +80,19 @@ const computeStats = async () => {
     AuditLog.find({}).sort({ timestamp: -1 }).limit(10).populate('userId', 'name email').lean(),
   ]);
 
+  // ── Layer 1 (ManualBooking) counts — Sprint 023 ──────────────────────────
+  const [totalManualBookings, pendingManualBookings, confirmedManualBookings, manualRevenueAgg] =
+    await Promise.all([
+      ManualBooking.countDocuments({ isDeleted: false }),
+      ManualBooking.countDocuments({ status: 'Pending',   isDeleted: false }),
+      ManualBooking.countDocuments({ status: 'Confirmed', isDeleted: false }),
+      ManualBooking.aggregate([
+        { $match: { isDeleted: false, status: { $ne: 'Cancelled' }, createdAt: { $gte: thirty } } },
+        { $group: { _id: null, total: { $sum: '$totalFreight' } } },
+      ]),
+    ]);
+  const manualRevenue30d = manualRevenueAgg[0]?.total ?? 0;
+
   // ── Build monthly trend labels ─────────────────────────────────────────────
   const monthLabels = [], monthFreight = [], monthCounts = [];
   for (let i = 5; i >= 0; i--) {
@@ -97,6 +111,9 @@ const computeStats = async () => {
       totalBookings, confirmedBookings, pendingBookings, cancelledBookings,
       totalAgents, draftInvoices, overdueInvoices, paidInvoices,
       totalExpenses, revenue30d: revenueAgg[0]?.total ?? 0,
+      // Layer 1 (Manual Bookings) — Sprint 023
+      totalManualBookings, pendingManualBookings, confirmedManualBookings,
+      manualRevenue30d,
     },
     charts: {
       monthlyTrend:     { labels: monthLabels, freight: monthFreight, counts: monthCounts },
@@ -126,4 +143,59 @@ const getDashboardStats = async () => {
   return stats;
 };
 
-module.exports = { getDashboardStats };
+// ── Fleet Utilisation (Sprint 022 — SuperAdmin only) ─────────────────────────
+/**
+ * Returns a summary of per-leg peak TEU utilisation for every Active round.
+ * Each entry gives: vessel name, round number, peakOnboardTEU, peakPct,
+ * totalBookedTEU, segmentCount and a colour tag for the dashboard widget.
+ * Leverages the capacity engine cache — cold call < 100ms per round.
+ */
+const getFleetUtilisation = async () => {
+  const { computeRoundCapacity } = require('../capacity/capacity.service');
+
+  const activeRounds = await Round.find({ status: 'Active', isDeleted: false })
+    .populate('vesselId',  'vesselCode vesselName capacity')
+    .populate('serviceId', 'serviceCode serviceName')
+    .lean();
+
+  const results = await Promise.allSettled(
+    activeRounds.map(r => computeRoundCapacity(r._id))
+  );
+
+  const items = [];
+  results.forEach((res, i) => {
+    if (res.status === 'rejected') return; // skip failed computations
+    const d        = res.value;
+    const r        = activeRounds[i];
+    const cap      = d.vessel?.capacity ?? null;
+    const peakTEU  = d.totals?.peakOnboardTEU ?? 0;
+    const peakPct  = cap && cap > 0 ? Math.round((peakTEU / cap) * 100) : null;
+    const color    = peakPct == null ? 'gray'
+      : peakPct >= 90 ? 'red'
+      : peakPct >= 70 ? 'amber'
+      : 'green';
+    items.push({
+      roundId:        String(r._id),
+      roundNumber:    r.roundNumber,
+      vesselCode:     d.vessel?.vesselCode,
+      vesselName:     d.vessel?.vesselName,
+      serviceCode:    d.service?.serviceCode,
+      serviceName:    d.service?.serviceName,
+      vesselCapacity: cap,
+      peakOnboardTEU: peakTEU,
+      peakPct,
+      totalBookedTEU: d.totals?.totalBookedTEU ?? 0,
+      voyageCount:    d.voyages?.length ?? 0,
+      warningCount:   d.warnings?.length ?? 0,
+      color,
+    });
+  });
+
+  // Sort: red first, then amber, green, gray
+  const ORDER = { red: 0, amber: 1, green: 2, gray: 3 };
+  items.sort((a, b) => ORDER[a.color] - ORDER[b.color]);
+
+  return { items, activeRoundCount: activeRounds.length };
+};
+
+module.exports = { getDashboardStats, getFleetUtilisation };

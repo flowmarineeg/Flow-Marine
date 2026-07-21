@@ -223,6 +223,15 @@ export default function DashboardPage() {
     enabled:         isSuperAdmin,
   });
 
+  // Sprint 022 — Fleet utilisation (per-leg TEU from capacity engine)
+  const { data: fleetRaw } = useQuery({
+    queryKey:        ['fleet-utilisation'],
+    queryFn:         () => dashboardService.getFleetUtilisation().then(r => r.data.data),
+    refetchInterval: 60 * 1000,  // refresh every 60s (matches capacity cache TTL)
+    enabled:         isSuperAdmin,
+  });
+  const fleetItems = fleetRaw?.items || [];
+
   if (!isSuperAdmin) {
     return (
       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh' }}>
@@ -276,6 +285,64 @@ export default function DashboardPage() {
         <KpiCard icon={FaFileInvoiceDollar} loading={isLoading} iconBg="bg-amber-50"  iconColor="text-amber-600"  label="Draft Invoices"  value={fmtNum(kpis.draftInvoices)}  sub={`${fmtNum(kpis.paidInvoices)} paid`} />
         <KpiCard icon={MdWarning}           loading={isLoading} iconBg="bg-red-50"    iconColor="text-red-600"    label="Overdue Invoices" value={fmtNum(kpis.overdueInvoices)} sub="Needs attention" />
       </div>
+
+      {/* Fleet Utilisation — Sprint 022 */}
+      {fleetItems.length > 0 && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Fleet Utilisation — Active Rounds</p>
+            <span className="text-[10px] text-gray-400">{fleetItems.length} active round{fleetItems.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {fleetItems.map(item => {
+              const colorClasses = {
+                red:   { bar: 'bg-red-500',   text: 'text-red-600',   bg: 'bg-red-50',   border: 'border-red-200' },
+                amber: { bar: 'bg-amber-400', text: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
+                green: { bar: 'bg-teal-500',  text: 'text-teal-600',  bg: 'bg-teal-50',  border: 'border-teal-200' },
+                gray:  { bar: 'bg-gray-300',  text: 'text-gray-500',  bg: 'bg-gray-50',  border: 'border-gray-200' },
+              }[item.color] || { bar: 'bg-gray-300', text: 'text-gray-500', bg: 'bg-gray-50', border: 'border-gray-200' };
+              const pct = Math.min(item.peakPct ?? 0, 100);
+              return (
+                <div
+                  key={item.roundId}
+                  className={`rounded-xl border ${colorClasses.border} ${colorClasses.bg} p-4 cursor-pointer hover:shadow-sm transition`}
+                  onClick={() => router.push(`/vessels?highlight=${item.roundId}`)}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-bold text-gray-700 truncate">{item.vesselCode}</p>
+                      <p className="text-[10px] text-gray-400 truncate">{item.vesselName}</p>
+                    </div>
+                    <span className={`text-[11px] font-bold ml-2 flex-shrink-0 ${colorClasses.text}`}>
+                      {item.peakPct != null ? `${item.peakPct}%` : '—'}
+                    </span>
+                  </div>
+                  {/* Utilisation bar */}
+                  <div className="h-1.5 bg-white/80 rounded-full overflow-hidden mb-2">
+                    <div
+                      className={`h-full rounded-full transition-all ${colorClasses.bar}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-gray-500">
+                    <span className="mono font-semibold">{item.roundNumber}</span>
+                    <span>{item.serviceCode}</span>
+                    <span>
+                      {item.peakOnboardTEU?.toLocaleString() ?? 0}
+                      {item.vesselCapacity ? ` / ${item.vesselCapacity.toLocaleString()} TEU` : ' TEU'}
+                    </span>
+                  </div>
+                  {item.warningCount > 0 && (
+                    <p className="mt-1.5 text-[10px] font-semibold text-amber-600">
+                      ⚠️ {item.warningCount} warning{item.warningCount !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

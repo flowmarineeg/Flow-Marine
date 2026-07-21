@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -40,9 +40,8 @@ const SectionCard = ({ title, children }) => (
 export default function BookingForm({ item, onSuccess, onCancel }) {
   const qc        = useQueryClient();
   const isEditing = !!item;
-
-  // Locked statuses — cannot edit
-  const isLocked = ['Cancelled', 'Final Loading'].includes(item?.status);
+  const isLocked  = ['Cancelled', 'Final Loading'].includes(item?.status);
+  const [capacityWarning, setCapacityWarning] = useState(null);
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
@@ -120,13 +119,20 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
     onSuccess: (res) => {
       toast.success(isEditing ? 'Booking updated' : 'Booking created');
       qc.invalidateQueries(['bookings']);
-      onSuccess?.(res.data.data);
+      // Sprint 022: server attaches _capacityWarning if enforcement=warn and segment overbooked
+      const warn = res.data.data?._capacityWarning;
+      if (warn) {
+        setCapacityWarning(warn);
+        // Do not call onSuccess yet — let user see the warning first
+      } else {
+        onSuccess?.(res.data.data);
+      }
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
   });
 
   const onSubmit = (data) => {
-    // Never send totalFreight — server computes it
+    setCapacityWarning(null);
     const { totalFreight: _ignored, ...payload } = data;
     mutation.mutate(payload);
   };
@@ -145,6 +151,35 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
               ? 'This booking is on the Final Loading manifest and cannot be edited.'
               : 'Cancelled bookings cannot be edited.'}
           </p>
+        </div>
+      )}
+
+      {/* Capacity warning banner (Sprint 022 — warn mode) */}
+      {capacityWarning && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            <div className="flex-1">
+              <p className="text-[12px] font-bold text-amber-700 mb-1">Capacity Warning</p>
+              <p className="text-[12px] text-amber-700">
+                Booking was saved but it exceeds vessel capacity on segment {capacityWarning.bottleneckSegment?.segmentIndex}.
+                Added <strong>{capacityWarning.addedTEU} TEU</strong>; remaining after this booking:{' '}
+                <strong className="text-red-600">{capacityWarning.bottleneckSegment?.remainingAfterAdd} TEU</strong>.
+              </p>
+              <p className="text-[11px] text-amber-600 mt-1">
+                Contact your operations team to review vessel capacity for this round.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setCapacityWarning(null); onSuccess?.(); }}
+              className="text-amber-600 hover:text-amber-800 text-xs font-semibold flex-shrink-0"
+            >
+              OK, close
+            </button>
+          </div>
         </div>
       )}
 

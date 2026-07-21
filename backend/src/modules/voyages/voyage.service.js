@@ -8,6 +8,8 @@ const Service  = require('../services/service.model');
 const Port     = require('../locations/port.model');
 const { VOYAGE_STATUS, DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
+const { invalidateRoundCache } = require('../capacity/capacity.service');
+
 // ─── Valid status transitions ─────────────────────────────────────────────────
 const STATUS_TRANSITIONS = {
   Scheduled:    ['Departed', 'Cancelled'],
@@ -183,6 +185,9 @@ const update = async (id, data, updatedBy) => {
   });
   voyage.updatedBy = updatedBy;
   await voyage.save();
+
+  // Invalidate capacity cache for this round (status change affects engine output)
+  invalidateRoundCache(voyage.roundId);
 
   return Voyage.findById(id)
     .populate('roundId',   'roundNumber')

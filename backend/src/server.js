@@ -60,6 +60,7 @@ app.use('/api/v1/invoices', require('./modules/invoices/invoice.routes'));
 app.use('/api/v1/tracking', require('./modules/tracking/tracking.routes'));
 app.use('/api/v1/reports', require('./modules/reports/reports.routes'));
 app.use('/api/v1/dashboard', require('./modules/dashboard/dashboard.routes'));
+app.use('/api/v1/capacity', require('./modules/capacity/capacity.routes'));
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) =>

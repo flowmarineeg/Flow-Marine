@@ -7,6 +7,7 @@ const RouteLeg = require('../routes/routeLeg.model');
 const Service  = require('../services/service.model');
 const { nextNumber } = require('../../utils/autoNumber');
 const { generateVoyages } = require('../../utils/voyageGenerator');
+const { invalidateRoundCache } = require('../capacity/capacity.service');
 const { DEFAULT_PAGE, DEFAULT_LIMIT, ROUND_STATUS } = require('../../config/constants');
 
 // Valid status transitions
@@ -195,6 +196,9 @@ const update = async (id, data, updatedBy) => {
   allowed.forEach(field => { if (data[field] !== undefined) round[field] = data[field]; });
   round.updatedBy = updatedBy;
   await round.save();
+
+  // Invalidate capacity cache — vessel, dates, or status may have changed
+  invalidateRoundCache(id);
 
   return Round.findById(id)
     .populate('serviceId', 'serviceCode serviceName')

@@ -6,6 +6,8 @@ const Voyage    = require('../voyages/voyage.model');
 const Port      = require('../locations/port.model');
 const { nextNumber } = require('../../utils/autoNumber');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
+const { invalidateRoundCache, computeVoyagePreview } = require('../capacity/capacity.service');
+const { capacityEnforcement } = require('../../config/env');
 
 // ─── Status transition map ────────────────────────────────────────────────────
 const STATUS_TRANSITIONS = {
@@ -130,6 +132,29 @@ const create = async (data, createdBy) => {
   const totalFreight  = Number(data.quantity) * Number(data.freightRate);
   const { totalFreight: _ig, ...safeData } = data;
 
+  // Sprint 022 — pre-flight capacity check (feature-flagged)
+  const enforcementMode = capacityEnforcement();
+  let capacityWarning = null;
+  if (enforcementMode && data.containerTypeId && voyage.roundId) {
+    try {
+      const preview = await computeVoyagePreview(
+        voyage.roundId,
+        String(data.voyageId),
+        Number(data.quantity) || 1,
+        String(data.containerTypeId),
+      );
+      if (!preview.canFit) {
+        if (enforcementMode === 'strict') {
+          throw { status: 400, message: `Booking would exceed vessel capacity on voyage ${preview.voyage?.voyageNumber}. Added ${preview.addedTEU} TEU; remaining after: ${preview.voyage?.remainingAfter} TEU.`, capacityPreview: preview };
+        }
+        capacityWarning = preview;
+      }
+    } catch (capErr) {
+      if (capErr.status === 400 && capErr.capacityPreview) throw capErr;
+      // Capacity engine errors are non-blocking in all other cases
+    }
+  }
+
   const booking = await Booking.create({
     ...safeData,
     bookingNumber,
@@ -139,7 +164,13 @@ const create = async (data, createdBy) => {
     updatedBy: createdBy,
   });
 
-  return getById(booking._id);
+  // Invalidate per-leg capacity cache for this round
+  invalidateRoundCache(voyage.roundId);
+
+  const saved = await getById(booking._id);
+  // Attach capacity warning if in warn mode (non-blocking overbooking)
+  if (capacityWarning) saved._capacityWarning = capacityWarning;
+  return saved;
 };
 
 // ─── Update ───────────────────────────────────────────────────────────────────
@@ -168,6 +199,11 @@ const update = async (id, data, updatedBy) => {
   const { totalFreight: _ig1, bookingNumber: _ig2, voyageId: _ig3, ...safeData } = data;
   Object.assign(booking, { ...safeData, totalFreight, updatedBy });
   await booking.save();
+
+  // Invalidate capacity cache — quantity, pol, pod, or status may have changed
+  const updatedVoyage = await Voyage.findById(booking.voyageId).select('roundId').lean();
+  if (updatedVoyage) invalidateRoundCache(updatedVoyage.roundId);
+
   return getById(booking._id);
 };
 
@@ -183,10 +219,14 @@ const softDelete = async (id, deletedBy) => {
     if (hasInvoice) throw { status: 400, message: 'Cannot delete — an invoice exists for this booking' };
   }
 
+  const deletedVoyage = await Voyage.findById(booking.voyageId).select('roundId').lean();
   booking.isDeleted = true;
   booking.deletedAt = new Date();
   booking.updatedBy = deletedBy;
   await booking.save();
+
+  // Invalidate capacity cache — a booking was removed from the round
+  if (deletedVoyage) invalidateRoundCache(deletedVoyage.roundId);
 };
 
 // ─── Get voyage ports (for booking form dropdown) ─────────────────────────────
@@ -196,4 +236,4 @@ const getVoyagePorts = async (voyageId) => {
   return Port.find({ _id: { $in: portIds }, isDeleted: false }).select('name code').lean();
 };
 
-module.exports = { list, getById, create, update, softDelete, getVoyagePorts };
+module.exports = { list, getById, create, update, softDelete, getVoyagePorts, getVoyagePortIds };

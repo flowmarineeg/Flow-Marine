@@ -7,6 +7,7 @@ const auth    = require('../../middleware/auth');
 const rbac    = require('../../middleware/rbac');
 
 router.use(auth);
-router.get('/stats', rbac('dashboard'), ctrl.getStats); // Sprint019: added RBAC
+router.get('/stats',             rbac('dashboard'), ctrl.getStats);
+router.get('/fleet-utilisation', rbac('dashboard'), ctrl.getFleetUtilisation); // Sprint 022
 
 module.exports = router;

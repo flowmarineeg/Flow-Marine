@@ -14,5 +14,6 @@ router.get('/voyage-performance',   ctrl.getVoyagePerformance);
 router.get('/bookings',             ctrl.getBookingReport);
 router.get('/revenue',              ctrl.getRevenueReport);
 router.get('/expenses',             ctrl.getExpenseReport);
+router.get('/round-capacity',       ctrl.getRoundCapacityReport);
 
 module.exports = router;

@@ -12,4 +12,14 @@ const getStats = async (req, res, next) => {
   }
 };
 
-module.exports = { getStats };
+// Sprint 022 — Fleet Utilisation (SuperAdmin only)
+const getFleetUtilisation = async (req, res, next) => {
+  try {
+    const data = await dashboardService.getFleetUtilisation();
+    return success(res, data, 'Fleet utilisation retrieved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getStats, getFleetUtilisation };
