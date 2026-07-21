@@ -117,9 +117,7 @@ export default function BookingDetailCard({ booking, onMutated }) {
         <div className="bg-gradient-to-r from-teal-50 to-teal-100/50 border border-teal-200 rounded-xl px-5 py-4 flex items-center justify-between">
           <div>
             <p className="text-[11px] font-semibold text-teal-600 uppercase tracking-wider">Total Freight</p>
-            <p className="text-xs text-teal-500 mt-0.5">
-              {booking.quantity} × {fmtMoney(booking.freightRate)} / unit
-            </p>
+            <p className="text-xs text-teal-500 mt-0.5">Rate per container</p>
           </div>
           <span className="text-3xl font-bold text-teal-700 mono">{fmtMoney(booking.totalFreight)}</span>
         </div>
@@ -138,16 +136,17 @@ export default function BookingDetailCard({ booking, onMutated }) {
           <InfoRow label="POL"            value={booking.polId ? `${booking.polId.name}${booking.polId.code ? ` (${booking.polId.code})` : ''}` : null} />
           <InfoRow label="POD"            value={booking.podId ? `${booking.podId.name}${booking.podId.code ? ` (${booking.podId.code})` : ''}` : null} />
           <InfoRow label="Commodity"      value={booking.commodity} />
-          <InfoRow label="Quantity"       value={booking.quantity?.toLocaleString()} />
           <InfoRow label="Freight Rate"   value={fmtMoney(booking.freightRate)} />
-          {/* DG badge */}
+          {/* Hazardous / IMDG — Sprint 026: dg field name kept, label changed */}
           <div className="flex flex-col gap-0.5">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Dangerous Goods</p>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Hazardous</p>
             {booking.dg ? (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">DG</span>
-                {booking.dgPercent != null && (
-                  <span className="text-[13px] font-semibold text-red-500">{booking.dgPercent}%</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Hazardous</span>
+                {booking.imdgCode ? (
+                  <span className="text-[13px] font-semibold text-red-600">{booking.imdgCode}</span>
+                ) : (
+                  <span className="text-[12px] text-red-400 italic">No IMDG Code</span>
                 )}
               </div>
             ) : (

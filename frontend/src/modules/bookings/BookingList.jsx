@@ -20,6 +20,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Modal         from '@/components/ui/Modal';
 import ExportButton  from '@/components/ui/ExportButton';
 import BookingForm   from '@/modules/bookings/BookingForm';
+import DischargeListExportModal from '@/modules/bookings/DischargeListExportModal';
 
 const fmt      = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
@@ -38,6 +39,7 @@ export default function BookingList() {
   const [selected,     setSelected]     = useState([]);
   const [modal,        setModal]        = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [dischargeOpen, setDischargeOpen] = useState(false); // Sprint 027
 
   // Layer 2
   const { data, isLoading } = useQuery({
@@ -145,6 +147,18 @@ export default function BookingList() {
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <ExportButton module="bookings" filters={{ voyageId, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />
+          {/* Sprint 027 — Discharge List export */}
+          {(can('bookings', 'export') && can('export', 'read')) && (
+            <button
+              onClick={() => setDischargeOpen(true)}
+              className="btn btn-secondary btn-sm flex items-center gap-1.5"
+            >
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+              </svg>
+              Discharge List
+            </button>
+          )}
         </div>
 
         {/* Table — overflow-x-auto clips the table, min-w-0 on the card prevents page blowout */}
@@ -162,7 +176,7 @@ export default function BookingList() {
                     <th className="w-10 px-4 py-2.5">
                       <input type="checkbox" checked={selected.length === bookings.length && bookings.length > 0} onChange={toggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
                     </th>
-                    {['Booking No','Voyage','Agent','Shipper / Consignee','Container','Qty','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
+                    {['Booking No','Voyage','Agent','Shipper / Consignee','Container','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -187,7 +201,6 @@ export default function BookingList() {
                           {b.containerTypeId?.code}<span className="text-gray-400 ml-1">{b.containerTypeId?.size}</span>
                         </span>
                       </td>
-                      <td className="mono text-xs text-gray-600">{b.quantity}</td>
                       <td><span className="mono text-xs font-semibold text-teal-700 whitespace-nowrap">{fmtMoney(b.totalFreight)}</span></td>
                       <td><Badge label={b.status} /></td>
                       <td>
@@ -303,6 +316,14 @@ export default function BookingList() {
         loading={deleteMutation.isPending}
         title="Delete Booking"
         message={`Delete booking "${deleteTarget?.bookingNumber}"? This is permanent.`}
+      />
+
+      {/* Sprint 027 — Discharge List export modal */}
+      <DischargeListExportModal
+        open={dischargeOpen}
+        onClose={() => setDischargeOpen(false)}
+        voyages={voyages}
+        agents={agents}
       />
     </div>
   );

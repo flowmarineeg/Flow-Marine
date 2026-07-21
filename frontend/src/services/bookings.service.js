@@ -18,4 +18,7 @@ export const bookingsService = {
   createManual:    (data)        => api.post(`${BASE}/manual`, data),
   updateManual:    (id, data)    => api.put(`${BASE}/manual/${id}`, data),
   removeManual:    (id)          => api.delete(`${BASE}/manual/${id}`),
+  // Sprint 027 — Discharge List export
+  exportDischargeList: ({ voyageId, agentId }) =>
+    api.get(`${BASE}/export/discharge-list`, { params: { voyageId, agentId }, responseType: 'blob' }),
 };

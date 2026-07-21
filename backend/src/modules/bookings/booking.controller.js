@@ -43,4 +43,19 @@ const remove = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { list, getById, getVoyagePorts, create, update, remove };
+// ─── Sprint 027: Export Discharge List ───────────────────────────────────────
+const exportDischargeList = async (req, res, next) => {
+  try {
+    const { voyageId, agentId } = req.query;
+    if (!voyageId || !agentId) {
+      return error(res, 'voyageId and agentId are required', 400);
+    }
+    const { buffer, filename, count } = await bookingService.exportDischargeList(voyageId, agentId);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Export-Count', String(count));
+    res.end(Buffer.from(buffer));
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+module.exports = { list, getById, getVoyagePorts, create, update, remove, exportDischargeList };

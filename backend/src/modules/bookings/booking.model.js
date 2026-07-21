@@ -14,14 +14,13 @@ const bookingSchema = new mongoose.Schema(
     polId:           { type: mongoose.Schema.Types.ObjectId, ref: 'Port',          required: true },
     podId:           { type: mongoose.Schema.Types.ObjectId, ref: 'Port',          required: true },
     containerTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainerType', required: true },
-    quantity:        { type: Number, required: true, min: 1 },
     freightRate:     { type: Number, required: true, min: 0 },
     totalFreight:    { type: Number, required: true, min: 0 },
     commodity:       { type: String, trim: true, default: null },
     containerNumber: { type: String, trim: true, required: true, uppercase: true, index: true }, // Primary ref e.g. MSCU1234567
     vgm:             { type: Number, min: 0, default: null },                      // Verified Gross Mass (kg)
-    dg:              { type: Boolean, default: false },                             // Dangerous Goods flag
-    dgPercent:       { type: Number, min: 0, max: 100, default: null },             // DG percentage (0–100)
+    dg:              { type: Boolean, default: false },                             // Dangerous Goods / Hazardous flag (UI label: 'Hazardous')
+    imdgCode:        { type: String, trim: true, default: null, maxlength: 50 },    // IMDG Code (required when dg=true) — replaces dgPercent (Sprint026)
     containerStatus: { type: String, enum: ['Full', 'Empty'], default: null },      // Full or Empty only
     remarks:         { type: String, trim: true, default: null },
     status:          { type: String, enum: BOOKING_STATUS, default: 'Pending' },

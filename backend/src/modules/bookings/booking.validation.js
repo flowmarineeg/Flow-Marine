@@ -22,15 +22,15 @@ const validateCreate = [
   body('polId').notEmpty().isMongoId().withMessage('Valid POL port is required'),
   body('podId').notEmpty().isMongoId().withMessage('Valid POD port is required'),
   body('containerTypeId').notEmpty().isMongoId().withMessage('Valid container type is required'),
-  body('quantity').notEmpty().isInt({ min: 1 }).withMessage('Quantity must be a positive integer'),
-  // slotCount removed
+  // Sprint 025: quantity removed from Layer 2 entirely
   body('freightRate').notEmpty().isFloat({ min: 0 }).withMessage('Freight rate must be a non-negative number'),
   body('status').optional().isIn(BOOKING_STATUS).withMessage(`Must be one of: ${BOOKING_STATUS.join(', ')}`),
   // New cargo detail fields
   body('containerNumber').notEmpty().withMessage('Container number is required').trim().toUpperCase().isLength({ max: 20 }).withMessage('Container number max 20 chars'),
   body('vgm').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('VGM must be a non-negative number'),
-  body('dg').optional({ nullable: true }).isBoolean().withMessage('DG must be true or false'),
-  body('dgPercent').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 100 }).withMessage('DG percent must be 0–100'),
+  body('dg').optional({ nullable: true }).isBoolean().withMessage('Hazardous must be true or false'),
+  body('imdgCode').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 50 }).withMessage('IMDG Code must be 50 characters or less'),
+  // Sprint 026: dgPercent removed — replaced by imdgCode
   body('containerStatus').optional({ nullable: true, checkFalsy: true }).isIn(['Full', 'Empty']).withMessage('Container status must be Full or Empty'),
   handle,
 ];
@@ -42,16 +42,16 @@ const validateUpdate = [
   body('carrierName').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
   body('polId').optional().isMongoId(),
   body('podId').optional().isMongoId(),
-  body('containerTypeId').optional().isMongoId(),
-  body('quantity').optional().isInt({ min: 1 }),
-  // slotCount removed
-  body('freightRate').optional().isFloat({ min: 0 }),
+  body('containerTypeId').optional().isMongoId().withMessage('Valid container type is required'),
+  // Sprint 025: quantity removed from Layer 2 entirely
+  body('freightRate').optional().isFloat({ min: 0 }).withMessage('Freight rate must be a non-negative number'),
   body('status').optional().isIn(BOOKING_STATUS),
   // New cargo detail fields
   body('containerNumber').optional().trim().toUpperCase().isLength({ max: 20 }),
   body('vgm').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
-  body('dg').optional({ nullable: true }).isBoolean(),
-  body('dgPercent').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 100 }),
+  body('dg').optional({ nullable: true }).isBoolean().withMessage('Hazardous must be true or false'),
+  body('imdgCode').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 50 }).withMessage('IMDG Code must be 50 characters or less'),
+  // Sprint 026: dgPercent removed — replaced by imdgCode
   body('containerStatus').optional({ nullable: true, checkFalsy: true }).isIn(['Full', 'Empty']).withMessage('Container status must be Full or Empty'),
   handle,
 ];

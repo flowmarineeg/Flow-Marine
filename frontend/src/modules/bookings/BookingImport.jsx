@@ -20,6 +20,8 @@ const ROW_STYLES = {
 };
 
 // ─── Excel column header → internal field ────────────────────────────────────
+// Sprint 026: aliases expanded; currency removed; dg/dangerous goods restored;
+//             hazardous added as alias for dg; imdg code added; size/length added
 const EXCEL_COLUMN_MAP = {
   'booking number': 'bookingNumber',
   'booking no': 'bookingNumber',
@@ -32,32 +34,31 @@ const EXCEL_COLUMN_MAP = {
   'type': 'containerType',
   'container size': 'containerSize',
   'cntr size': 'containerSize',
-  'size': 'containerSize',
+  'size': 'containerSize',         // new alias
+  'length': 'containerSize',       // new alias
   'pol': 'pol',
   'port of loading': 'pol',
   'pod': 'pod',
   'port of discharge': 'pod',
-  'quantity': 'quantity',
-  'qty': 'quantity',
   'rate': 'rate',
   'freight rate': 'rate',
-  'currency': 'currency',
-  'cur': 'currency',
+  // currency removed in Sprint 026
   'shipper': 'shipper',
   'consignee': 'consignee',
   'carrier name': 'carrierName',
-  'carrier': 'carrierName',
+  'carrier': 'carrierName',        // alias
   'commodity': 'commodity',
   'vgm': 'vgm',
   'verified gross mass': 'vgm',
-  'dg': 'dg',
-  'dangerous goods': 'dg',
-  'dg %': 'dgPercent',
-  'dg percent': 'dgPercent',
-  'dg percentage': 'dgPercent',
+  'hazardous': 'dg',               // new alias — Excel header maps to internal dg field
+  'dg': 'dg',                      // restored (removed in Sprint 025, back in Sprint 026)
+  'dangerous goods': 'dg',         // restored
+  // dg % / dg percent removed in Sprint 026 — replaced by imdg code
+  'imdg code': 'imdgCode',         // new
+  'imdg': 'imdgCode',              // new alias
   'container status': 'containerStatus',
   'cntr status': 'containerStatus',
-  'status': 'containerStatus',
+  // bare 'status' NOT mapped — conflicts with booking status field
 };
 
 // ─── Parse Excel ─────────────────────────────────────────────────────────────
@@ -194,16 +195,15 @@ export default function BookingImport() {
           containerType: r.containerType,
           containerSize: r.containerSize,
           pol: r.pol, pod: r.pod,
-          quantity: r.quantity,
           rate: r.rate,
-          currency: r.currency,
+          // currency removed Sprint 026
           shipper: r.shipper,
           consignee: r.consignee,
           carrierName: r.carrierName,
           commodity: r.commodity,
           vgm: r.vgm,
           dg: r.dg,
-          dgPercent: r.dgPercent,
+          imdgCode: r.imdgCode,    // Sprint 026: replaces dgPercent
           containerStatus: r.containerStatus,
         })),
         agentId, voyageId, importType,
@@ -370,16 +370,18 @@ export default function BookingImport() {
           </svg>
           {importType === 'booking' ? (
             <span>
-              <strong>Booking mode:</strong> Creates new bookings linked to the selected voyage.
-              Each row is matched by <strong>Container Number</strong> — duplicate container numbers on this voyage are flagged red and skipped.
-              Only valid green rows are saved.
+              <strong>Booking mode:</strong> Creates or updates bookings linked to the selected agent and voyage.
+              Each row is matched by <strong>Container Number</strong> within the selected agent’s scope —
+              existing containers are updated (orange), new ones created (green).
+              Only valid rows are saved. No bookings are cancelled.
             </span>
           ) : (
             <span>
-              <strong>Final Loading mode:</strong> Matches rows by <strong>Container Number</strong> — existing bookings with the same container number on this voyage
-              are updated (orange), new ones created (green).
+              <strong>Final Loading mode:</strong> Matches rows by <strong>Container Number</strong> within the selected agent’s scope —
+              existing bookings are updated (orange), new ones created (green).
               Matched bookings are marked <strong>Final Loading</strong>.
-              Bookings on this voyage whose container number is <strong>NOT</strong> in this file are marked <strong>Cancelled</strong>.
+              Bookings belonging to the <strong>same agent</strong> on this voyage whose container number is <strong>NOT</strong> in this file
+              are marked <strong>Cancelled</strong>. Bookings from other agents are not affected.
               Invalid rows (red) are always skipped.
             </span>
           )}
@@ -410,23 +412,21 @@ export default function BookingImport() {
           <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Expected Excel Columns</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {[
-              { col: 'Container Number', note: 'REQUIRED — primary match key e.g. MSCU1234567', req: true },
-              { col: 'Container Type', note: 'e.g. 40HC, 20DRY, 40RF', req: true },
-              { col: 'Container Size', note: 'e.g. 40ft, 20ft' },
-              { col: 'Container Status', note: 'Full or Empty only' },
+              { col: 'Container Number', note: 'Primary match key e.g. MSCU1234567', req: true },
+              { col: 'Container Type', note: 'e.g. 40HC, 20DRY — code or size', req: true },
+              { col: 'Container Size', note: 'e.g. 40ft, 20ft. Also accepts: Size, Length' },
+              { col: 'Container Status', note: 'Full or Empty only', req: true },
               { col: 'POL', note: 'Port of Loading — name or UNLOCODE', req: true },
               { col: 'POD', note: 'Port of Discharge — name or UNLOCODE', req: true },
-              { col: 'Quantity', note: 'Number of containers', req: true },
-              { col: 'Rate', note: 'Freight rate per unit', req: true },
-              { col: 'Currency', note: 'e.g. USD, EUR, SGD', req: true },
+              { col: 'Rate', note: 'Freight rate per container (one row = one container)', req: true },
               { col: 'Booking Number', note: 'Optional — auto-generated if blank' },
               { col: 'Shipper', note: 'Optional — shipper company name' },
               { col: 'Consignee', note: 'Optional — consignee company name' },
-              { col: 'Carrier Name', note: 'Optional — e.g. MSC, Maersk, COSCO' },
+              { col: 'Carrier Name', note: 'Optional — e.g. MSC, Maersk. Also accepts: Carrier' },
               { col: 'Commodity', note: 'Optional — cargo description' },
               { col: 'VGM', note: 'Optional — Verified Gross Mass in kg' },
-              { col: 'DG', note: 'Optional — yes/no or true/false' },
-              { col: 'DG %', note: 'Optional — DG percentage 0–100 (only if DG=yes)' },
+              { col: 'Hazardous', note: 'Optional — Yes/No. Also accepts: DG, Dangerous Goods' },
+              { col: 'IMDG Code', note: 'Required if Hazardous=Yes — free text e.g. 3.1, UN1203' },
             ].map(({ col, note, req }) => (
               <div key={col} className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
                 <p className="text-[12px] font-semibold text-gray-700">
@@ -448,8 +448,8 @@ export default function BookingImport() {
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mr-1">Preview</p>
             {importType === 'booking' ? (
               <>
-                {counts.valid > 0 && <SummaryBadge label="Valid" count={counts.valid} color="bg-green-100 text-green-700" />}
-                {counts.duplicate > 0 && <SummaryBadge label="Duplicate" count={counts.duplicate} color="bg-red-100 text-red-600" />}
+                {counts.valid > 0 && <SummaryBadge label="New" count={counts.valid} color="bg-green-100 text-green-700" />}
+                {counts.update > 0 && <SummaryBadge label="Will Update" count={counts.update} color="bg-amber-100 text-amber-700" />}
                 {counts.invalid > 0 && <SummaryBadge label="Invalid" count={counts.invalid} color="bg-red-100 text-red-600" />}
               </>
             ) : (
@@ -476,7 +476,7 @@ export default function BookingImport() {
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-300 inline-block" />
               {importType === 'booking' ? 'Valid — will be created' : 'New — will be created'}</span>
             {importType === 'finalLoading' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-300 inline-block" />Existing — will be updated + marked Final Loading</span>}
-            {importType === 'booking' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block" />Duplicate — skipped</span>}
+            {importType === 'booking' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-300 inline-block" />Existing — will be updated</span>}
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block" />Invalid — skipped</span>
             <span className="text-gray-400">· Edit any cell then Re-validate.</span>
           </div>
@@ -489,7 +489,8 @@ export default function BookingImport() {
               </svg>
               <span>
                 After confirming: all imported bookings will be marked <strong>Final Loading</strong>.
-                Any existing bookings on this voyage that are <strong>not</strong> in this file will be marked <strong>Cancelled</strong>.
+                Any existing bookings for the <strong>same agent</strong> on this voyage that are <strong>not</strong> in this file will be marked <strong>Cancelled</strong>.
+                Bookings from other agents are not affected.
               </span>
             </div>
           )}
@@ -500,7 +501,7 @@ export default function BookingImport() {
               <table className="w-full border-collapse text-[12px]">
                 <thead>
                   <tr className="table-header text-[11px]">
-                    {['#', 'Status', 'Booking No', 'Cntr No *', 'Type', 'Size', 'Cntr Status', 'POL', 'POD', 'Qty', 'Rate', 'Cur', 'Carrier', 'Commodity', 'VGM', 'DG', 'DG%', 'Shipper', 'Consignee', 'Issues'].map(h => (
+                    {['#', 'Status', 'Booking No', 'Cntr No *', 'Type', 'Size', 'Cntr Status *', 'POL', 'POD', 'Rate', 'Carrier', 'Commodity', 'VGM', 'Hazardous', 'IMDG Code', 'Shipper', 'Consignee', 'Issues'].map(h => (
                       <th key={h} className="!py-2 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -521,14 +522,13 @@ export default function BookingImport() {
                         <td className="px-1.5 py-1 min-w-[80px]"><EditableCell value={row.containerStatus} onChange={v => updateRow(idx, 'containerStatus', v)} hasError={row._errors?.some(e => e.includes('Container Status'))} /></td>
                         <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pol} onChange={v => updateRow(idx, 'pol', v)} hasError={row._errors?.some(e => e.includes('POL'))} /></td>
                         <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pod} onChange={v => updateRow(idx, 'pod', v)} hasError={row._errors?.some(e => e.includes('POD'))} /></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.quantity} onChange={v => updateRow(idx, 'quantity', v)} hasError={row._errors?.some(e => e.includes('Quantity'))} /></td>
                         <td className="px-1.5 py-1 min-w-[65px]"><EditableCell value={row.rate} onChange={v => updateRow(idx, 'rate', v)} hasError={row._errors?.some(e => e.includes('Rate'))} /></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.currency} onChange={v => updateRow(idx, 'currency', v)} /></td>
+                        {/* currency column removed Sprint 026 */}
                         <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.carrierName} onChange={v => updateRow(idx, 'carrierName', v)} /></td>
                         <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.commodity} onChange={v => updateRow(idx, 'commodity', v)} /></td>
                         <td className="px-1.5 py-1 min-w-[60px]"><EditableCell value={row.vgm} onChange={v => updateRow(idx, 'vgm', v)} /></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.dg} onChange={v => updateRow(idx, 'dg', v)} /></td>
-                        <td className="px-1.5 py-1 min-w-[45px]"><EditableCell value={row.dgPercent} onChange={v => updateRow(idx, 'dgPercent', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[70px]"><EditableCell value={row.dg} onChange={v => updateRow(idx, 'dg', v)} /></td>
+                        <td className="px-1.5 py-1 min-w-[90px]"><EditableCell value={row.imdgCode} onChange={v => updateRow(idx, 'imdgCode', v)} hasError={row._errors?.some(e => e.includes('IMDG'))} /></td>
                         <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.shipper} onChange={v => updateRow(idx, 'shipper', v)} /></td>
                         <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.consignee} onChange={v => updateRow(idx, 'consignee', v)} /></td>
                         <td className="px-2 py-1.5 min-w-[140px] max-w-[180px]">

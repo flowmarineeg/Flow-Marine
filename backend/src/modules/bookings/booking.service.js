@@ -129,7 +129,8 @@ const create = async (data, createdBy) => {
   }
 
   const bookingNumber = await nextNumber('booking');
-  const totalFreight  = Number(data.quantity) * Number(data.freightRate);
+  // Sprint 024: each L2 booking = ONE container; totalFreight = freightRate (flat per container)
+  const totalFreight  = Number(data.freightRate);
   const { totalFreight: _ig, ...safeData } = data;
 
   // Sprint 022 — pre-flight capacity check (feature-flagged)
@@ -137,10 +138,10 @@ const create = async (data, createdBy) => {
   let capacityWarning = null;
   if (enforcementMode && data.containerTypeId && voyage.roundId) {
     try {
+      // Sprint 025: quantity removed from L2; one booking = one container
       const preview = await computeVoyagePreview(
         voyage.roundId,
         String(data.voyageId),
-        Number(data.quantity) || 1,
         String(data.containerTypeId),
       );
       if (!preview.canFit) {
@@ -192,15 +193,15 @@ const update = async (id, data, updatedBy) => {
     throw { status: 400, message: 'Port of Loading and Port of Discharge must be different' };
   }
 
-  const quantity    = data.quantity    !== undefined ? Number(data.quantity)    : booking.quantity;
-  const freightRate = data.freightRate !== undefined ? Number(data.freightRate) : booking.freightRate;
-  const totalFreight = quantity * freightRate;
+  const freightRate  = data.freightRate !== undefined ? Number(data.freightRate) : booking.freightRate;
+  // Sprint 024: each L2 booking = ONE container; totalFreight = freightRate (flat per container)
+  const totalFreight = freightRate;
 
   const { totalFreight: _ig1, bookingNumber: _ig2, voyageId: _ig3, ...safeData } = data;
   Object.assign(booking, { ...safeData, totalFreight, updatedBy });
   await booking.save();
 
-  // Invalidate capacity cache — quantity, pol, pod, or status may have changed
+  // Invalidate capacity cache — pol, pod, status or rate may have changed
   const updatedVoyage = await Voyage.findById(booking.voyageId).select('roundId').lean();
   if (updatedVoyage) invalidateRoundCache(updatedVoyage.roundId);
 
@@ -236,4 +237,113 @@ const getVoyagePorts = async (voyageId) => {
   return Port.find({ _id: { $in: portIds }, isDeleted: false }).select('name code').lean();
 };
 
-module.exports = { list, getById, create, update, softDelete, getVoyagePorts, getVoyagePortIds };
+// ─── Sprint 027: Export Discharge List ───────────────────────────────────────
+// Columns ordered operational-first; Rate last.
+// Reuses ExcelJS pattern identical to export.service.js buildExcelBuffer.
+const DISCHARGE_COLUMNS = [
+  { header: 'Container Number',  key: 'containerNumber',  width: 20 },
+  { header: 'Container Size',    key: 'containerSize',    width: 14 },
+  { header: 'Container Type',    key: 'containerType',    width: 14 },
+  { header: 'POL',               key: 'pol',              width: 18 },
+  { header: 'POD',               key: 'pod',              width: 18 },
+  { header: 'Container Status',  key: 'containerStatus',  width: 16 },
+  { header: 'Carrier Name',      key: 'carrierName',      width: 22 },
+  { header: 'Shipper',           key: 'shipper',          width: 28 },
+  { header: 'Consignee',         key: 'consignee',        width: 28 },
+  { header: 'Commodity',         key: 'commodity',        width: 22 },
+  { header: 'VGM (kg)',          key: 'vgm',              width: 10 },
+  { header: 'Hazardous',         key: 'hazardous',        width: 12 },
+  { header: 'IMDG Code',         key: 'imdgCode',         width: 16 },
+  { header: 'Rate (USD)',         key: 'rate',             width: 12 },
+];
+
+const exportDischargeList = async (voyageId, agentId) => {
+  const ExcelJS = require('exceljs');
+  const Agent   = require('../agents/agent.model');
+
+  // Validate that voyage and agent exist
+  const [voyage, agent] = await Promise.all([
+    Voyage.findById(voyageId).select('voyageNumber').lean(),
+    Agent.findById(agentId).select('agentCode agentName').lean(),
+  ]);
+  if (!voyage) throw { status: 404, message: 'Voyage not found' };
+  if (!agent)  throw { status: 404, message: 'Agent not found' };
+
+  // Fetch ONLY Final Loading bookings in (Voyage + Agent) scope
+  // This always represents the CURRENT state — not a snapshot.
+  const bookings = await Booking.find({
+    voyageId,
+    agentId,
+    status:    'Final Loading',
+    isDeleted: false,
+  })
+    .populate('polId',           'name')
+    .populate('podId',           'name')
+    .populate('containerTypeId', 'code size')
+    .sort({ containerNumber: 1 })
+    .lean();
+
+  if (!bookings.length) {
+    throw { status: 404, message: 'No Final Loading bookings found for this Voyage and Agent' };
+  }
+
+  // Map to flat rows — no ObjectIds, no internal fields
+  const rows = bookings.map(b => ({
+    containerNumber: b.containerNumber                     || '',
+    containerSize:   b.containerTypeId?.size              || '',
+    containerType:   b.containerTypeId?.code              || '',
+    pol:             b.polId?.name                        || '',
+    pod:             b.podId?.name                        || '',
+    containerStatus: b.containerStatus                    || '',
+    carrierName:     b.carrierName                        || '',
+    shipper:         b.shipper                            || '',
+    consignee:       b.consignee                          || '',
+    commodity:       b.commodity                          || '',
+    vgm:             b.vgm != null ? b.vgm                : '',
+    hazardous:       b.dg ? 'Yes' : 'No',
+    imdgCode:        b.imdgCode                           || '',
+    rate:            b.freightRate != null ? b.freightRate : '',
+  }));
+
+  // Build Excel — same ExcelJS pattern as export.service.js buildExcelBuffer
+  const workbook  = new ExcelJS.Workbook();
+  workbook.creator = 'Logistics SaaS';
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet('Discharge List');
+  worksheet.columns = DISCHARGE_COLUMNS;
+
+  // Header styling (matches project standard)
+  const headerRow = worksheet.getRow(1);
+  headerRow.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+  headerRow.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4057' } };
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+  headerRow.height    = 22;
+
+  // Data rows with alternating stripe
+  rows.forEach((doc, idx) => {
+    const dataRow = worksheet.addRow(doc);
+    dataRow.eachCell(cell => {
+      cell.fill = {
+        type: 'pattern', pattern: 'solid',
+        fgColor: { argb: idx % 2 === 0 ? 'FFFFFFFF' : 'FFF8F9FA' },
+      };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFE4E7EC' } } };
+    });
+  });
+
+  // Freeze header
+  worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  // Filename: Discharge_List_{VoyageNumber}_{AgentCode}.xlsx
+  const sanitize = (s) => String(s || '').replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, '_').trim();
+  const voyNum   = sanitize(voyage.voyageNumber);
+  const agCode   = sanitize(agent.agentCode || (agent.agentName || '').slice(0, 10) || 'AGENT');
+  const filename = `Discharge_List_${voyNum}_${agCode}.xlsx`;
+
+  return { buffer, filename, count: rows.length };
+};
+
+module.exports = { list, getById, create, update, softDelete, getVoyagePorts, getVoyagePortIds, exportDischargeList };

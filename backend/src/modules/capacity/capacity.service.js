@@ -10,8 +10,9 @@ const { resolveTEU } = require('../../utils/teuResolver');
 
 const CACHE_TTL = 60_000; // 60 seconds
 
-// ── Layer 2 statuses counted toward capacity (operational confirmed cargo)
-const L2_STATUSES = ['Confirmed', 'Final Loading'];
+// ── Layer 2 statuses counted toward capacity (Sprint 025: Pending now included)
+// ── Cancelled and isDeleted=true are the only exclusions.
+const L2_STATUSES = ['Pending', 'Confirmed', 'Final Loading'];
 
 // ── Layer 1 statuses counted toward capacity (planning indicator):
 // ── Pending counts — only Cancelled and Deleted are excluded.
@@ -75,13 +76,13 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
       .sort({ sequence: 1 })
       .lean(),
 
-    // Layer 2 — operational bookings
+    // Layer 2 — operational bookings (Sprint 025: quantity removed; TEU from container size only)
     Booking.find({
       voyageId:  { $in: voyageIds },
       isDeleted: false,
       status:    { $in: l2Statuses },
     })
-      .select('quantity voyageId polId podId containerTypeId containerNumber status')
+      .select('voyageId polId podId containerTypeId containerNumber status')
       .populate('containerTypeId', 'code size isDeleted')
       .lean(),
 
@@ -134,7 +135,8 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     if (!matched) {
       warnings.push({ code: 'MISSING_TEU_MAPPING', message: `Unrecognised container size "${b.containerTypeId.size}" for booking ${b._id} — defaulting to 1 TEU`, bookingId: b._id, containerNumber: b.containerNumber, size: b.containerTypeId.size });
     }
-    const effectiveTEU = b.quantity * teu;
+    // Sprint 025: one booking = one container; TEU derived from size only (no quantity)
+    const effectiveTEU = teu;
 
     const polId = String(b.polId);
     const podId = String(b.podId);
@@ -291,8 +293,8 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     : null;
 
   const totalLoadedTEU    = loadedTEU.reduce((s, v) => s + v, 0);
-  const totalBookedUnits  = [...l2Events, ...l1Events].reduce((s, _) => s, 0); // event count doesn't equal units, compute from source
-  const totalL2Units      = l2Bookings.reduce((s, b) => s + (b.quantity || 0), 0);
+  // Sprint 025: L2 = one container per booking (no quantity); L2 units = booking count
+  const totalL2Units      = l2Bookings.length;
   const totalL1Units      = l1Bookings.reduce((s, m) => s + (m.totalUnits || 0), 0);
 
   const result = {
@@ -350,13 +352,14 @@ const computeVesselActiveCapacity = async (vesselId) => {
 };
 
 // ─── computeVoyagePreview ─────────────────────────────────────────────────────
-const computeVoyagePreview = async (roundId, voyageId, quantity, containerTypeId) => {
+// Sprint 025: quantity param removed — one booking = one container; TEU from size only
+const computeVoyagePreview = async (roundId, voyageId, containerTypeId) => {
   const ContainerType = require('../containerTypes/containerType.model');
   const ct = await ContainerType.findById(containerTypeId).select('size').lean();
   if (!ct) throw { status: 400, message: 'Container type not found' };
 
   const { teu }  = resolveTEU(ct.size);
-  const addedTEU = quantity * teu;
+  const addedTEU = teu; // one container contributes exactly its size TEU
 
   const current   = await computeRoundCapacity(roundId);
   const cap       = current.vessel.capacity;

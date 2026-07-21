@@ -45,6 +45,9 @@ router.post('/import/save',    rbac('bookings', 'import'), audit('bookings'), as
 // Voyage port lookup — used by booking form dropdown
 router.get('/voyage-ports/:voyageId', rbac('bookings'), ctrl.getVoyagePorts);
 
+// Sprint 027: Discharge List export — BEFORE /:id to avoid route shadowing
+router.get('/export/discharge-list', rbac('bookings', 'export'), ctrl.exportDischargeList);
+
 router.get('/',      rbac('bookings'), ctrl.list);
 router.get('/:id',   rbac('bookings'), ctrl.getById);
 router.post('/',     rbac('bookings'), audit('bookings'), validateCreate, ctrl.create);

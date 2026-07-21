@@ -28,18 +28,15 @@ const validateRow = (row) => {
   if (!row.pol) errors.push('POL is required');
   if (!row.pod) errors.push('POD is required');
   if (!row.containerType && !row.containerSize) errors.push('Container Type is required');
-  if (!row.quantity || isNaN(Number(row.quantity)) || Number(row.quantity) < 1)
-    errors.push('Quantity must be a positive number');
+  // Sprint 025: quantity removed from Layer 2; one row = one container
   if (row.rate === undefined || row.rate === '' || isNaN(Number(row.rate)) || Number(row.rate) < 0)
     errors.push('Rate must be a non-negative number');
-  if (!row.currency) errors.push('Currency is required');
-  // containerStatus: only Full or Empty
-  if (row.containerStatus && !['Full', 'Empty'].includes(row.containerStatus))
+  // Sprint 026: currency removed; containerStatus required; dgPercent -> imdgCode
+  if (!row.containerStatus) errors.push('Container Status is required');
+  else if (!['Full', 'Empty'].includes(row.containerStatus))
     errors.push('Container Status must be Full or Empty');
-  if (parseDg(row.dg) && row.dgPercent !== undefined && row.dgPercent !== '') {
-    const pct = Number(row.dgPercent);
-    if (isNaN(pct) || pct < 0 || pct > 100) errors.push('DG percent must be 0-100');
-  }
+  if (parseDg(row.dg) && (!row.imdgCode || !String(row.imdgCode).trim()))
+    errors.push('IMDG Code is required when Hazardous is Yes');
   return errors;
 };
 
@@ -73,11 +70,12 @@ const previewImport = async ({ rows, agentId, voyageId, importType }) => {
     if (p.code) portMap[p.code.trim().toUpperCase()] = p;
   });
 
-  // Match by containerNumber (primary key) within this voyage
+  // Match by containerNumber within this (Voyage + Agent) scope only — Sprint 026
   const incomingCntrs = rows.map(r => normCntr(r.containerNumber)).filter(Boolean);
   const existingBookings = await Booking.find({
     containerNumber: { $in: incomingCntrs },
     voyageId,
+    agentId,
     isDeleted: false,
   }).lean();
   const existingMap = {}; // containerNumber -> booking doc
@@ -109,14 +107,13 @@ const previewImport = async ({ rows, agentId, voyageId, importType }) => {
 
     const existingDoc  = cntr ? existingMap[cntr] : null;
     const hasError     = validationErrors.length > 0;
-    // booking mode: duplicate = container already exists on this voyage
-    const isDuplicate  = importType === 'booking'      && !!existingDoc;
-    // finalLoading mode: update = container already exists on this voyage
-    const isUpdate     = importType === 'finalLoading' && !!existingDoc;
+    // Sprint 026: both modes treat existing container as 'update' (not 'duplicate')
+    // Booking Import: Create or Update — never skip an existing container
+    // Final Loading Import: Create or Update — then reconcile
+    const isUpdate     = !!existingDoc;
 
     let rowStatus;
     if (hasError)                           rowStatus = 'invalid';
-    else if (isDuplicate)                   rowStatus = 'duplicate';
     else if (isUpdate)                      rowStatus = 'update';
     else if (importType === 'finalLoading') rowStatus = 'new';
     else                                    rowStatus = 'valid';
@@ -129,16 +126,15 @@ const previewImport = async ({ rows, agentId, voyageId, importType }) => {
       containerSize:   row.containerSize   || '',
       pol:             row.pol             || '',
       pod:             row.pod             || '',
-      quantity:        row.quantity  != null ? String(row.quantity)  : '',
-      rate:            row.rate      != null ? String(row.rate)      : '',
-      currency:        row.currency  || 'USD',
-      shipper:         row.shipper   || '',
-      consignee:       row.consignee || '',
+      rate:            row.rate      != null ? String(row.rate) : '',
+      // Sprint 026: currency removed
+      shipper:         row.shipper         || '',
+      consignee:       row.consignee       || '',
       carrierName:     row.carrierName     || '',
       commodity:       row.commodity       || '',
-      vgm:             row.vgm      != null ? String(row.vgm)       : '',
+      vgm:             row.vgm      != null ? String(row.vgm)  : '',
       dg:              row.dg              || '',
-      dgPercent:       row.dgPercent != null ? String(row.dgPercent) : '',
+      imdgCode:        row.imdgCode        || '',   // Sprint 026: replaces dgPercent
       containerStatus: row.containerStatus || '',
       _resolvedCt:  ct      ? { _id: String(ct._id), code: ct.code, size: ct.size, type: ct.type } : null,
       _resolvedPol: polPort ? { _id: String(polPort._id), name: polPort.name, code: polPort.code } : null,
@@ -187,7 +183,7 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
 
       const docs = validInserts.map(r => {
         const bookingNumber = r.bookingNumber?.trim() || autoNumbers[autoIdx++];
-        const quantity      = Number(r.quantity);
+        // Sprint 025: one row = one container; no quantity field
         const freightRate   = Number(r.rate);
         const dgFlag        = parseDg(r.dg);
         return {
@@ -200,14 +196,13 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
           polId:           r._resolvedPol._id,
           podId:           r._resolvedPod._id,
           containerTypeId: r._resolvedCt._id,
-          quantity,
           freightRate,
-          totalFreight:    quantity * freightRate,
+          totalFreight:    freightRate, // flat rate per container
           commodity:       r.commodity       || null,
           containerNumber: r.containerNumber,           // always set — required field
           vgm:             parseNum(r.vgm),
           dg:              dgFlag,
-          dgPercent:       dgFlag ? parseNum(r.dgPercent) : null,
+          imdgCode:        dgFlag ? (r.imdgCode?.trim() || null) : null, // Sprint 026
           containerStatus: ['Full', 'Empty'].includes(r.containerStatus) ? r.containerStatus : null,
           remarks:         `Imported (${importType})`,
           status:          'Pending',
@@ -238,7 +233,7 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
 
     if (validUpdates.length > 0) {
       const ops = validUpdates.map(r => {
-        const quantity    = Number(r.quantity);
+        // Sprint 025: one row = one container; no quantity field
         const freightRate = Number(r.rate);
         const dgFlag      = parseDg(r.dg);
         const $set = {
@@ -246,10 +241,10 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
           containerTypeId: r._resolvedCt._id,
           polId:           r._resolvedPol._id,
           podId:           r._resolvedPod._id,
-          quantity, freightRate,
-          totalFreight:    quantity * freightRate,
+          freightRate,
+          totalFreight:    freightRate, // flat rate per container
           dg:              dgFlag,
-          dgPercent:       dgFlag ? parseNum(r.dgPercent) : null,
+          imdgCode:        dgFlag ? (r.imdgCode?.trim() || null) : null, // Sprint 026
           updatedBy:       createdBy,
         };
         if (r.shipper        !== undefined) $set.shipper        = r.shipper        || null;
@@ -289,10 +284,12 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
       savedContainerNumbers.forEach(n => markedFinalLoading.push(n));
     }
 
-    // Cancel every booking on this voyage whose containerNumber is NOT in the manifest
+    // Cancel every booking in the (Voyage + Agent) scope whose containerNumber is NOT in the manifest
+    // Sprint 026: agentId filter ensures other agents' bookings are never affected
     const cancelResult = await Booking.updateMany(
       {
         voyageId,
+        agentId,
         isDeleted: false,
         status:    { $nin: ['Cancelled'] },
         containerNumber: { $nin: [...savedContainerNumbers] },

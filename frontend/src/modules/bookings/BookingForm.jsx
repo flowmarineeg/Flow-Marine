@@ -53,13 +53,13 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
       polId:           item?.polId?._id          || item?.polId          || '',
       podId:           item?.podId?._id          || item?.podId          || '',
       containerTypeId: item?.containerTypeId?._id || item?.containerTypeId || '',
-      quantity:        item?.quantity            || 1,
+      // Sprint 024: quantity removed from form — each booking = 1 container
       freightRate:     item?.freightRate         || 0,
       commodity:       item?.commodity           || '',
       containerNumber: item?.containerNumber     || '',
       vgm:             item?.vgm                ?? '',
       dg:              item?.dg                  ?? false,
-      dgPercent:       item?.dgPercent           ?? '',
+      imdgCode:        item?.imdgCode             ?? '',    // Sprint 026: replaces dgPercent
       containerStatus: item?.containerStatus     || '',
       remarks:         item?.remarks             || '',
       status:          item?.status              || 'Pending',
@@ -67,12 +67,12 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
   });
 
   const watchedVoyageId = watch('voyageId');
-  const watchedQuantity = watch('quantity');
   const watchedFreight  = watch('freightRate');
   const watchedDg       = watch('dg');
+  // Sprint 024: totalFreight = freightRate (flat per container, no quantity multiplier)
   const liveTotal       = useMemo(
-    () => (Number(watchedQuantity) || 0) * (Number(watchedFreight) || 0),
-    [watchedQuantity, watchedFreight]
+    () => Number(watchedFreight) || 0,
+    [watchedFreight]
   );
 
   // Voyages dropdown (non-cancelled, non-completed)
@@ -164,9 +164,9 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
             <div className="flex-1">
               <p className="text-[12px] font-bold text-amber-700 mb-1">Capacity Warning</p>
               <p className="text-[12px] text-amber-700">
-                Booking was saved but it exceeds vessel capacity on segment {capacityWarning.bottleneckSegment?.segmentIndex}.
+                Booking was saved but it exceeds vessel capacity on voyage <strong>{capacityWarning.voyage?.voyageNumber}</strong>.
                 Added <strong>{capacityWarning.addedTEU} TEU</strong>; remaining after this booking:{' '}
-                <strong className="text-red-600">{capacityWarning.bottleneckSegment?.remainingAfterAdd} TEU</strong>.
+                <strong className="text-red-600">{capacityWarning.voyage?.remainingAfter} TEU</strong>.
               </p>
               <p className="text-[11px] text-amber-600 mt-1">
                 Contact your operations team to review vessel capacity for this round.
@@ -328,43 +328,27 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
           {errors.containerTypeId && <p className={ec}>{errors.containerTypeId.message}</p>}
         </div>
 
-        {/* 2-column grid: Quantity | Freight Rate (slotCount removed) */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <FieldLabel required>Quantity</FieldLabel>
-            <input
-              type="number" min="1"
-              {...register('quantity', {
-                required: 'Required',
-                min: { value: 1, message: 'Min 1' },
-                valueAsNumber: true,
-              })}
-              disabled={isLocked}
-              className={ic(errors.quantity)}
-            />
-            {errors.quantity && <p className={ec}>{errors.quantity.message}</p>}
-          </div>
-          <div>
-            <FieldLabel required>Freight Rate ($)</FieldLabel>
-            <input
-              type="number" min="0" step="0.01"
-              {...register('freightRate', {
-                required: 'Required',
-                min: { value: 0, message: 'Min 0' },
-                valueAsNumber: true,
-              })}
-              disabled={isLocked}
-              className={ic(errors.freightRate)}
-            />
-            {errors.freightRate && <p className={ec}>{errors.freightRate.message}</p>}
-          </div>
+        {/* Freight Rate — Sprint 024: quantity removed (1 booking = 1 container, totalFreight = rate) */}
+        <div>
+          <FieldLabel required>Freight Rate ($)</FieldLabel>
+          <input
+            type="number" min="0" step="0.01"
+            {...register('freightRate', {
+              required: 'Required',
+              min: { value: 0, message: 'Min 0' },
+              valueAsNumber: true,
+            })}
+            disabled={isLocked}
+            className={ic(errors.freightRate)}
+          />
+          {errors.freightRate && <p className={ec}>{errors.freightRate.message}</p>}
         </div>
 
         {/* Live total */}
         <div className="flex items-center justify-between bg-teal-50 border border-teal-200 rounded-xl px-4 py-3">
           <div>
             <p className="text-[11px] font-semibold text-teal-600 uppercase tracking-wider">Total Freight</p>
-            <p className="text-[11px] text-teal-500 mt-0.5">Qty × Rate — computed by server on save</p>
+            <p className="text-[11px] text-teal-500 mt-0.5">Rate per container — computed by server on save</p>
           </div>
           <span className="text-xl font-bold text-teal-700 mono">{fmtMoney(liveTotal)}</span>
         </div>
@@ -419,19 +403,19 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
           </div>
         </div>
 
-        {/* DG toggle */}
+        {/* Hazardous toggle — Sprint 026: dg field name kept, label changed to Hazardous */}
         <div className="rounded-xl border border-gray-100 bg-white p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[12px] font-semibold text-gray-700">Dangerous Goods (DG)</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Does this shipment contain dangerous goods?</p>
+              <p className="text-[12px] font-semibold text-gray-700">Hazardous Cargo</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Does this shipment contain hazardous cargo?</p>
             </div>
             <button
               type="button"
               onClick={() => {
                 const next = !watchedDg;
                 setValue('dg', next, { shouldValidate: true });
-                if (!next) setValue('dgPercent', '');
+                if (!next) setValue('imdgCode', '');
               }}
               disabled={isLocked}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
@@ -446,21 +430,18 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
 
           {watchedDg && (
             <div>
-              <FieldLabel>DG Percentage (0–100%)</FieldLabel>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number" min="0" max="100" step="1"
-                  {...register('dgPercent', {
-                    min: { value: 0,   message: 'Min 0%' },
-                    max: { value: 100, message: 'Max 100%' },
-                  })}
-                  placeholder="e.g. 25"
-                  disabled={isLocked}
-                  className={`${ic(errors.dgPercent)} max-w-[160px]`}
-                />
-                <span className="text-sm font-semibold text-red-500">%</span>
-              </div>
-              {errors.dgPercent && <p className={ec}>{errors.dgPercent.message}</p>}
+              <FieldLabel required>IMDG Code</FieldLabel>
+              <input
+                type="text"
+                {...register('imdgCode', {
+                  required: { value: true, message: 'IMDG Code is required when Hazardous is active' },
+                  maxLength: { value: 50, message: 'Max 50 characters' },
+                })}
+                placeholder="e.g. 3.1, UN1203 Class 3"
+                disabled={isLocked}
+                className={ic(errors.imdgCode)}
+              />
+              {errors.imdgCode && <p className={ec}>{errors.imdgCode.message}</p>}
             </div>
           )}
         </div>
