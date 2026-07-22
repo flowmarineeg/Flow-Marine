@@ -48,7 +48,16 @@ const cacheKey = (roundId) => `capacity:round:${String(roundId)}`;
  * @param {string|ObjectId} roundId
  * @param {{ statuses?: string[] }} opts  — overrides L2 statuses only
  */
+const ALLOWED_CAPACITY_STATUSES = new Set(['Pending', 'Confirmed', 'Final Loading']);
+
 const computeRoundCapacity = async (roundId, opts = {}) => {
+  if (opts.statuses) {
+    const invalid = opts.statuses.filter(s => !ALLOWED_CAPACITY_STATUSES.has(s));
+    if (invalid.length > 0) {
+      throw { status: 400, message: `Invalid booking statuses for capacity: ${invalid.join(', ')}. Allowed: Pending, Confirmed, Final Loading` };
+    }
+  }
+
   const l2Statuses = opts.statuses || L2_STATUSES;
   const useCache   = !opts.statuses;
   const key        = cacheKey(roundId);
@@ -70,7 +79,10 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
   const voyageIds = round.voyageIds || [];
 
   const [voyages, l2Bookings, l1Bookings] = await Promise.all([
-    Voyage.find({ _id: { $in: voyageIds } })
+    // BUG-010: Cancelled voyages are not physical sailings and must never
+    // participate in the cargo-flow chain, capacity, onboard, or remaining
+    // capacity calculations — excluded here at the source.
+    Voyage.find({ _id: { $in: voyageIds }, status: { $ne: 'Cancelled' } })
       .populate('polId', 'name code')
       .populate('podId', 'name code')
       .sort({ sequence: 1 })
@@ -99,28 +111,35 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
   const cap      = vessel.capacity ?? null;
   const warnings = [];
 
-  // ── Step B: Build a port→voyageIndex map from the sorted voyage list ──────
-  // This allows us to find which voyage a port belongs to as fromPort or toPort.
-  // portAsFrom[portId] = voyage index where this port is the departure (fromPort/POL)
-  // portAsTo[portId]   = voyage index where this port is the arrival  (toPort/POD)
-  const portAsFrom = {}; // portId → voyage index (0-based)
-  const portAsTo   = {}; // portId → voyage index (0-based)
-  voyages.forEach((v, i) => {
-    const fromId = String(v.polId?._id || v.polId);
-    const toId   = String(v.podId?._id || v.podId);
-    portAsFrom[fromId] = i;
-    portAsTo[toId]     = i;
-  });
+  // BUG-010: warn if any of the round's voyageIds were excluded because they
+  // are cancelled. Bookings still attached to those voyages will naturally
+  // fail voyage-anchored resolution below and be warned/excluded.
+  if (voyages.length < voyageIds.length) {
+    warnings.push({
+      code:    'CANCELLED_VOYAGES_EXCLUDED',
+      message: `${voyageIds.length - voyages.length} cancelled voyage(s) excluded from capacity calculation`,
+      count:   voyageIds.length - voyages.length,
+    });
+  }
+
+  // ── Step B (REVISION 3): discharge-voyage resolution is voyage-based, NOT a
+  // global port map. Repeated ports within the same round make a global
+  // portAsTo/portAsFrom map ambiguous. Instead, each booking is anchored on
+  // its own voyageId (the voyage it is attached to / loads on) and we walk
+  // forward through the sorted voyage sequence from there to find the first
+  // voyage whose toPort matches the booking's POD.
+  const voyageIndexById = {}; // voyageId → index in the sorted `voyages` array
+  voyages.forEach((v, i) => { voyageIndexById[String(v._id)] = i; });
+
+  const resolveDischargeIdx = (loadIdx, podId) => {
+    for (let i = loadIdx; i < voyages.length; i++) {
+      const toId = String(voyages[i].podId?._id || voyages[i].podId);
+      if (toId === String(podId)) return i;
+    }
+    return null;
+  };
 
   // ── Step C: Resolve TEU and validate each Layer 2 booking ────────────────
-  // We also determine which voyage each booking LOADS on and DISCHARGES on.
-  // A booking's voyageId tells us which voyage it is *attached to* (where it loads).
-  // booking.polId = the actual load port (should match voyage.polId usually)
-  // booking.podId = the actual discharge port (determines where it discharges)
-  //
-  // We use booking.polId to find the load voyage and booking.podId to find
-  // the discharge voyage from the port maps above.
-
   const l2Events = []; // { loadVoyageIdx, dischargeVoyageIdx, teu }
 
   for (const b of l2Bookings) {
@@ -138,52 +157,65 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     // Sprint 025: one booking = one container; TEU derived from size only (no quantity)
     const effectiveTEU = teu;
 
-    const polId = String(b.polId);
-    const podId = String(b.podId);
-
-    // Load at the voyage whose fromPort is this booking's POL
-    const loadIdx = portAsFrom[polId];
-    // Discharge at the voyage whose toPort is this booking's POD
-    const dischargeIdx = portAsTo[podId];
-
+    // Anchor on the booking's actual attached voyage (REVISION 3) — never a global port map.
+    const loadIdx = voyageIndexById[String(b.voyageId)];
     if (loadIdx == null) {
-      warnings.push({ code: 'BOOKING_PORT_NOT_IN_ROUND', message: `Booking ${b._id} POL not found as a departure port in this round — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
-      continue;
-    }
-    if (dischargeIdx == null) {
-      warnings.push({ code: 'BOOKING_PORT_NOT_IN_ROUND', message: `Booking ${b._id} POD not found as an arrival port in this round — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
-      continue;
-    }
-    if (loadIdx > dischargeIdx) {
-      warnings.push({ code: 'INVALID_DIRECTION', message: `Booking ${b._id} POL comes after POD in voyage sequence — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
+      warnings.push({ code: 'BOOKING_PORT_NOT_IN_ROUND', message: `Booking ${b._id} voyage not found in this round (cancelled or missing) — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
       continue;
     }
 
-    l2Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu: effectiveTEU, source: 'l2' });
+    const dischargeIdx = resolveDischargeIdx(loadIdx, b.podId);
+    if (dischargeIdx == null) {
+      warnings.push({ code: 'BOOKING_PORT_NOT_IN_ROUND', message: `Booking ${b._id} POD not found ahead of its load voyage in this round — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
+      continue;
+    }
+
+    // Sprint 029: exact-segment flag for "Loaded" column presentation —
+    // compared against the booking's own polId/podId, NOT loadIdx===dischargeIdx.
+    const anchorVoyage = voyages[loadIdx];
+    const exactSegment =
+      String(b.polId) === String(anchorVoyage.polId?._id || anchorVoyage.polId) &&
+      String(b.podId) === String(anchorVoyage.podId?._id || anchorVoyage.podId);
+
+    l2Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu: effectiveTEU, source: 'l2', exactSegment });
   }
 
-  // ── Step D: Layer 1 manual bookings ──────────────────────────────────────
-  // ManualBookings also carry polId/podId at the booking level.
+  // ── Step D: Layer 1 manual bookings (REVISION 2 + REVISION 3) ────────────
+  // Voyage-anchored resolution, same as Step C. If POL/POD cannot be
+  // resolved, warn and EXCLUDE the booking entirely — no synthetic
+  // load-only or load+discharge event is created.
   const l1Events = [];
   for (const m of l1Bookings) {
-    const teu   = m.totalTEU || 0;
-    const polId = String(m.polId);
-    const podId = String(m.podId);
+    const teu = m.totalTEU || 0;
 
-    const loadIdx      = portAsFrom[polId];
-    const dischargeIdx = portAsTo[podId];
-
-    if (loadIdx == null || dischargeIdx == null || loadIdx > dischargeIdx) {
-      // Still count but aggregate to the attached voyage to avoid disappearing
-      // Find voyage index from voyageId
-      const voyageIdx = voyages.findIndex(v => String(v._id) === String(m.voyageId));
-      if (voyageIdx >= 0) {
-        l1Events.push({ loadVoyageIdx: voyageIdx, dischargeVoyageIdx: voyageIdx, teu, source: 'l1' });
-      }
+    const loadIdx = voyageIndexById[String(m.voyageId)];
+    if (loadIdx == null) {
+      warnings.push({
+        code:    'L1_BOOKING_PORT_NOT_IN_ROUND',
+        message: `Manual booking ${m.bookingNumber} voyage not found in this round (cancelled or missing) — excluded from capacity calculation`,
+        bookingNumber: m.bookingNumber,
+      });
       continue;
     }
 
-    l1Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu, source: 'l1' });
+    const dischargeIdx = resolveDischargeIdx(loadIdx, m.podId);
+    if (dischargeIdx == null) {
+      warnings.push({
+        code:    'L1_BOOKING_PORT_NOT_IN_ROUND',
+        message: `Manual booking ${m.bookingNumber} POL/POD could not be resolved in round — excluded from capacity calculation`,
+        bookingNumber: m.bookingNumber,
+      });
+      continue;
+    }
+
+    // Sprint 029: exact-segment flag for "Loaded" column presentation —
+    // compared against the booking's own polId/podId, NOT loadIdx===dischargeIdx.
+    const anchorVoyage = voyages[loadIdx];
+    const exactSegment =
+      String(m.polId) === String(anchorVoyage.polId?._id || anchorVoyage.polId) &&
+      String(m.podId) === String(anchorVoyage.podId?._id || anchorVoyage.podId);
+
+    l1Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu, source: 'l1', exactSegment });
   }
 
   const allEvents = [...l2Events, ...l1Events];
@@ -208,6 +240,14 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
   const dischargedL1  = new Array(voyages.length).fill(0);
   const dischargedL2  = new Array(voyages.length).fill(0);
 
+  // Sprint 029: exact-segment "Loaded" figures for presentation only.
+  // Populated only when booking.polId==voyage.fromPort AND booking.podId==voyage.toPort.
+  // Does NOT feed the onboard chain — loadedTEU/dischargedTEU above remain the
+  // source of truth for onboardStart/onboardTEU/remainingTEU/utilisationPct.
+  const loadedExactTEU = new Array(voyages.length).fill(0);
+  const loadedExactL1  = new Array(voyages.length).fill(0);
+  const loadedExactL2  = new Array(voyages.length).fill(0);
+
   for (const ev of allEvents) {
     loadedTEU[ev.loadVoyageIdx]         += ev.teu;
     dischargedTEU[ev.dischargeVoyageIdx] += ev.teu;
@@ -217,6 +257,12 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     } else {
       loadedL2[ev.loadVoyageIdx]           += ev.teu;
       dischargedL2[ev.dischargeVoyageIdx]  += ev.teu;
+    }
+
+    if (ev.exactSegment) {
+      loadedExactTEU[ev.loadVoyageIdx] += ev.teu;
+      if (ev.source === 'l1') loadedExactL1[ev.loadVoyageIdx] += ev.teu;
+      else                    loadedExactL2[ev.loadVoyageIdx] += ev.teu;
     }
   }
 
@@ -275,6 +321,14 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
       layer2: {
         loadedTEU:     loadedL2[i],
         dischargedTEU: dischargedL2[i],
+      },
+      // Sprint 029: exact-segment "Loaded" figures for UI presentation only
+      // (booking.polId==voyage.fromPort AND booking.podId==voyage.toPort).
+      // Does not drive onboardTEU/remainingTEU/utilisationPct above.
+      loadedExact: {
+        teu:    loadedExactTEU[i],
+        layer1: loadedExactL1[i],
+        layer2: loadedExactL2[i],
       },
     });
 
@@ -353,7 +407,10 @@ const computeVesselActiveCapacity = async (vesselId) => {
 
 // ─── computeVoyagePreview ─────────────────────────────────────────────────────
 // Sprint 025: quantity param removed — one booking = one container; TEU from size only
-const computeVoyagePreview = async (roundId, voyageId, containerTypeId) => {
+// Sprint 028 (BUG-004, REVISION 3): optional podId checks ALL voyages the
+// container transits, resolved by walking forward from the load voyage
+// through the round's voyage sequence — never a global port map.
+const computeVoyagePreview = async (roundId, voyageId, containerTypeId, podId = null) => {
   const ContainerType = require('../containerTypes/containerType.model');
   const ct = await ContainerType.findById(containerTypeId).select('size').lean();
   if (!ct) throw { status: 400, message: 'Container type not found' };
@@ -363,9 +420,62 @@ const computeVoyagePreview = async (roundId, voyageId, containerTypeId) => {
 
   const current   = await computeRoundCapacity(roundId);
   const cap       = current.vessel.capacity;
-  const voyageRow = current.voyages.find(v => String(v.voyageId) === String(voyageId));
-  if (!voyageRow) throw { status: 400, message: 'Voyage not found in round capacity data' };
+  const loadIdx   = current.voyages.findIndex(v => String(v.voyageId) === String(voyageId));
+  if (loadIdx === -1) throw { status: 400, message: 'Voyage not found in round capacity data' };
 
+  if (podId) {
+    // Voyage-based discharge resolution (REVISION 3): start at the load
+    // voyage's index and walk forward to the first voyage whose toPort
+    // matches podId. No global portAsTo map — repeated ports in the same
+    // round would make such a map ambiguous.
+    let dischargeIdx = null;
+    for (let i = loadIdx; i < current.voyages.length; i++) {
+      if (String(current.voyages[i].toPort.portId) === String(podId)) {
+        dischargeIdx = i;
+        break;
+      }
+    }
+
+    if (dischargeIdx != null) {
+      // The container transits every voyage from loadIdx to dischargeIdx inclusive.
+      const transitVoyages = current.voyages.slice(loadIdx, dischargeIdx + 1);
+      let bottleneckVoyage = null;
+      let minRemaining = Infinity;
+
+      for (const tv of transitVoyages) {
+        const onboardAfterOnThisVoyage = tv.onboardTEU + addedTEU;
+        const remainingOnThisVoyage = cap != null ? cap - onboardAfterOnThisVoyage : null;
+        if (remainingOnThisVoyage != null && remainingOnThisVoyage < minRemaining) {
+          minRemaining = remainingOnThisVoyage;
+          bottleneckVoyage = tv;
+        }
+      }
+
+      if (bottleneckVoyage) {
+        const onboardAfter   = bottleneckVoyage.onboardTEU + addedTEU;
+        const remainingAfter = cap != null ? cap - onboardAfter : null;
+        const canFit         = remainingAfter == null || remainingAfter >= 0;
+        return {
+          canFit,
+          addedTEU,
+          voyage: {
+            voyageId:        bottleneckVoyage.voyageId,
+            voyageNumber:    bottleneckVoyage.voyageNumber,
+            onboardBefore:   bottleneckVoyage.onboardTEU,
+            onboardAfter,
+            remainingAfter,
+            utilisationAfter: cap ? Math.round((onboardAfter / cap) * 100) : null,
+            isBottleneck:    true,
+          },
+        };
+      }
+    }
+    // Fall through to load-voyage-only check if discharge could not be resolved
+    // or capacity is uncapped (bottleneckVoyage stays null).
+  }
+
+  // Fallback / default: check the load voyage only (existing behaviour).
+  const voyageRow = current.voyages[loadIdx];
   const onboardAfter   = voyageRow.onboardTEU + addedTEU;
   const remainingAfter = cap != null ? cap - onboardAfter : null;
   const canFit         = remainingAfter == null || remainingAfter >= 0;

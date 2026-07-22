@@ -109,15 +109,15 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
                     <p className="text-[9px] text-gray-300">{i === 0 ? 'start' : 'carried'}</p>
                   </td>
 
-                  {/* Loaded */}
+                  {/* Loaded — Sprint 029: exact-segment only (booking.polId==voyage.fromPort AND booking.podId==voyage.toPort) */}
                   <td className="py-2.5 px-3 text-right align-top">
-                    {v.loadedTEU === 0 ? (
+                    {!v.loadedExact || v.loadedExact.teu === 0 ? (
                       <span className="text-gray-300 text-xs">—</span>
                     ) : (
                       <>
-                        <span className="text-xs font-semibold text-blue-600">+{fmt(v.loadedTEU)}</span>
+                        <span className="text-xs font-semibold text-blue-600">+{fmt(v.loadedExact.teu)}</span>
                         <span className="text-[10px] text-gray-400 ml-0.5">TEU</span>
-                        <Breakdown l2={v.layer2?.loadedTEU} l1={v.layer1?.loadedTEU} sign="+" />
+                        <Breakdown l2={v.loadedExact.layer2} l1={v.loadedExact.layer1} sign="+" />
                       </>
                     )}
                   </td>

@@ -9,7 +9,9 @@ export default function CapacityWarnings({ warnings = [] }) {
 
   const ICONS = {
     VOYAGE_OVERBOOKED:           '🔴',
-    BOOKING_PORT_NOT_IN_ROUTE:   '⚠️',
+    BOOKING_PORT_NOT_IN_ROUND:   '⚠️',
+    L1_BOOKING_PORT_NOT_IN_ROUND: '🟡',
+    CANCELLED_VOYAGES_EXCLUDED:  '🔵',
     MISSING_TEU_MAPPING:         '🟡',
     MISSING_CONTAINER_TYPE:      '🟡',
     DELETED_CONTAINER_TYPE:      '🔵',

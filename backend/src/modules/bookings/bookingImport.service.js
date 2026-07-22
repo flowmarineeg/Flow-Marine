@@ -153,6 +153,14 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
   if (!rows?.length) throw { status: 400, message: 'No rows to save' };
   if (!voyageId)     throw { status: 400, message: 'Voyage is required' };
 
+  // BUG-001: resolve roundId upfront — cache invalidation is a required
+  // post-mutation step, not fire-and-forget cleanup. The voyage's existence
+  // is already validated in previewImport() at preview time, so this lookup
+  // should not fail; if it does, it bubbles up as a 500 (correct — the
+  // import should not proceed on a voyage we cannot resolve).
+  const affectedVoyage = await Voyage.findById(voyageId).select('roundId').lean();
+  const roundId = affectedVoyage?.roundId ?? null;
+
   const saveable = rows.filter(r =>
     r._rowStatus === 'valid' || r._rowStatus === 'new' || r._rowStatus === 'update'
   );
@@ -309,10 +317,9 @@ const saveImport = async ({ rows, agentId, voyageId, importType, createdBy }) =>
   }
 
   // Invalidate capacity cache — bookings for this voyage's round changed
-  try {
-    const affectedVoyage = await Voyage.findById(voyageId).select('roundId').lean();
-    if (affectedVoyage) invalidateRoundCache(affectedVoyage.roundId);
-  } catch (_) { /* non-blocking */ }
+  if (roundId) {
+    invalidateRoundCache(roundId);
+  }
 
   return { created, updated, failed, markedFinalLoading, cancelled, total: saveable.length };
 };

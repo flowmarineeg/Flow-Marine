@@ -1,0 +1,188 @@
+You are NOT implementing anything.
+
+This is an Architecture Review + Sprint Planning task only.
+
+Before writing any sprint, you MUST first verify that the following workflow redesign is fully compatible with the current Capacity Engine architecture.
+
+Read the current booking module, manual booking module, import module, voyage module, round module and capacity engine.
+
+Especially review:
+
+- Booking (Layer 2)
+- Manual Booking (Layer 1)
+- Booking Import
+- Final Loading Import
+- Round
+- Voyage
+- Capacity Engine
+- Current booking filters
+- Current validation
+- Current API contracts
+
+----------------------------------------
+CURRENT GOAL
+----------------------------------------
+
+The Capacity Engine is considered CORRECT.
+
+The objective is NOT to redesign the Capacity Engine.
+
+The objective is to redesign the Booking workflow so that it naturally produces cleaner and more consistent data for the Capacity Engine.
+
+The current booking workflow is confusing because the user first selects a Voyage, while that Voyage already contains POL/POD information, then the user is asked again to manually select POL and POD.
+
+This duplicates responsibility and creates poor UX.
+
+----------------------------------------
+NEW BOOKING WORKFLOW
+----------------------------------------
+
+Layer 2
+
+Current:
+
+Voyage
+↓
+
+POL
+
+↓
+
+POD
+
+New workflow:
+
+Round
+↓
+
+Voyage (filtered by selected Round)
+↓
+
+Automatically use the selected Voyage's POL and POD.
+
+There will be NO separate POL selector.
+
+There will be NO separate POD selector.
+
+The selected Voyage becomes the single source of truth for:
+
+- voyageId
+- POL
+- POD
+
+The booking should still store voyageId exactly as today unless there is a strong architectural reason not to.
+
+----------------------------------------
+MANUAL BOOKING (Layer 1)
+----------------------------------------
+
+Apply exactly the same workflow.
+
+Round
+↓
+
+Voyage (inside selected Round)
+↓
+
+No POL selector.
+
+No POD selector.
+
+----------------------------------------
+BOOKING IMPORT
+----------------------------------------
+
+Apply the same workflow.
+
+Instead of selecting only Voyage:
+
+Round
+↓
+
+Voyage (filtered by Round)
+
+Import should continue working normally.
+
+Review whether any validation must change.
+
+----------------------------------------
+FILTERS
+----------------------------------------
+
+Operational Booking list
+
+Current:
+
+Voyage filter
+
+New:
+
+Round filter
+
+↓
+
+Voyage filter (depends on selected Round)
+
+Manual Booking list
+
+Apply the same filtering workflow.
+
+Also review all existing booking filters.
+
+Check whether there are other filters that should become Round-aware.
+
+----------------------------------------
+IMPORTANT
+----------------------------------------
+
+The Capacity Engine currently works correctly.
+
+Before planning anything you MUST verify whether this workflow still produces data fully compatible with:
+
+- Capacity Engine
+- Booking validation
+- Import
+- Reports
+- Invoices
+- Existing business rules
+
+If any Capacity Engine modification is required,
+DO NOT redesign it.
+
+Only explain:
+
+- why
+- where
+- what minimal adjustment would be required.
+
+If no Capacity Engine changes are required,
+explicitly state that.
+
+----------------------------------------
+OUTPUT
+----------------------------------------
+
+Do NOT implement.
+
+Create a detailed Sprint Planning document:
+
+sprints/030-sprint.txt
+
+The sprint must include:
+
+1. Architecture verification
+2. Capacity Engine compatibility analysis
+3. Current workflow analysis
+4. Proposed workflow
+5. Backend changes
+6. Frontend changes
+7. Import changes
+8. Filter redesign
+9. Validation changes
+10. API impact
+11. Risks
+12. Migration impact
+13. Files affected
+14. Implementation phases
+
+Wait for approval before writing any code.

@@ -143,6 +143,7 @@ const create = async (data, createdBy) => {
         voyage.roundId,
         String(data.voyageId),
         String(data.containerTypeId),
+        data.podId ? String(data.podId) : null,
       );
       if (!preview.canFit) {
         if (enforcementMode === 'strict') {
