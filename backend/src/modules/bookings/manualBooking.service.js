@@ -6,7 +6,6 @@ const ContainerType = require('../containerTypes/containerType.model');
 const { nextNumber }         = require('../../utils/autoNumber');
 const { resolveTEU }         = require('../../utils/teuResolver');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
-const { getVoyagePortIds }   = require('./booking.service');
 const { DEFAULT_PAGE, DEFAULT_LIMIT, BOOKING_STATUS } = require('../../config/constants');
 
 // ── Status machine (identical to Layer 2) ────────────────────────────────────
@@ -29,7 +28,7 @@ const validateTransition = (current, next) => {
 
 // ── Populate helper ───────────────────────────────────────────────────────────
 const populate = (q) =>
-  q.populate('voyageId', 'voyageNumber polId podId etd eta status')
+  q.populate('voyageId', 'voyageNumber roundId polId podId etd eta status')
    .populate('agentId',  'agentCode agentName')
    .populate('polId',    'name code')
    .populate('podId',    'name code')
@@ -105,18 +104,6 @@ const create = async (data, createdBy) => {
     throw { status: 400, message: `Cannot book on a voyage with status "${voyage.status}"` };
   }
 
-  if (String(data.polId) === String(data.podId)) {
-    throw { status: 400, message: 'POL and POD must be different' };
-  }
-
-  const validPortIds = await getVoyagePortIds(data.voyageId);
-  if (validPortIds.length > 0) {
-    if (!validPortIds.includes(String(data.polId)))
-      throw { status: 400, message: "POL is not part of this voyage's route" };
-    if (!validPortIds.includes(String(data.podId)))
-      throw { status: 400, message: "POD is not part of this voyage's route" };
-  }
-
   const rows = data.cargoRows || [];
   if (!rows.length) throw { status: 400, message: 'At least one cargo row is required' };
 
@@ -130,8 +117,10 @@ const create = async (data, createdBy) => {
     bookingNumber,
     voyageId:     data.voyageId,
     agentId:      data.agentId,
-    polId:        data.polId,
-    podId:        data.podId,
+    // Sprint 030: POL/POD are no longer client-submitted — always the
+    // selected voyage's own polId/podId.
+    polId:        voyage.polId,
+    podId:        voyage.podId,
     cargoRows:    computed,
     totalFreight,
     totalTEU,

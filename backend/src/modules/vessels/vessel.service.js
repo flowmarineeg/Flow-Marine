@@ -107,6 +107,7 @@ const getVesselStats = async (id) => {
   const Round           = require('../rounds/round.model');
   const Voyage          = require('../voyages/voyage.model');
   const Booking         = require('../bookings/booking.model');
+  const ManualBooking   = require('../bookings/manualBooking.model');
   const TrackingHistory = require('../tracking/trackingHistory.model');
   // Lazy require to avoid circular dep (capacity → vessel → capacity)
   const { computeVesselActiveCapacity } = require('../capacity/capacity.service');
@@ -135,21 +136,42 @@ const getVesselStats = async (id) => {
   const totalVoyages = await Voyage.countDocuments({ roundId: { $in: roundIds.length ? roundIds : ['000000000000000000000000'] } });
   const activeVoyages = voyages.filter(v => ['Scheduled','Departed','In Transit'].includes(v.status)).length;
 
-  // Booking stats
-  const bookingStats = voyageIds.length ? await Booking.aggregate([
-    { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
-    { $group: { _id: '$status', count: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' }, totalQty: { $sum: '$quantity' } } },
-  ]) : [];
+  // Booking stats — Sprint 032: combined Layer 1 (ManualBooking) + Layer 2
+  // (Booking) per status. Both models share the same BOOKING_STATUS enum,
+  // so status labels merge with no reconciliation needed.
+  const [l2StatusAgg, l1StatusAgg] = voyageIds.length ? await Promise.all([
+    Booking.aggregate([
+      { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
+      { $group: { _id: '$status', count: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' } } },
+    ]),
+    ManualBooking.aggregate([
+      { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
+      { $group: { _id: '$status', count: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' } } },
+    ]),
+  ]) : [[], []];
+
+  const statusMap = {};
+  [...l2StatusAgg, ...l1StatusAgg].forEach(s => {
+    const entry = statusMap[s._id] || { _id: s._id, count: 0, totalFreight: 0 };
+    entry.count        += s.count;
+    entry.totalFreight += s.totalFreight || 0;
+    statusMap[s._id] = entry;
+  });
+  const bookingStats = Object.values(statusMap);
 
   let totalBookings = 0, confirmedBookings = 0, pendingBookings = 0, cancelledBookings = 0, finalLoadingBookings = 0;
   let totalRevenue  = 0;
   bookingStats.forEach(s => {
-    totalBookings += s.count;
-    totalRevenue  += s.totalFreight || 0;
     if (s._id === 'Confirmed')     confirmedBookings    = s.count;
     if (s._id === 'Pending')       pendingBookings      = s.count;
     if (s._id === 'Cancelled')     cancelledBookings    = s.count;
     if (s._id === 'Final Loading') finalLoadingBookings = s.count;
+    // Sprint 032: Cancelled excluded from the headline totals — still
+    // present in bookingStats/bookingsByStatus as its own status slice.
+    if (s._id !== 'Cancelled') {
+      totalBookings += s.count;
+      totalRevenue  += s.totalFreight || 0;
+    }
   });
 
   // Sprint 022 — per-leg TEU capacity from the capacity engine
@@ -171,16 +193,39 @@ const getVesselStats = async (id) => {
     // Non-blocking: capacity engine failure does not break the stats page
   }
 
-  // Agent usage
-  const agentAgg = voyageIds.length ? await Booking.aggregate([
-    { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
-    { $group: { _id: '$agentId', bookingCount: { $sum: 1 } } },
-    { $sort: { bookingCount: -1 } },
-    { $limit: 10 },
-    { $lookup: { from: 'agents', localField: '_id', foreignField: '_id', as: 'agent' } },
-    { $unwind: { path: '$agent', preserveNullAndEmptyArrays: true } },
-    { $project: { agentCode: '$agent.agentCode', agentName: '$agent.agentName', bookingCount: 1 } },
-  ]) : [];
+  // Agent usage — Sprint 032: combined Layer 1 + Layer 2 per agent, Cancelled excluded.
+  const Agent = require('../agents/agent.model');
+  const [l2AgentAgg, l1AgentAgg] = voyageIds.length ? await Promise.all([
+    Booking.aggregate([
+      { $match: { voyageId: { $in: voyageIds }, isDeleted: false, status: { $ne: 'Cancelled' } } },
+      { $group: { _id: '$agentId', bookingCount: { $sum: 1 } } },
+    ]),
+    ManualBooking.aggregate([
+      { $match: { voyageId: { $in: voyageIds }, isDeleted: false, status: { $ne: 'Cancelled' } } },
+      { $group: { _id: '$agentId', bookingCount: { $sum: 1 } } },
+    ]),
+  ]) : [[], []];
+
+  const agentCountMap = {};
+  [...l2AgentAgg, ...l1AgentAgg].forEach(a => {
+    const key = String(a._id);
+    agentCountMap[key] = (agentCountMap[key] || 0) + a.bookingCount;
+  });
+  const topAgentIds = Object.entries(agentCountMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([agentId]) => agentId);
+
+  const agentDocs = topAgentIds.length
+    ? await Agent.find({ _id: { $in: topAgentIds } }).select('agentCode agentName').lean()
+    : [];
+  const agentDocMap = {};
+  agentDocs.forEach(a => { agentDocMap[String(a._id)] = a; });
+  const agentAgg = topAgentIds.map(agentId => ({
+    agentCode:    agentDocMap[agentId]?.agentCode || null,
+    agentName:    agentDocMap[agentId]?.agentName || null,
+    bookingCount: agentCountMap[agentId],
+  }));
 
   // Recent tracking
   const recentTracking = await TrackingHistory.find({ vesselId: id })

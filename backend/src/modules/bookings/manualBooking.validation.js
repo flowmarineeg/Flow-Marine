@@ -27,8 +27,7 @@ const rowValidators = [
 const validateCreate = [
   body('voyageId').notEmpty().isMongoId().withMessage('Valid voyage is required'),
   body('agentId').notEmpty().isMongoId().withMessage('Valid agent is required'),
-  body('polId').notEmpty().isMongoId().withMessage('Valid POL port is required'),
-  body('podId').notEmpty().isMongoId().withMessage('Valid POD port is required'),
+  // Sprint 030: POL/POD are no longer client-submitted — derived server-side from voyageId
   ...rowValidators,
   body('status').optional().isIn(BOOKING_STATUS).withMessage(`Must be one of: ${BOOKING_STATUS.join(', ')}`),
   body('remarks').optional({ nullable: true, checkFalsy: true }).trim(),
@@ -42,8 +41,7 @@ const validateCreate = [
 
 const validateUpdate = [
   body('agentId').optional().isMongoId(),
-  body('polId').optional().isMongoId(),
-  body('podId').optional().isMongoId(),
+  // Sprint 030: POL/POD are not independently editable — derived from voyageId
   body('cargoRows').optional().isArray({ min: 1 }).withMessage('cargoRows must have at least one row if provided'),
   body('cargoRows.*.containerTypeId').optional().isMongoId(),
   body('cargoRows.*.quantity').optional().isInt({ min: 1 }),

@@ -8,6 +8,7 @@ import { bookingsService }       from '@/services/bookings.service';
 import { voyagesService }        from '@/services/voyages.service';
 import { agentsService }         from '@/services/agents.service';
 import { containerTypesService } from '@/services/containerTypes.service';
+import { useRounds }             from '@/hooks/useRounds';
 import { BOOKING_STATUS }        from '@/utils/constants';
 
 const fmt      = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -45,13 +46,14 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
+      // Sprint 030: Round is a UI-only selector (not stored on the booking) — it
+      // narrows the Voyage dropdown. Preselect it from the existing voyage's roundId on edit.
+      roundId:         item?.voyageId?.roundId?._id || item?.voyageId?.roundId || '',
       voyageId:        item?.voyageId?._id       || item?.voyageId       || '',
       agentId:         item?.agentId?._id        || item?.agentId        || '',
       shipper:         item?.shipper             || '',
       consignee:       item?.consignee           || '',
       carrierName:     item?.carrierName         || '',
-      polId:           item?.polId?._id          || item?.polId          || '',
-      podId:           item?.podId?._id          || item?.podId          || '',
       containerTypeId: item?.containerTypeId?._id || item?.containerTypeId || '',
       // Sprint 024: quantity removed from form — each booking = 1 container
       freightRate:     item?.freightRate         || 0,
@@ -66,6 +68,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
     },
   });
 
+  const watchedRoundId  = watch('roundId');
   const watchedVoyageId = watch('voyageId');
   const watchedFreight  = watch('freightRate');
   const watchedDg       = watch('dg');
@@ -75,27 +78,25 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
     [watchedFreight]
   );
 
-  // Voyages dropdown (non-cancelled, non-completed)
+  // Rounds dropdown
+  const { rounds } = useRounds();
+
+  // Voyages dropdown — Sprint 030: filtered by selected Round (non-cancelled, non-completed)
   const { data: voyageData } = useQuery({
-    queryKey: ['voyages-dropdown'],
-    queryFn:  () => voyagesService.list({ limit: 200 }).then(r => r.data.data),
+    queryKey: ['voyages-dropdown', watchedRoundId],
+    queryFn:  () => voyagesService.list({ roundId: watchedRoundId, limit: 200 }).then(r => r.data.data),
+    enabled:  !!watchedRoundId,
   });
   const voyages = (voyageData || []).filter(v => !['Cancelled', 'Completed'].includes(v.status));
   const selectedVoyage = voyages.find(v => v._id === watchedVoyageId);
 
-  // Voyage ports for POL/POD
-  const { data: voyagePorts = [] } = useQuery({
-    queryKey: ['voyage-ports', watchedVoyageId],
-    queryFn:  () => bookingsService.getVoyagePorts(watchedVoyageId).then(r => r.data.data),
-    enabled:  !!watchedVoyageId,
-  });
-
+  // Sprint 030: POL/POD are no longer independently selected — they are always
+  // the selected Voyage's own polId/podId, displayed read-only.
   useEffect(() => {
-    if (!isEditing && watchedVoyageId) {
-      setValue('polId', '');
-      setValue('podId', '');
+    if (!isEditing && watchedRoundId) {
+      setValue('voyageId', '');
     }
-  }, [watchedVoyageId, isEditing, setValue]);
+  }, [watchedRoundId, isEditing, setValue]);
 
   // Agents
   const { data: agentData } = useQuery({
@@ -133,7 +134,9 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
 
   const onSubmit = (data) => {
     setCapacityWarning(null);
-    const { totalFreight: _ignored, ...payload } = data;
+    // roundId is a UI-only filter (not stored on the booking) — POL/POD are
+    // derived server-side from voyageId, so they are never sent from the form.
+    const { totalFreight: _ignored, roundId: _roundId, ...payload } = data;
     mutation.mutate(payload);
   };
 
@@ -184,32 +187,65 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
       )}
 
       {/* ── Voyage ─────────────────────────────────────────────────── */}
-      <SectionCard title="Voyage">
-        <div>
-          <FieldLabel required>Voyage</FieldLabel>
-          <select
-            {...register('voyageId', { required: 'Voyage is required' })}
-            disabled={isEditing || isLocked}
-            className={`${ic(errors.voyageId)} ${isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            <option value="">Select voyage…</option>
-            {voyages.map(v => (
-              <option key={v._id} value={v._id}>
-                {v.voyageNumber} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
-              </option>
-            ))}
-          </select>
-          {errors.voyageId && <p className={ec}>{errors.voyageId.message}</p>}
-          {isEditing && <p className="mt-1 text-[11px] text-amber-500">Voyage cannot be changed on an existing booking</p>}
+      <SectionCard title="Round / Voyage">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <FieldLabel required>Round</FieldLabel>
+            <select
+              {...register('roundId', { required: 'Round is required' })}
+              disabled={isEditing || isLocked}
+              className={`${ic(errors.roundId)} ${isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <option value="">Select round…</option>
+              {rounds.map(r => (
+                <option key={r._id} value={r._id}>{r.roundNumber}</option>
+              ))}
+            </select>
+            {errors.roundId && <p className={ec}>{errors.roundId.message}</p>}
+            {isEditing && <p className="mt-1 text-[11px] text-amber-500">Round cannot be changed on an existing booking</p>}
+          </div>
+          <div>
+            <FieldLabel required>Voyage</FieldLabel>
+            <select
+              {...register('voyageId', { required: 'Voyage is required' })}
+              disabled={isEditing || isLocked || !watchedRoundId}
+              className={`${ic(errors.voyageId)} ${isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} disabled:opacity-50`}
+            >
+              <option value="">{watchedRoundId ? 'Select voyage…' : 'Select a round first…'}</option>
+              {voyages.map(v => (
+                <option key={v._id} value={v._id}>
+                  {v.voyageNumber} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
+                </option>
+              ))}
+            </select>
+            {errors.voyageId && <p className={ec}>{errors.voyageId.message}</p>}
+            {isEditing && <p className="mt-1 text-[11px] text-amber-500">Voyage cannot be changed on an existing booking</p>}
+          </div>
         </div>
 
+        {/* Sprint 030: POL/POD are read-only — always the selected voyage's own ports */}
         {selectedVoyage && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
               { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber}</span> },
               { label: 'Status',    val: selectedVoyage.status },
               { label: 'ETD',       val: fmt(selectedVoyage.etd) },
               { label: 'ETA',       val: fmt(selectedVoyage.eta) },
+              { label: 'POL',       val: selectedVoyage.polId?.name ? `${selectedVoyage.polId.name}${selectedVoyage.polId.code ? ` (${selectedVoyage.polId.code})` : ''}` : '—' },
+              { label: 'POD',       val: selectedVoyage.podId?.name ? `${selectedVoyage.podId.name}${selectedVoyage.podId.code ? ` (${selectedVoyage.podId.code})` : ''}` : '—' },
+            ].map(({ label, val }) => (
+              <div key={label} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+                <p className="text-[13px] font-medium text-gray-700">{val}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {isEditing && !selectedVoyage && (item?.polId || item?.podId) && (
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'POL', val: item?.polId?.name || '—' },
+              { label: 'POD', val: item?.podId?.name || '—' },
             ].map(({ label, val }) => (
               <div key={label} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
@@ -270,43 +306,6 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
               disabled={isLocked}
               className={ic(false)}
             />
-          </div>
-        </div>
-      </SectionCard>
-
-      {/* ── Ports ──────────────────────────────────────────────────── */}
-      <SectionCard title="Port of Loading / Discharge">
-        {!watchedVoyageId && (
-          <p className="text-xs text-gray-400 italic">Select a voyage first to load available ports.</p>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <FieldLabel required>POL (Port of Loading)</FieldLabel>
-            <select
-              {...register('polId', { required: 'POL is required' })}
-              disabled={!watchedVoyageId || isLocked}
-              className={`${ic(errors.polId)} cursor-pointer disabled:opacity-50`}
-            >
-              <option value="">Select POL…</option>
-              {voyagePorts.map(p => (
-                <option key={p._id} value={p._id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>
-              ))}
-            </select>
-            {errors.polId && <p className={ec}>{errors.polId.message}</p>}
-          </div>
-          <div>
-            <FieldLabel required>POD (Port of Discharge)</FieldLabel>
-            <select
-              {...register('podId', { required: 'POD is required' })}
-              disabled={!watchedVoyageId || isLocked}
-              className={`${ic(errors.podId)} cursor-pointer disabled:opacity-50`}
-            >
-              <option value="">Select POD…</option>
-              {voyagePorts.map(p => (
-                <option key={p._id} value={p._id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>
-              ))}
-            </select>
-            {errors.podId && <p className={ec}>{errors.podId.message}</p>}
           </div>
         </div>
       </SectionCard>

@@ -6,8 +6,8 @@ const { success, created, error } = require('../../utils/responseHelper');
 // POST /bookings/import/preview
 const preview = async (req, res, next) => {
   try {
-    const { rows, agentId, voyageId, importType } = req.body;
-    const result = await importService.previewImport({ rows, agentId, voyageId, importType });
+    const { rows, agentId, roundId, importType } = req.body;
+    const result = await importService.previewImport({ rows, agentId, roundId, importType });
     return success(res, result, 'Preview generated');
   } catch (err) {
     if (err.status) return error(res, err.message, err.status);
@@ -18,9 +18,9 @@ const preview = async (req, res, next) => {
 // POST /bookings/import/save
 const save = async (req, res, next) => {
   try {
-    const { rows, agentId, voyageId, importType } = req.body;
+    const { rows, agentId, roundId, importType } = req.body;
     const result = await importService.saveImport({
-      rows, agentId, voyageId, importType, createdBy: req.user._id,
+      rows, agentId, roundId, importType, createdBy: req.user._id,
     });
     return created(res, result,
       `Import complete — ${result.created.length} created, ${result.updated.length} updated`

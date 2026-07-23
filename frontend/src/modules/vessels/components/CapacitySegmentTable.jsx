@@ -63,12 +63,12 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
             <tr className="bg-gray-50 border-b border-gray-100">
               <th className="text-left py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Voyage</th>
               <th className="text-left py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Route</th>
-              <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Start</th>
+              {/* <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Start</th> */}
               <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-blue-400 uppercase tracking-wider whitespace-nowrap">Loaded</th>
               <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-orange-400 uppercase tracking-wider whitespace-nowrap">Discharged</th>
-              <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Onboard</th>
-              <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Remaining</th>
-              <th className="text-left py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Util</th>
+              {/* <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Onboard</th> */}
+              {/* <th className="text-right py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Remaining</th> */}
+              {/* <th className="text-left py-2.5 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Util</th> */}
             </tr>
           </thead>
           <tbody>
@@ -101,13 +101,13 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
                   </td>
 
                   {/* Onboard at start */}
-                  <td className="py-2.5 px-3 text-right align-top">
+                  {/* <td className="py-2.5 px-3 text-right align-top">
                     <span className={`text-xs font-semibold ${v.onboardStart > 0 ? 'text-gray-600' : 'text-gray-300'}`}>
                       {fmt(v.onboardStart)}
                     </span>
                     <span className="text-[10px] text-gray-400 ml-0.5">TEU</span>
                     <p className="text-[9px] text-gray-300">{i === 0 ? 'start' : 'carried'}</p>
-                  </td>
+                  </td> */}
 
                   {/* Loaded — Sprint 029: exact-segment only (booking.polId==voyage.fromPort AND booking.podId==voyage.toPort) */}
                   <td className="py-2.5 px-3 text-right align-top">
@@ -136,16 +136,16 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
                   </td>
 
                   {/* Onboard transit */}
-                  <td className="py-2.5 px-3 text-right align-top">
+                  {/* <td className="py-2.5 px-3 text-right align-top">
                     <span className={`text-xs font-bold ${isOver ? 'text-red-600' : 'text-gray-800'}`}>
                       {fmt(v.onboardTEU)}
                     </span>
                     <span className="text-[10px] text-gray-400 ml-0.5">TEU</span>
                     {isOver && <p className="text-[9px] text-red-400">over</p>}
-                  </td>
+                  </td> */}
 
                   {/* Remaining */}
-                  <td className="py-2.5 px-3 text-right align-top">
+                  {/* <td className="py-2.5 px-3 text-right align-top">
                     {v.remainingTEU == null ? (
                       <span className="text-gray-300 text-xs">—</span>
                     ) : (
@@ -156,12 +156,12 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
                         <span className="text-[10px] text-gray-400 ml-0.5">TEU</span>
                       </>
                     )}
-                  </td>
+                  </td> */}
 
                   {/* Util bar */}
-                  <td className="py-2.5 px-3 align-top">
+                  {/* <td className="py-2.5 px-3 align-top">
                     <UtilBar pct={v.utilisationPct} />
-                  </td>
+                  </td> */}
                 </tr>
               );
             })}

@@ -19,8 +19,7 @@ const validateCreate = [
   body('shipper').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
   body('consignee').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
   body('carrierName').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
-  body('polId').notEmpty().isMongoId().withMessage('Valid POL port is required'),
-  body('podId').notEmpty().isMongoId().withMessage('Valid POD port is required'),
+  // Sprint 030: POL/POD are no longer client-submitted — derived server-side from voyageId
   body('containerTypeId').notEmpty().isMongoId().withMessage('Valid container type is required'),
   // Sprint 025: quantity removed from Layer 2 entirely
   body('freightRate').notEmpty().isFloat({ min: 0 }).withMessage('Freight rate must be a non-negative number'),
@@ -40,8 +39,7 @@ const validateUpdate = [
   body('shipper').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
   body('consignee').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
   body('carrierName').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
-  body('polId').optional().isMongoId(),
-  body('podId').optional().isMongoId(),
+  // Sprint 030: POL/POD are not independently editable — derived from voyageId
   body('containerTypeId').optional().isMongoId().withMessage('Valid container type is required'),
   // Sprint 025: quantity removed from Layer 2 entirely
   body('freightRate').optional().isFloat({ min: 0 }).withMessage('Freight rate must be a non-negative number'),

@@ -154,7 +154,7 @@ function ActiveRoundCapacity({ activeRound, vessel }) {
           </div>
         </div>
         <div className="flex items-center gap-5">
-          {cap && (
+          {/* {cap && (
             <div className="text-right">
               <p className="text-[10px] text-gray-400 uppercase tracking-wider">Peak Onboard</p>
               <p className={`text-base font-bold ${peakColor}`}>
@@ -170,7 +170,7 @@ function ActiveRoundCapacity({ activeRound, vessel }) {
             <p className="text-base font-bold text-gray-700">
               {(totals.totalBookedTEU ?? 0).toLocaleString()} TEU
             </p>
-          </div>
+          </div> */}
           {cap && (
             <div className="text-right">
               <p className="text-[10px] text-gray-400 uppercase tracking-wider">Vessel Cap.</p>

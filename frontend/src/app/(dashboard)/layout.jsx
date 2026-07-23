@@ -73,7 +73,7 @@ export default function DashboardLayout({ children }) {
       <Sidebar />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'clip' }}>
         <Header />
-        <main style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        <main className='max-w-[1680px]' style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
           {children}
         </main>
       </div>

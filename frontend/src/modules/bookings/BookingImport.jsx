@@ -8,15 +8,20 @@ import toast from 'react-hot-toast';
 import { bookingsService } from '@/services/bookings.service';
 import { agentsService } from '@/services/agents.service';
 import { voyagesService } from '@/services/voyages.service';
+import { useRounds } from '@/hooks/useRounds';
 import PageHeader from '@/components/ui/PageHeader';
 
 // ─── Row status → visual style ───────────────────────────────────────────────
+// Sprint 031: 'unresolved'/'ambiguous' are fixable-in-place (pick a Voyage
+// below), distinct from 'invalid' (red, always skipped on save).
 const ROW_STYLES = {
-  valid: { bg: 'bg-green-50', badge: 'bg-green-100 text-green-700', label: 'Valid' },
-  new: { bg: 'bg-green-50', badge: 'bg-green-100 text-green-700', label: 'New' },
-  update: { bg: 'bg-amber-50', badge: 'bg-amber-100 text-amber-700', label: 'Will Update' },
-  duplicate: { bg: 'bg-red-50', badge: 'bg-red-100 text-red-600', label: 'Duplicate' },
-  invalid: { bg: 'bg-red-50', badge: 'bg-red-100 text-red-600', label: 'Invalid' },
+  valid:      { bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',   label: 'Valid' },
+  new:        { bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',   label: 'New' },
+  update:     { bg: 'bg-amber-50',  badge: 'bg-amber-100 text-amber-700',   label: 'Will Update' },
+  unresolved: { bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', label: 'Needs Voyage' },
+  ambiguous:  { bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', label: 'Confirm Voyage' },
+  duplicate:  { bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',       label: 'Duplicate' },
+  invalid:    { bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',       label: 'Invalid' },
 };
 
 // ─── Excel column header → internal field ────────────────────────────────────
@@ -112,7 +117,7 @@ export default function BookingImport() {
   const fileRef = useRef(null);
 
   const [agentId, setAgentId] = useState('');
-  const [voyageId, setVoyageId] = useState('');
+  const [roundId, setRoundId] = useState('');  // Sprint 031: replaces the single-Voyage selector
   const [importType, setImportType] = useState('booking');
   const [fileName, setFileName] = useState('');
   const [rawRows, setRawRows] = useState([]);
@@ -128,14 +133,20 @@ export default function BookingImport() {
   });
   const agents = agentsData || [];
 
-  // Voyages — fetch all, filter Cancelled client-side
+  // Rounds
+  const { rounds } = useRounds();
+
+  // Sprint 031: this Round's active voyages — no longer a file-wide selector.
+  // Used only to populate the per-row manual Voyage fallback for
+  // 'unresolved'/'ambiguous' rows; every row auto-resolves its own voyage
+  // server-side from POL/POD whenever possible.
   const { data: voyagesData, isLoading: voyagesLoading } = useQuery({
-    queryKey: ['voyages-import-dd'],
-    queryFn: () => voyagesService.list({ limit: 500, page: 1 }).then(r => r.data.data),
+    queryKey: ['voyages-import-dd', roundId],
+    queryFn: () => voyagesService.list({ roundId, limit: 500, page: 1 }).then(r => r.data.data),
     staleTime: 2 * 60 * 1000,
+    enabled: !!roundId,
   });
-  const voyages = (voyagesData || []).filter(v => v.status !== 'Cancelled');
-  const selectedVoyage = voyages.find(v => v._id === voyageId) || null;
+  const roundVoyages = (voyagesData || []).filter(v => v.status !== 'Cancelled');
 
   // File handler
   const handleFile = useCallback((e) => {
@@ -166,12 +177,12 @@ export default function BookingImport() {
   // Preview
   const handlePreview = async () => {
     if (!agentId) { toast.error('Please select an agent'); return; }
-    if (!voyageId) { toast.error('Please select a voyage'); return; }
+    if (!roundId) { toast.error('Please select a round'); return; }
     if (!rawRows.length) { toast.error('Please upload an Excel file'); return; }
     setIsPreviewing(true);
     setConfirmed(false);
     try {
-      const res = await bookingsService.importPreview({ rows: rawRows, agentId, voyageId, importType });
+      const res = await bookingsService.importPreview({ rows: rawRows, agentId, roundId, importType });
       setPreview(res.data.data);
     } catch (e) {
       toast.error(e.response?.data?.message || 'Preview failed');
@@ -205,8 +216,9 @@ export default function BookingImport() {
           dg: r.dg,
           imdgCode: r.imdgCode,    // Sprint 026: replaces dgPercent
           containerStatus: r.containerStatus,
+          voyageOverrideId: r.voyageOverrideId, // Sprint 031: manual Voyage fallback
         })),
-        agentId, voyageId, importType,
+        agentId, roundId, importType,
       });
       setPreview(res.data.data);
       toast.success('Re-validated');
@@ -219,7 +231,7 @@ export default function BookingImport() {
 
   // Save
   const saveMutation = useMutation({
-    mutationFn: () => bookingsService.importSave({ rows: preview, agentId, voyageId, importType }),
+    mutationFn: () => bookingsService.importSave({ rows: preview, agentId, roundId, importType }),
     onSuccess: (res) => {
       const d = res.data.data;
       const parts = [];
@@ -235,23 +247,26 @@ export default function BookingImport() {
   });
 
   const counts = preview ? {
-    valid: preview.filter(r => r._rowStatus === 'valid').length,
-    new: preview.filter(r => r._rowStatus === 'new').length,
-    update: preview.filter(r => r._rowStatus === 'update').length,
-    duplicate: preview.filter(r => r._rowStatus === 'duplicate').length,
-    invalid: preview.filter(r => r._rowStatus === 'invalid').length,
+    valid:       preview.filter(r => r._rowStatus === 'valid').length,
+    new:         preview.filter(r => r._rowStatus === 'new').length,
+    update:      preview.filter(r => r._rowStatus === 'update').length,
+    unresolved:  preview.filter(r => r._rowStatus === 'unresolved').length,
+    ambiguous:   preview.filter(r => r._rowStatus === 'ambiguous').length,
+    duplicate:   preview.filter(r => r._rowStatus === 'duplicate').length,
+    invalid:     preview.filter(r => r._rowStatus === 'invalid').length,
   } : null;
 
   const saveableCount = preview
     ? preview.filter(r => ['valid', 'new', 'update'].includes(r._rowStatus)).length
     : 0;
+  const needsVoyageCount = counts ? counts.unresolved + counts.ambiguous : 0;
 
   const sc = 'w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition cursor-pointer disabled:opacity-60';
   const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
   const importResult = saveMutation.data?.data?.data;
 
   return (
-    <div className="animate-fadeIn">
+    <div className="animate-fadeIn max-w-full">
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 mb-5">
@@ -268,7 +283,7 @@ export default function BookingImport() {
 
       <PageHeader
         title="Import Bookings"
-        subtitle="Upload an Excel file to bulk-create or update bookings on a voyage"
+        subtitle="Upload an Excel file to bulk-create or update bookings across a Round — each row resolves its own Voyage automatically from POL/POD"
       />
 
       {/* ── Settings ─────────────────────────────────────────────────── */}
@@ -287,33 +302,20 @@ export default function BookingImport() {
             </select>
           </div>
 
-          {/* Voyage */}
+          {/* Round — Sprint 031: the only routing selector; a file may contain
+              rows for multiple voyages within this Round */}
           <div>
-            <label className={lc}>
-              Voyage <span className="text-red-400">*</span>
-              {voyagesLoading && <span className="ml-2 text-gray-300 font-normal normal-case text-[10px]">loading…</span>}
-              {!voyagesLoading && <span className="ml-2 text-gray-300 font-normal normal-case text-[10px]">{voyages.length} available</span>}
-            </label>
+            <label className={lc}>Round <span className="text-red-400">*</span></label>
             <select
-              value={voyageId}
-              onChange={e => { setVoyageId(e.target.value); setPreview(null); setConfirmed(false); }}
+              value={roundId}
+              onChange={e => { setRoundId(e.target.value); setPreview(null); setConfirmed(false); }}
               className={sc}
-              disabled={voyagesLoading}
             >
-              <option value="">{voyagesLoading ? 'Loading voyages…' : voyages.length === 0 ? 'No voyages found' : 'Select voyage…'}</option>
-              {voyages.map(v => (
-                <option key={v._id} value={v._id}>
-                  {v.voyageNumber}
-                  {v.polId?.name ? ` — ${v.polId.name}` : ''}
-                  {v.podId?.name ? ` → ${v.podId.name}` : ''}
-                  {v.etd ? ` (${fmt(v.etd)})` : ''}
-                  {` [${v.status}]`}
-                </option>
+              <option value="">Select round…</option>
+              {rounds.map(r => (
+                <option key={r._id} value={r._id}>{r.roundNumber}</option>
               ))}
             </select>
-            {!voyagesLoading && voyages.length === 0 && (
-              <p className="mt-1 text-[11px] text-red-500">No voyages found — create rounds first</p>
-            )}
           </div>
 
           {/* Import type */}
@@ -343,23 +345,6 @@ export default function BookingImport() {
           </div>
         </div>
 
-        {/* Voyage info strip */}
-        {selectedVoyage && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5 mb-4">
-            <span className="mono text-xs font-bold text-teal-700">{selectedVoyage.voyageNumber}</span>
-            {selectedVoyage.polId?.name && <span className="text-xs text-teal-600">POL: {selectedVoyage.polId.name}</span>}
-            {selectedVoyage.podId?.name && <span className="text-xs text-teal-600">POD: {selectedVoyage.podId.name}</span>}
-            {selectedVoyage.etd && <span className="text-xs text-teal-600">ETD: {fmt(selectedVoyage.etd)}</span>}
-            {selectedVoyage.eta && <span className="text-xs text-teal-600">ETA: {fmt(selectedVoyage.eta)}</span>}
-            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${selectedVoyage.status === 'Departed' ? 'bg-amber-100 text-amber-700' :
-              selectedVoyage.status === 'In Transit' ? 'bg-blue-100 text-blue-700' :
-                selectedVoyage.status === 'Arrived' ? 'bg-green-100 text-green-700' :
-                  selectedVoyage.status === 'Completed' ? 'bg-teal-100 text-teal-700' :
-                    'bg-gray-100 text-gray-600'
-              }`}>{selectedVoyage.status}</span>
-          </div>
-        )}
-
         {/* Import type description */}
         <div className={`rounded-xl px-4 py-3 text-xs flex items-start gap-2 mb-4 ${importType === 'booking'
           ? 'bg-blue-50 border border-blue-200 text-blue-700'
@@ -370,26 +355,27 @@ export default function BookingImport() {
           </svg>
           {importType === 'booking' ? (
             <span>
-              <strong>Booking mode:</strong> Creates or updates bookings linked to the selected agent and voyage.
-              Each row is matched by <strong>Container Number</strong> within the selected agent’s scope —
-              existing containers are updated (orange), new ones created (green).
-              Only valid rows are saved. No bookings are cancelled.
+              <strong>Booking mode:</strong> Each row resolves its own Voyage from its POL/POD, matched
+              against this Round's voyages — no need to split a multi-voyage file. Rows are matched by
+              <strong> Container Number</strong> within this Round + Agent scope — existing containers are
+              updated (orange), new ones created (green). Only resolvable, valid rows are saved. No bookings
+              are cancelled.
             </span>
           ) : (
             <span>
-              <strong>Final Loading mode:</strong> Matches rows by <strong>Container Number</strong> within the selected agent’s scope —
-              existing bookings are updated (orange), new ones created (green).
-              Matched bookings are marked <strong>Final Loading</strong>.
-              Bookings belonging to the <strong>same agent</strong> on this voyage whose container number is <strong>NOT</strong> in this file
-              are marked <strong>Cancelled</strong>. Bookings from other agents are not affected.
-              Invalid rows (red) are always skipped.
+              <strong>Final Loading mode:</strong> Represents the complete manifest for this Round + Agent —
+              not just one voyage. Rows are matched by <strong>Container Number</strong>; existing bookings are
+              updated (orange), new ones created (green), and matched bookings are marked <strong>Final Loading</strong>.
+              Any booking for this <strong>same agent</strong>, on <strong>any voyage in this Round</strong>, whose
+              container number is <strong>NOT</strong> in this file is marked <strong>Cancelled</strong>. Bookings
+              from other agents are never affected. Invalid rows (red) are always skipped.
             </span>
           )}
         </div>
 
         <div className="flex justify-end">
           <button onClick={handlePreview}
-            disabled={isPreviewing || !rawRows.length || !agentId || !voyageId}
+            disabled={isPreviewing || !rawRows.length || !agentId || !roundId}
             className="btn btn-primary btn-md flex items-center gap-2">
             {isPreviewing ? (
               <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -416,8 +402,8 @@ export default function BookingImport() {
               { col: 'Container Type', note: 'e.g. 40HC, 20DRY — code or size', req: true },
               { col: 'Container Size', note: 'e.g. 40ft, 20ft. Also accepts: Size, Length' },
               { col: 'Container Status', note: 'Full or Empty only', req: true },
-              { col: 'POL', note: 'Port of Loading — name or UNLOCODE', req: true },
-              { col: 'POD', note: 'Port of Discharge — name or UNLOCODE', req: true },
+              { col: 'POL', note: 'Port of Loading — used to auto-resolve this row’s Voyage', req: true },
+              { col: 'POD', note: 'Port of Discharge — used to auto-resolve this row’s Voyage', req: true },
               { col: 'Rate', note: 'Freight rate per container (one row = one container)', req: true },
               { col: 'Booking Number', note: 'Optional — auto-generated if blank' },
               { col: 'Shipper', note: 'Optional — shipper company name' },
@@ -436,12 +422,17 @@ export default function BookingImport() {
               </div>
             ))}
           </div>
+          <p className="mt-3 text-[11px] text-gray-400">
+            One file may contain rows for <strong>multiple voyages</strong> within the selected Round —
+            each row's Voyage is resolved automatically from its own POL/POD. You'll only be asked to pick a
+            Voyage manually for rows the system can't resolve on its own.
+          </p>
         </div>
       )}
 
       {/* ── Preview ───────────────────────────────────────────────────── */}
       {preview && (
-        <div className="flex flex-col gap-4">
+        <div className="flex max-w-full flex-col gap-4">
 
           {/* Summary */}
           <div className="card p-4 flex flex-wrap items-center gap-3">
@@ -450,12 +441,14 @@ export default function BookingImport() {
               <>
                 {counts.valid > 0 && <SummaryBadge label="New" count={counts.valid} color="bg-green-100 text-green-700" />}
                 {counts.update > 0 && <SummaryBadge label="Will Update" count={counts.update} color="bg-amber-100 text-amber-700" />}
+                {needsVoyageCount > 0 && <SummaryBadge label="Needs Voyage" count={needsVoyageCount} color="bg-orange-100 text-orange-700" />}
                 {counts.invalid > 0 && <SummaryBadge label="Invalid" count={counts.invalid} color="bg-red-100 text-red-600" />}
               </>
             ) : (
               <>
                 {counts.new > 0 && <SummaryBadge label="New" count={counts.new} color="bg-green-100 text-green-700" />}
                 {counts.update > 0 && <SummaryBadge label="Will Update" count={counts.update} color="bg-amber-100 text-amber-700" />}
+                {needsVoyageCount > 0 && <SummaryBadge label="Needs Voyage" count={needsVoyageCount} color="bg-orange-100 text-orange-700" />}
                 {counts.invalid > 0 && <SummaryBadge label="Invalid" count={counts.invalid} color="bg-red-100 text-red-600" />}
               </>
             )}
@@ -477,6 +470,7 @@ export default function BookingImport() {
               {importType === 'booking' ? 'Valid — will be created' : 'New — will be created'}</span>
             {importType === 'finalLoading' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-300 inline-block" />Existing — will be updated + marked Final Loading</span>}
             {importType === 'booking' && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-300 inline-block" />Existing — will be updated</span>}
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-orange-300 inline-block" />Needs Voyage — pick one below, then Re-validate</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block" />Invalid — skipped</span>
             <span className="text-gray-400">· Edit any cell then Re-validate.</span>
           </div>
@@ -489,19 +483,34 @@ export default function BookingImport() {
               </svg>
               <span>
                 After confirming: all imported bookings will be marked <strong>Final Loading</strong>.
-                Any existing bookings for the <strong>same agent</strong> on this voyage that are <strong>not</strong> in this file will be marked <strong>Cancelled</strong>.
+                Any existing booking for the <strong>same agent</strong>, on <strong>any voyage in this Round</strong>,
+                that is <strong>not</strong> in this file will be marked <strong>Cancelled</strong>.
                 Bookings from other agents are not affected.
               </span>
             </div>
           )}
 
-          {/* Table */}
-          <div className="card overflow-hidden max-w-full">
-            <div className="">
-              <table className="w-full border-collapse text-[12px]">
+          {/* Needs-voyage warning */}
+          {needsVoyageCount > 0 && (
+            <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-xs text-orange-700">
+              <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <span>
+                {counts.unresolved > 0 && <>{counts.unresolved} row{counts.unresolved !== 1 ? 's' : ''} found no matching Voyage in this Round. </>}
+                {counts.ambiguous > 0 && <>{counts.ambiguous} row{counts.ambiguous !== 1 ? 's' : ''} matched more than one Voyage. </>}
+                Pick the correct Voyage in the table below, then click Re-validate.
+              </span>
+            </div>
+          )}
+
+          {/* prview Table — overflow-x-auto clips the table, min-w-0 on the card prevents page blowout */}
+          <div className="card overflow-hidden max-w-full min-w-0">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[12px]" style={{ minWidth: 1600 }}>
                 <thead>
                   <tr className="table-header text-[11px]">
-                    {['#', 'Status', 'Booking No', 'Cntr No *', 'Type', 'Size', 'Cntr Status *', 'POL', 'POD', 'Rate', 'Carrier', 'Commodity', 'VGM', 'Hazardous', 'IMDG Code', 'Shipper', 'Consignee', 'Issues'].map(h => (
+                    {['#', 'Status', 'Booking No', 'Cntr No *', 'Type', 'Size', 'Cntr Status *', 'POL', 'POD', 'Voyage', 'Rate', 'Carrier', 'Commodity', 'VGM', 'Hazardous', 'IMDG Code', 'Shipper', 'Consignee', 'Issues'].map(h => (
                       <th key={h} className="!py-2 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -509,6 +518,11 @@ export default function BookingImport() {
                 <tbody>
                   {preview.map((row, idx) => {
                     const st = ROW_STYLES[row._rowStatus] || ROW_STYLES.invalid;
+                    const needsVoyagePick = row._rowStatus === 'unresolved' || row._rowStatus === 'ambiguous';
+                    // Ambiguous rows only offer their actual candidates; unresolved rows offer the whole Round.
+                    const voyageOptions = row._rowStatus === 'ambiguous' && row._voyageCandidates?.length
+                      ? row._voyageCandidates
+                      : roundVoyages;
                     return (
                       <tr key={idx} className={`border-b border-gray-100 ${st.bg}`}>
                         <td className="px-3 py-1.5 text-center text-gray-400 font-semibold w-8">{idx + 1}</td>
@@ -522,6 +536,31 @@ export default function BookingImport() {
                         <td className="px-1.5 py-1 min-w-[80px]"><EditableCell value={row.containerStatus} onChange={v => updateRow(idx, 'containerStatus', v)} hasError={row._errors?.some(e => e.includes('Container Status'))} /></td>
                         <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pol} onChange={v => updateRow(idx, 'pol', v)} hasError={row._errors?.some(e => e.includes('POL'))} /></td>
                         <td className="px-1.5 py-1 min-w-[110px]"><EditableCell value={row.pod} onChange={v => updateRow(idx, 'pod', v)} hasError={row._errors?.some(e => e.includes('POD'))} /></td>
+                        <td className="px-1.5 py-1 min-w-[150px]">
+                          {needsVoyagePick ? (
+                            <select
+                              value={row.voyageOverrideId || ''}
+                              onChange={e => updateRow(idx, 'voyageOverrideId', e.target.value)}
+                              className="w-full text-[11px] border border-orange-300 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400/30"
+                              disabled={voyagesLoading}
+                            >
+                              <option value="">{voyagesLoading ? 'Loading…' : 'Select voyage…'}</option>
+                              {voyageOptions.map(v => (
+                                <option key={v._id} value={v._id}>
+                                  {v.voyageNumber} ({v.polId?.name || v.polId?.code || '?'} → {v.podId?.name || v.podId?.code || '?'})
+                                </option>
+                              ))}
+                            </select>
+                          ) : row._resolvedVoyage ? (
+                            <span className="text-[11px] text-gray-600">
+                              <span className="font-semibold text-gray-700">{row._resolvedVoyage.voyageNumber}</span>
+                              <br />
+                              <span className="text-gray-400">{row._resolvedVoyage.polId?.name} → {row._resolvedVoyage.podId?.name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="px-1.5 py-1 min-w-[65px]"><EditableCell value={row.rate} onChange={v => updateRow(idx, 'rate', v)} hasError={row._errors?.some(e => e.includes('Rate'))} /></td>
                         {/* currency column removed Sprint 026 */}
                         <td className="px-1.5 py-1 min-w-[100px]"><EditableCell value={row.carrierName} onChange={v => updateRow(idx, 'carrierName', v)} /></td>
@@ -551,8 +590,8 @@ export default function BookingImport() {
               <div>
                 <p className="text-sm font-semibold text-gray-700">
                   Ready to save {saveableCount} row{saveableCount !== 1 ? 's' : ''}
-                  {counts && (counts.duplicate + counts.invalid) > 0 && (
-                    <span className="text-red-400 font-normal ml-1.5">({counts.duplicate + counts.invalid} will be skipped)</span>
+                  {counts && (counts.duplicate + counts.invalid + needsVoyageCount) > 0 && (
+                    <span className="text-red-400 font-normal ml-1.5">({counts.duplicate + counts.invalid + needsVoyageCount} will be skipped)</span>
                   )}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">Edit rows then Re-validate. Nothing is saved until you confirm.</p>

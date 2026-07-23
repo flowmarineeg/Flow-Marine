@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { bookingsService } from '@/services/bookings.service';
 import { voyagesService }   from '@/services/voyages.service';
 import { agentsService }    from '@/services/agents.service';
+import { useRounds }        from '@/hooks/useRounds';
 import { usePermission }    from '@/context/PermissionContext';
 import { BOOKING_STATUS }   from '@/utils/constants';
 import PageHeader    from '@/components/ui/PageHeader';
@@ -34,11 +35,13 @@ export default function BookingList() {
   const [page,         setPage]         = useState(1);
   const [search,       setSearch]       = useState('');
   const [status,       setStatus]       = useState('');
+  const [roundId,      setRoundId]      = useState('');
   const [voyageId,     setVoyageId]     = useState('');
   const [agentId,      setAgentId]      = useState('');
   const [selected,     setSelected]     = useState([]);
   const [modal,        setModal]        = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [manualDeleteTarget, setManualDeleteTarget] = useState(null);
   const [dischargeOpen, setDischargeOpen] = useState(false); // Sprint 027
 
   // Layer 2
@@ -49,24 +52,54 @@ export default function BookingList() {
   });
 
   // Layer 1 — Manual Bookings
-  const [manualPage,   setManualPage]   = useState(1);
-  const [manualSearch, setManualSearch] = useState('');
-  const [manualStatus, setManualStatus] = useState('');
+  const [manualPage,     setManualPage]     = useState(1);
+  const [manualSearch,   setManualSearch]   = useState('');
+  const [manualStatus,   setManualStatus]   = useState('');
+  const [manualRoundId,  setManualRoundId]  = useState(''); // Sprint 030
+  const [manualVoyageId, setManualVoyageId] = useState(''); // Sprint 030
+  const [manualAgentId,  setManualAgentId]  = useState('');
 
   const { data: manualData, isLoading: manualLoading } = useQuery({
-    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus],
-    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus }).then(r => r.data),
+    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, manualVoyageId, manualAgentId],
+    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, voyageId: manualVoyageId, agentId: manualAgentId }).then(r => r.data),
     enabled:  activeTab === 'manual',
   });
 
-  const { data: voyageData } = useQuery({ queryKey: ['voyages-dropdown'], queryFn: () => voyagesService.list({ limit: 200 }).then(r => r.data.data) });
+  // Sprint 030: Round → Voyage cascading filters (both tabs)
+  const { rounds } = useRounds();
+  const { data: voyageData } = useQuery({
+    queryKey: ['voyages-dropdown', roundId],
+    queryFn:  () => voyagesService.list({ roundId, limit: 200 }).then(r => r.data.data),
+    enabled:  !!roundId,
+  });
+  const { data: manualVoyageData } = useQuery({
+    queryKey: ['voyages-dropdown', manualRoundId],
+    queryFn:  () => voyagesService.list({ roundId: manualRoundId, limit: 200 }).then(r => r.data.data),
+    enabled:  !!manualRoundId,
+  });
   const { data: agentData  } = useQuery({ queryKey: ['agents-dropdown'],  queryFn: () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data) });
-  const voyages = voyageData || [];
-  const agents  = agentData  || [];
+  const voyages       = voyageData       || [];
+  const manualVoyages = manualVoyageData || [];
+  const agents         = agentData  || [];
+
+  // Discharge List export modal needs its own unfiltered voyage list —
+  // it is a standalone export tool, independent of the Round/Voyage list filters above.
+  const { data: allVoyageData } = useQuery({
+    queryKey: ['voyages-dropdown-all'],
+    queryFn:  () => voyagesService.list({ limit: 200 }).then(r => r.data.data),
+    enabled:  dischargeOpen,
+  });
+  const allVoyages = allVoyageData || [];
 
   const deleteMutation = useMutation({
     mutationFn: (id) => bookingsService.remove(id),
     onSuccess: () => { toast.success('Booking deleted'); qc.invalidateQueries(['bookings']); setDeleteTarget(null); setSelected([]); },
+    onError:   (e)  => toast.error(e.response?.data?.message || 'Delete failed'),
+  });
+
+  const manualDeleteMutation = useMutation({
+    mutationFn: (id) => bookingsService.removeManual(id),
+    onSuccess: () => { toast.success('Manual booking deleted'); qc.invalidateQueries(['manual-bookings']); setManualDeleteTarget(null); },
     onError:   (e)  => toast.error(e.response?.data?.message || 'Delete failed'),
   });
 
@@ -134,8 +167,12 @@ export default function BookingList() {
           <div className="flex-1 min-w-[200px]">
             <SearchBar value={search} onChange={v => { setSearch(v); setPage(1); setSelected([]); }} placeholder="Search booking no, shipper, consignee…" />
           </div>
-          <select value={voyageId} onChange={e => { setVoyageId(e.target.value); setPage(1); }} className={sc}>
-            <option value="">All Voyages</option>
+          <select value={roundId} onChange={e => { setRoundId(e.target.value); setVoyageId(''); setPage(1); }} className={sc}>
+            <option value="">All Rounds</option>
+            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+          </select>
+          <select value={voyageId} onChange={e => { setVoyageId(e.target.value); setPage(1); }} disabled={!roundId} className={`${sc} disabled:opacity-50`}>
+            <option value="">{roundId ? 'All Voyages' : 'Select a round first'}</option>
             {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
           </select>
           <select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} className={sc}>
@@ -242,6 +279,18 @@ export default function BookingList() {
           <div className="flex-1 min-w-[200px]">
             <SearchBar value={manualSearch} onChange={v => { setManualSearch(v); setManualPage(1); }} placeholder="Search MB-number…" />
           </div>
+          <select value={manualRoundId} onChange={e => { setManualRoundId(e.target.value); setManualVoyageId(''); setManualPage(1); }} className={sc}>
+            <option value="">All Rounds</option>
+            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+          </select>
+          <select value={manualVoyageId} onChange={e => { setManualVoyageId(e.target.value); setManualPage(1); }} disabled={!manualRoundId} className={`${sc} disabled:opacity-50`}>
+            <option value="">{manualRoundId ? 'All Voyages' : 'Select a round first'}</option>
+            {manualVoyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+          </select>
+          <select value={manualAgentId} onChange={e => { setManualAgentId(e.target.value); setManualPage(1); }} className={sc}>
+            <option value="">All Agents</option>
+            {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode}</option>)}
+          </select>
           <select value={manualStatus} onChange={e => { setManualStatus(e.target.value); setManualPage(1); }} className={sc}>
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -279,7 +328,12 @@ export default function BookingList() {
                       <td><span className="mono text-xs font-semibold text-teal-700 whitespace-nowrap">{fmtMoney(m.totalFreight)}</span></td>
                       <td><Badge label={m.status} /></td>
                       <td>
-                        <button onClick={() => router.push(`/bookings/manual/${m._id}`)} className="text-xs font-medium text-teal-600 hover:text-teal-800 transition">View</button>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => router.push(`/bookings/manual/${m._id}`)} className="text-xs font-medium text-teal-600 hover:text-teal-800 transition whitespace-nowrap">View</button>
+                          {can('bookings', 'delete') && (
+                            <button onClick={() => setManualDeleteTarget(m)} className="text-xs font-medium text-red-400 hover:text-red-600 transition">Delete</button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -318,11 +372,21 @@ export default function BookingList() {
         message={`Delete booking "${deleteTarget?.bookingNumber}"? This is permanent.`}
       />
 
+      {/* ── Manual booking delete confirm ─────────────────────────────── */}
+      <ConfirmDialog
+        open={!!manualDeleteTarget}
+        onClose={() => setManualDeleteTarget(null)}
+        onConfirm={() => manualDeleteMutation.mutate(manualDeleteTarget._id)}
+        loading={manualDeleteMutation.isPending}
+        title="Delete Manual Booking"
+        message={`Delete manual booking "${manualDeleteTarget?.bookingNumber}"? This is permanent.`}
+      />
+
       {/* Sprint 027 — Discharge List export modal */}
       <DischargeListExportModal
         open={dischargeOpen}
         onClose={() => setDischargeOpen(false)}
-        voyages={voyages}
+        voyages={allVoyages}
         agents={agents}
       />
     </div>

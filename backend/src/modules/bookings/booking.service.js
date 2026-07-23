@@ -57,7 +57,7 @@ const getVoyagePortIds = async (voyageId) => {
 
 // ─── Populate helper ──────────────────────────────────────────────────────────
 const populate = (q) =>
-  q.populate('voyageId', 'voyageNumber polId podId etd eta status')
+  q.populate('voyageId', 'voyageNumber roundId polId podId etd eta status')
    .populate({ path: 'voyageId', populate: [{ path: 'polId', select: 'name code' }, { path: 'podId', select: 'name code' }] })
    .populate('agentId',         'agentCode agentName')
    .populate('polId',           'name code')
@@ -116,22 +116,12 @@ const create = async (data, createdBy) => {
     throw { status: 400, message: `Cannot book on a voyage with status "${voyage.status}"` };
   }
 
-  if (String(data.polId) === String(data.podId)) {
-    throw { status: 400, message: 'Port of Loading and Port of Discharge must be different' };
-  }
-
-  const validPortIds = await getVoyagePortIds(data.voyageId);
-  if (validPortIds.length > 0) {
-    if (!validPortIds.includes(String(data.polId)))
-      throw { status: 400, message: "POL port is not part of this voyage's route" };
-    if (!validPortIds.includes(String(data.podId)))
-      throw { status: 400, message: "POD port is not part of this voyage's route" };
-  }
-
   const bookingNumber = await nextNumber('booking');
   // Sprint 024: each L2 booking = ONE container; totalFreight = freightRate (flat per container)
   const totalFreight  = Number(data.freightRate);
-  const { totalFreight: _ig, ...safeData } = data;
+  // Sprint 030: POL/POD are no longer client-submitted — they are always the
+  // selected voyage's own polId/podId. Strip any client-sent values.
+  const { totalFreight: _ig, polId: _ig2, podId: _ig3, ...safeData } = data;
 
   // Sprint 022 — pre-flight capacity check (feature-flagged)
   const enforcementMode = capacityEnforcement();
@@ -143,7 +133,7 @@ const create = async (data, createdBy) => {
         voyage.roundId,
         String(data.voyageId),
         String(data.containerTypeId),
-        data.podId ? String(data.podId) : null,
+        voyage.podId ? String(voyage.podId) : null,
       );
       if (!preview.canFit) {
         if (enforcementMode === 'strict') {
@@ -159,6 +149,9 @@ const create = async (data, createdBy) => {
 
   const booking = await Booking.create({
     ...safeData,
+    // Sprint 030: POL/POD always derived from the selected voyage's own ports
+    polId:     voyage.polId,
+    podId:     voyage.podId,
     bookingNumber,
     totalFreight,
     status:    data.status === 'Cancelled' ? 'Pending' : (data.status || 'Pending'),
@@ -188,17 +181,14 @@ const update = async (id, data, updatedBy) => {
     validateTransition(booking.status, data.status);
   }
 
-  const polId = data.polId || String(booking.polId);
-  const podId = data.podId || String(booking.podId);
-  if (String(polId) === String(podId)) {
-    throw { status: 400, message: 'Port of Loading and Port of Discharge must be different' };
-  }
-
   const freightRate  = data.freightRate !== undefined ? Number(data.freightRate) : booking.freightRate;
   // Sprint 024: each L2 booking = ONE container; totalFreight = freightRate (flat per container)
   const totalFreight = freightRate;
 
-  const { totalFreight: _ig1, bookingNumber: _ig2, voyageId: _ig3, ...safeData } = data;
+  // Sprint 030: POL/POD are derived from the voyage and are not independently
+  // editable — voyageId itself is already immutable post-creation, so POL/POD
+  // (which follow the voyage) must stay immutable with it.
+  const { totalFreight: _ig1, bookingNumber: _ig2, voyageId: _ig3, polId: _ig4, podId: _ig5, ...safeData } = data;
   Object.assign(booking, { ...safeData, totalFreight, updatedBy });
   await booking.save();
 
