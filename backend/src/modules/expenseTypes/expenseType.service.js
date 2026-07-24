@@ -38,11 +38,24 @@ const getById = async (id) => {
 const getCategories = async () => {
   // Primary source: dedicated category collection
   const cats = await ExpenseCategory.find({}).sort({ name: 1 }).lean();
-  return cats.map(c => ({ _id: c._id, name: c.name }));
+  return cats.map(c => ({ _id: c._id, name: c.name, costClassification: c.costClassification }));
+};
+
+// ─── Sprint 035: category name -> costClassification lookup, for reports ─────
+// Case-insensitive on the name, since ExpenseType.category is a free-string
+// field matched against this collection's `name` elsewhere in this file too.
+// Returns a plain object so callers (e.g. reports.service.js) never touch
+// ExpenseCategory directly — the classification is ALWAYS read through this
+// helper, never hardcoded against a literal category name.
+const getCostClassificationMap = async () => {
+  const cats = await ExpenseCategory.find({}).select('name costClassification').lean();
+  const map = {};
+  cats.forEach(c => { map[c.name.trim().toUpperCase()] = c.costClassification || 'Other Voyage Cost'; });
+  return map;
 };
 
 // ─── Create a standalone category ────────────────────────────────────────────
-const createCategory = async (name, userId) => {
+const createCategory = async (name, costClassification, userId) => {
   const trimmed = name?.trim();
   if (!trimmed) throw { status: 400, message: 'Category name is required' };
   if (trimmed.length > 50) throw { status: 400, message: 'Category name must be 50 characters or less' };
@@ -50,7 +63,25 @@ const createCategory = async (name, userId) => {
   const exists = await ExpenseCategory.findOne({ name: { $regex: `^${trimmed}$`, $options: 'i' } });
   if (exists) throw { status: 400, message: `Category "${trimmed}" already exists` };
 
-  const cat = await ExpenseCategory.create({ name: trimmed, createdBy: userId });
+  const cat = await ExpenseCategory.create({
+    name: trimmed,
+    costClassification: costClassification || 'Other Voyage Cost',
+    createdBy: userId,
+  });
+  return cat.toObject();
+};
+
+// ─── Sprint 035: update a category's cost classification (name is NOT
+// renameable — same deliberate limitation as before this sprint) ────────────
+const updateCategoryClassification = async (id, costClassification) => {
+  const { EXPENSE_COST_CLASSIFICATIONS } = require('../../config/constants');
+  if (!EXPENSE_COST_CLASSIFICATIONS.includes(costClassification)) {
+    throw { status: 400, message: `costClassification must be one of: ${EXPENSE_COST_CLASSIFICATIONS.join(', ')}` };
+  }
+  const cat = await ExpenseCategory.findById(id);
+  if (!cat) throw { status: 404, message: 'Category not found' };
+  cat.costClassification = costClassification;
+  await cat.save();
   return cat.toObject();
 };
 
@@ -126,6 +157,7 @@ const getAll = async (filters = {}, selectedIds = []) => {
 
 module.exports = {
   list, getById,
-  getCategories, createCategory, deleteCategory,
+  getCategories, createCategory, updateCategoryClassification, deleteCategory,
+  getCostClassificationMap,
   create, update, softDelete, getAll,
 };

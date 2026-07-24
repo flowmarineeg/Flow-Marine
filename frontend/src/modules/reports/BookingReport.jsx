@@ -84,11 +84,10 @@ export default function BookingReport() {
         </div>
       }
       summary={rows.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <ReportStatCard label="Bookings"      value={fmtNum(summary.count)}        />
-          <ReportStatCard label="Total Freight" value={fmtMoney(summary.totalFreight)} accent />
-          <ReportStatCard label="Total Units"   value={fmtNum(summary.totalQty)}     />
-          <ReportStatCard label="Total Slots"   value={fmtNum(summary.totalSlots)}   />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <ReportStatCard label="Bookings"      value={fmtNum(summary.count)}        sub="Layer 1 + Layer 2" />
+          <ReportStatCard label="Total Freight" value={fmtMoney(summary.totalFreight)} accent sub="Layer 1 + Layer 2" />
+          <ReportStatCard label="Total Units"   value={fmtNum(summary.totalUnits)}    sub="Manual bookings only" />
         </div>
       )}
     >
@@ -103,19 +102,29 @@ export default function BookingReport() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
-                  {['Booking No','Voyage','Agent','Shipper','Consignee','Container','Qty','Freight','Status','Date'].map(h => <th key={h}>{h}</th>)}
+                  {['Layer','Booking No','Voyage','Agent','Shipper','Consignee','Container','Freight','Status','Date'].map(h => <th key={h}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {rows.map(b => (
                   <tr key={b._id} className="table-row">
-                    <td><span className="mono text-xs font-bold text-teal-600">{b.bookingNumber}</span></td>
+                    <td>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        b.layer === 'Manual' ? 'bg-purple-50 text-purple-600' : 'bg-teal-50 text-teal-700'
+                      }`}>
+                        {b.layer === 'Manual' ? 'Manual' : 'Operational'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`mono text-xs font-bold ${b.layer === 'Manual' ? 'text-purple-600' : 'text-teal-600'}`}>
+                        {b.bookingNumber}
+                      </span>
+                    </td>
                     <td><span className="mono text-xs text-gray-500">{b.voyageId?.voyageNumber}</span></td>
                     <td className="text-xs text-gray-500">{b.agentId?.agentName}</td>
-                    <td className="text-xs text-gray-700 max-w-[120px] truncate">{b.shipper}</td>
-                    <td className="text-xs text-gray-500 max-w-[120px] truncate">{b.consignee}</td>
-                    <td><span className="mono text-xs text-gray-500">{b.containerTypeId?.code}</span></td>
-                    <td className="text-xs text-gray-600">{fmtNum(b.quantity)}</td>
+                    <td className="text-xs text-gray-700 max-w-[120px] truncate">{b.shipper || '—'}</td>
+                    <td className="text-xs text-gray-500 max-w-[120px] truncate">{b.consignee || '—'}</td>
+                    <td><span className="mono text-xs text-gray-500">{b.containerNumber || '—'}</span></td>
                     <td><span className="mono text-xs font-semibold text-teal-700">{fmtMoney(b.totalFreight)}</span></td>
                     <td><Badge label={b.status} /></td>
                     <td className="text-xs text-gray-400">{fmt(b.createdAt)}</td>

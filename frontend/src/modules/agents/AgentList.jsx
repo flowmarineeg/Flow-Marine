@@ -120,7 +120,7 @@ export default function AgentList() {
                     <td>
                       <div style={{ display: 'flex', gap: 12 }}>
                         {can('agents', 'update') && (
-                          <button onClick={() => router.push(`/agents/${a._id}`)} style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--teal)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Edit</button>
+                          <button onClick={() => router.push(`/agents/${a._id}`)} style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--teal)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View</button>
                         )}
                         {can('agents', 'delete') && (
                           <button onClick={() => setDeleteTarget(a)} style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Delete</button>

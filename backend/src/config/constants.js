@@ -14,6 +14,12 @@ const CONTAINER_TYPES = ['Dry', 'Reefer', 'Open Top', 'Flat Rack', 'Tank'];
 // ─── Expense Type ─────────────────────────────────────────────────────────────
 const EXPENSE_CATEGORIES = ['Port Expense', 'Operating Expense', 'Other'];
 
+// Sprint 035 — business classification of an ExpenseCategory for the Voyage
+// Profitability report. Configurable per category by the business (via the
+// existing category management UI) — the report NEVER hardcodes a category
+// name like 'Port Expense' to decide Voyage Cost vs Other Voyage Cost.
+const EXPENSE_COST_CLASSIFICATIONS = ['Voyage Cost', 'Other Voyage Cost'];
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 const SERVICE_STATUS = ['Active', 'Inactive'];
 
@@ -27,7 +33,13 @@ const VOYAGE_STATUS = ['Scheduled', 'Departed', 'In Transit', 'Arrived', 'Comple
 const BOOKING_STATUS = ['Pending', 'Confirmed', 'Final Loading', 'Cancelled'];
 
 // ─── Invoice ──────────────────────────────────────────────────────────────────
-const INVOICE_STATUS = ['Draft', 'Issued', 'Paid', 'Overdue', 'Cancelled'];
+// Sprint 033: 'Partially Paid' added — invoice status is now derived from the
+// sum of its Payments, never hand-set once payments exist (see invoice.service.js).
+const INVOICE_STATUS = ['Draft', 'Issued', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled'];
+const INVOICE_TYPES  = ['Booking', 'Voyage', 'Round'];
+
+// ─── Payment (Sprint 033) ─────────────────────────────────────────────────────
+const PAYMENT_METHODS = ['Bank Transfer', 'Cash', 'Cheque', 'Other'];
 
 // ─── Tracking ─────────────────────────────────────────────────────────────────
 const TRACKING_STATUS = ['At Port', 'Departed', 'In Transit', 'Arrived', 'Anchored', 'Delayed'];
@@ -73,11 +85,14 @@ module.exports = {
   CONTAINER_SIZES,
   CONTAINER_TYPES,
   EXPENSE_CATEGORIES,
+  EXPENSE_COST_CLASSIFICATIONS,
   SERVICE_STATUS,
   ROUND_STATUS,
   VOYAGE_STATUS,
   BOOKING_STATUS,
   INVOICE_STATUS,
+  INVOICE_TYPES,
+  PAYMENT_METHODS,
   TRACKING_STATUS,
   USER_STATUS,
   AUDIT_ACTIONS,

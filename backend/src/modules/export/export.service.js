@@ -115,14 +115,17 @@ const COLUMNS = {
   ],
   invoices: [
     { header: 'Invoice Number',  key: 'invoiceNumber',  width: 18 },
-    { header: 'Booking Number',  key: 'bookingNumber',  width: 18 },
+    { header: 'Invoice Type',    key: 'invoiceType',    width: 12 },
+    { header: 'Bookings',        key: 'bookingNumbers', width: 30 },
     { header: 'Agent Code',      key: 'agentCode',      width: 14 },
     { header: 'Agent Name',      key: 'agentName',      width: 22 },
     { header: 'Invoice Date',    key: 'invoiceDate',    width: 14 },
     { header: 'Due Date',        key: 'dueDate',        width: 14 },
-    { header: 'Amount',          key: 'amount',         width: 14 },
+    { header: 'Total Amount',    key: 'totalAmount',    width: 14 },
+    { header: 'Paid Amount',     key: 'paidAmount',     width: 14 },
+    { header: 'Balance',         key: 'balanceAmount',  width: 14 },
     { header: 'Currency',        key: 'currency',       width: 10 },
-    { header: 'Status',          key: 'status',         width: 12 },
+    { header: 'Status',          key: 'status',         width: 14 },
     { header: 'Notes',           key: 'notes',          width: 28 },
     { header: 'Created At',      key: 'createdAt',      width: 20 },
   ],
@@ -388,22 +391,26 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
     }
 
     case 'invoices': {
+      // Sprint 033: Invoice is now header + lineItems (Booking/Voyage/Round),
+      // with paidAmount/balanceAmount instead of a single flat `amount`.
       const Invoice = require('../invoices/invoice.model');
       const q = { isDeleted: false, ...idFilter };
       if (filters.status)  q.status  = filters.status;
       if (filters.agentId) q.agentId = filters.agentId;
       const rows = await Invoice.find(q)
-        .populate('bookingId', 'bookingNumber')
-        .populate('agentId',   'agentCode agentName')
-        .sort({ invoiceDate: -1 }).lean();
+        .populate('agentId', 'agentCode agentName')
+        .sort({ invoiceDate: -1 }).lean({ virtuals: true });
       return rows.map(r => ({
         invoiceNumber:  r.invoiceNumber,
-        bookingNumber:  r.bookingId?.bookingNumber || '',
+        invoiceType:    r.invoiceType,
+        bookingNumbers: (r.lineItems || []).map(li => li.bookingNumber).filter(Boolean).join(', '),
         agentCode:      r.agentId?.agentCode       || '',
         agentName:      r.agentId?.agentName       || '',
         invoiceDate:    fmtD(r.invoiceDate),
         dueDate:        fmtD(r.dueDate),
-        amount:         r.amount,
+        totalAmount:    r.totalAmount,
+        paidAmount:     r.paidAmount,
+        balanceAmount:  r.balanceAmount,
         currency:       r.currency,
         status:         r.status,
         notes:          r.notes || '',

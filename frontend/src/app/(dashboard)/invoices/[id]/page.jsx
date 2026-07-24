@@ -7,6 +7,7 @@ import { invoicesService } from '@/services/invoices.service';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
 import InvoiceForm from '@/modules/invoices/InvoiceForm';
+import InvoicePaymentPanel from '@/modules/invoices/InvoicePaymentPanel';
 import Badge from '@/components/ui/Badge';
 
 function EditInvoiceContent({ id }) {
@@ -38,10 +39,17 @@ function EditInvoiceContent({ id }) {
         <span className="mono text-sm font-bold text-gray-600">{invoice.invoiceNumber}</span>
       </div>
       <div className="flex items-center gap-3 mb-6">
-        <PageHeader title={invoice.invoiceNumber} subtitle={invoice.bookingId?.bookingNumber} />
+        <PageHeader
+          title={invoice.invoiceNumber}
+          subtitle={`${invoice.invoiceType} invoice — ${invoice.lineItems?.length || 0} booking${invoice.lineItems?.length !== 1 ? 's' : ''}`}
+        />
         <Badge label={invoice.status} />
       </div>
-      <InvoiceForm item={invoice} />
+      <div className="flex flex-col gap-5">
+        <InvoiceForm item={invoice} />
+        {/* Sprint 033 — payments live on Invoice Detail, not the create flow */}
+        <InvoicePaymentPanel invoice={invoice} />
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Chart, registerables } from 'chart.js';
 import { reportsService } from '@/services/reports.service';
 import { roundsService }  from '@/services/rounds.service';
+import { voyagesService } from '@/services/voyages.service';
 import ReportLayout       from './ReportLayout';
 import { ReportStatCard, ReportEmptyState, rsc, fmtMoney, fmtNum } from './reportHelpers';
 
@@ -71,7 +72,10 @@ function PnlChart({ expenseBreakdown = [], totalRevenue = 0 }) {
 }
 
 export default function RoundPnlReport() {
-  const [roundId, setRoundId] = useState('');
+  const [roundId, setRoundId]   = useState('');
+  // Sprint 035 — optional Voyage narrows the report to voyage scope;
+  // cascades from Round, same convention as BookingRevenueDetailsReport.jsx.
+  const [voyageId, setVoyageId] = useState('');
 
   // ── Rounds dropdown ────────────────────────────────────────────────────────
   const { data: roundsData } = useQuery({
@@ -81,29 +85,36 @@ export default function RoundPnlReport() {
   // Response shape: { data: { data: [...], pagination } }
   const rounds = roundsData?.data || [];
 
+  // ── Voyages dropdown (cascades from Round) ──────────────────────────────────
+  const { data: voyageData } = useQuery({
+    queryKey: ['voyages-dropdown', roundId],
+    queryFn:  () => voyagesService.list({ roundId, limit: 200 }).then(r => r.data.data),
+    enabled:  !!roundId,
+  });
+  const voyages = voyageData || [];
+
   // ── Report data ────────────────────────────────────────────────────────────
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['report-round-pnl', roundId],
-    queryFn:  () => reportsService.getRoundPnL({ roundId }).then(r => r.data.data),
+    queryKey: ['report-round-pnl', roundId, voyageId],
+    queryFn:  () => reportsService.getRoundPnL({ roundId, voyageId: voyageId || undefined }).then(r => r.data.data),
     enabled:  !!roundId,
   });
 
   // ── Computed values ────────────────────────────────────────────────────────
   const totalExpenses = data ? Object.values(data.expenseTotals || {}).reduce((a, b) => a + b, 0) : 0;
-  const netPnL        = (data?.totalRevenue ?? 0) - totalExpenses;
   const isRunning     = isLoading || isFetching;
 
   return (
     <ReportLayout
-      title="Round P&L"
-      subtitle="Revenue vs expenses for a single round"
+      title="Voyage Profitability Report"
+      subtitle="Revenue, Voyage Cost and Other Voyage Cost for a round or a single voyage within it"
       filters={
         <div className="flex flex-wrap gap-3 items-center">
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Select Round</p>
             <select
               value={roundId}
-              onChange={e => setRoundId(e.target.value)}
+              onChange={e => { setRoundId(e.target.value); setVoyageId(''); }}
               className={rsc}
               style={{ minWidth: 240 }}
             >
@@ -114,6 +125,21 @@ export default function RoundPnlReport() {
                   {r.serviceId?.serviceCode ? ` — ${r.serviceId.serviceCode}` : ''}
                   {r.status ? ` (${r.status})` : ''}
                 </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Voyage (optional)</p>
+            <select
+              value={voyageId}
+              onChange={e => setVoyageId(e.target.value)}
+              disabled={!roundId}
+              className={`${rsc} disabled:opacity-50`}
+              style={{ minWidth: 200 }}
+            >
+              <option value="">All Voyages (Round)</option>
+              {voyages.map(v => (
+                <option key={v._id} value={v._id}>{v.voyageNumber}</option>
               ))}
             </select>
           </div>
@@ -129,13 +155,15 @@ export default function RoundPnlReport() {
         </div>
       }
       summary={data && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <ReportStatCard label="Total Revenue"   value={fmtMoney(data.totalRevenue)} accent />
-          <ReportStatCard label="Total Expenses"  value={fmtMoney(totalExpenses)}
-            sub={Object.keys(data.expenseTotals || {}).join(' + ') || 'USD'} />
-          <ReportStatCard label="Net P&L"         value={fmtMoney(netPnL)} accent={netPnL >= 0} />
-          <ReportStatCard label="Bookings"        value={fmtNum(data.bookingCount)}
-            sub={`${data.voyageCount} voyage${data.voyageCount !== 1 ? 's' : ''}`} />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <ReportStatCard label="Revenue (Final Loading)" value={fmtMoney(data.summary?.totalRevenue)} accent
+            sub={`${data.scope === 'voyage' ? '1 voyage' : `${data.voyages?.length || 0} voyages`}`} />
+          <ReportStatCard label="Voyage Cost"     value={fmtMoney(data.summary?.totalVoyageCost)} />
+          <ReportStatCard label="Other Voyage Cost" value={fmtMoney(data.summary?.totalOtherVoyageCost)} />
+          <ReportStatCard label="Net Profit"      value={fmtMoney(data.summary?.netProfit)} accent={(data.summary?.netProfit ?? 0) >= 0} />
+          <ReportStatCard label="Profit / TEU"    value={fmtMoney(data.summary?.profitPerTEU)}
+            sub={`${fmtNum(data.summary?.totalTEU)} TEU`} />
+          <ReportStatCard label="Profit Margin"   value={`${(data.summary?.profitMarginPct ?? 0).toFixed(1)}%`} />
         </div>
       )}
     >
@@ -171,6 +199,136 @@ export default function RoundPnlReport() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* ── Sprint 035 — Revenue by Voyage (Layer 2, Final Loading only) ── */}
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-700">Revenue by Voyage</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">Final Loading bookings only (Layer 2)</p>
+            </div>
+            {data.voyages?.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="table-header">
+                      {['Voyage', 'POL', 'POD', 'Bookings', 'TEUs', 'Revenue'].map(h => <th key={h}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.voyages.map(v => (
+                      <tr key={v.voyageId} className="table-row">
+                        <td className="mono text-xs font-semibold text-teal-700">{v.voyageNumber}</td>
+                        <td className="text-xs text-gray-500">{v.polName || '—'}</td>
+                        <td className="text-xs text-gray-500">{v.podName || '—'}</td>
+                        <td className="text-xs text-gray-600">{fmtNum(v.revenue.bookingCount)}</td>
+                        <td className="text-xs text-gray-600">{fmtNum(v.revenue.teus)}</td>
+                        <td className="mono text-xs font-bold text-teal-700">{fmtMoney(v.revenue.totalRevenue)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-teal-50 font-semibold border-t-2 border-teal-200">
+                      <td colSpan={3} className="px-4 py-2.5 text-xs font-bold text-gray-700">TOTAL</td>
+                      <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(data.voyages.reduce((s, v) => s + v.revenue.bookingCount, 0))}</td>
+                      <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(data.summary?.totalTEU)}</td>
+                      <td className="px-4 py-2.5 mono text-xs font-bold text-teal-700">{fmtMoney(data.summary?.totalRevenue)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <ReportEmptyState message="No Final Loading bookings in this scope." />
+            )}
+          </div>
+
+          {/* ── Sprint 035 — Voyage Cost, broken out per voyage even in Round scope ── */}
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-700">Voyage Cost</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">Per voyage, per port — categories classified as &quot;Voyage Cost&quot; in Expense Types</p>
+            </div>
+            {data.voyages?.some(v => v.voyageCost.total > 0) || data.roundLevelVoyageCost?.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="table-header">
+                      {['Voyage', 'Port', 'Amount'].map(h => <th key={h}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.voyages?.flatMap(v => (
+                      v.voyageCost.byPort.length > 0
+                        ? v.voyageCost.byPort.map((p, i) => (
+                          <tr key={`${v.voyageId}-${p.port}`} className="table-row">
+                            {i === 0 && <td rowSpan={v.voyageCost.byPort.length} className="mono text-xs font-semibold text-teal-700 align-top">{v.voyageNumber}</td>}
+                            <td className="text-xs text-gray-500">{p.port}</td>
+                            <td className="mono text-xs font-semibold text-red-600">{fmtMoney(p.total)}</td>
+                          </tr>
+                        ))
+                        : []
+                    ))}
+                    {data.roundLevelVoyageCost?.map(r => (
+                      <tr key={r.expenseTypeName} className="table-row">
+                        <td className="text-xs text-gray-400 italic">Round-level</td>
+                        <td className="text-xs text-gray-500">{r.expenseTypeName}</td>
+                        <td className="mono text-xs font-semibold text-red-600">{fmtMoney(r.total)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-teal-50 font-semibold border-t-2 border-teal-200">
+                      <td colSpan={2} className="px-4 py-2.5 text-xs font-bold text-gray-700">TOTAL VOYAGE COST</td>
+                      <td className="px-4 py-2.5 mono text-xs font-bold text-red-700">{fmtMoney(data.summary?.totalVoyageCost)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <ReportEmptyState message="No Voyage Cost expenses recorded for this scope." />
+            )}
+          </div>
+
+          {/* ── Sprint 035 — Other Voyage Cost, aggregated by SCOPE ONLY (never per voyage) ── */}
+          <div className="card p-5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+              Other Voyage Cost{data.scope === 'voyage' ? ' (this voyage)' : ' (entire round)'}
+            </p>
+            <p className="text-[11px] text-gray-400 mb-4">
+              Categories classified as &quot;Other Voyage Cost&quot; · includes Hire Rate (rate × voyage duration)
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Hire Rate Cost</p>
+                <p className="text-sm text-gray-700 font-medium">{fmtMoney(data.otherVoyageCost?.hireRateCost)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Other Expenses</p>
+                <p className="text-sm text-gray-700 font-medium">{fmtMoney(data.otherVoyageCost?.otherExpenseCost)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Total Other Voyage Cost</p>
+                <p className="text-sm font-bold text-red-600">{fmtMoney(data.otherVoyageCost?.total)}</p>
+              </div>
+            </div>
+            {data.otherVoyageCost?.breakdown?.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="table-header">
+                      {['Category', 'Amount', 'Count'].map(h => <th key={h}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.otherVoyageCost.breakdown.map(b => (
+                      <tr key={b.category} className="table-row">
+                        <td>
+                          <span className="inline-flex items-center text-xs bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full font-medium">{b.category}</span>
+                        </td>
+                        <td className="mono text-xs font-semibold text-red-600">{fmtMoney(b.total)}</td>
+                        <td className="text-xs text-gray-500">{b.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Multi-currency expense totals */}

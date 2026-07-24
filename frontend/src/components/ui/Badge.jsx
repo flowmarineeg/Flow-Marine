@@ -8,8 +8,10 @@ const BADGE_STYLES = {
   Cancelled:    { background: '#FEE2E2', color: '#991B1B' },
   Draft:        { background: '#F1F5F9', color: '#475569' },
   Issued:       { background: '#E0F2FE', color: '#0369A1' },
+  'Partially Paid': { background: '#FEF3C7', color: '#92400E' },
   Paid:         { background: '#D1FAE5', color: '#065F46' },
   Overdue:      { background: '#FEE2E2', color: '#991B1B' },
+  'Not Invoiced': { background: '#F1F5F9', color: '#94A3B8' },
   // Round / Voyage
   Planned:      { background: '#EDE9FE', color: '#5B21B6' },
   Completed:    { background: '#D1FAE5', color: '#065F46' },

@@ -19,7 +19,7 @@ function NewInvoiceContent() {
         <span className="text-gray-200">/</span>
         <span className="text-sm font-medium text-gray-700">New Invoice</span>
       </div>
-      <PageHeader title="New Invoice" subtitle="Create an invoice linked to a booking" />
+      <PageHeader title="New Invoice" subtitle="Invoice a Booking, Voyage, or Round of Final Loading bookings" />
       <InvoiceForm />
     </div>
   );

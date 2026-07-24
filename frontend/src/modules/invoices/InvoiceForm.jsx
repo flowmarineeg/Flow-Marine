@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -8,16 +8,15 @@ import toast from 'react-hot-toast';
 import { invoicesService } from '@/services/invoices.service';
 import { bookingsService } from '@/services/bookings.service';
 import { agentsService }   from '@/services/agents.service';
-import { INVOICE_STATUS }  from '@/utils/constants';
+import { useRounds }  from '@/hooks/useRounds';
+import { voyagesService } from '@/services/voyages.service';
+import { INVOICE_TYPES } from '@/utils/constants';
+import EligibleBookingsTable from './EligibleBookingsTable';
 
-// Valid next transitions (mirrors backend)
-const TRANSITIONS = {
-  Draft:     ['Issued', 'Cancelled'],
-  Issued:    ['Paid', 'Overdue', 'Cancelled'],
-  Overdue:   ['Paid', 'Cancelled'],
-  Paid:      [],
-  Cancelled: [],
-};
+// Sprint 033: an invoice now owns a SET of Final Loading bookings (Booking /
+// Voyage / Round type), never a single hand-picked booking with a manual
+// amount. Editing an existing invoice only touches its dates/currency/notes/
+// status — its line items are fixed at creation time (see invoice.service.js).
 
 const ic = (err) =>
   `w-full text-[13px] border rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:ring-2 transition
@@ -26,64 +25,30 @@ const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wid
 const ec = 'mt-1 text-[11px] text-red-500';
 const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '';
 
-export default function InvoiceForm({ item }) {
-  const router    = useRouter();
-  const qc        = useQueryClient();
-  const isEditing = !!item;
-  const isPaid    = item?.status === 'Paid';
+// ── Editing an existing invoice — line items are fixed, only header fields move ─
+function EditInvoiceForm({ item }) {
+  const router = useRouter();
+  const qc     = useQueryClient();
+  const locked = item.status === 'Paid' || item.status === 'Cancelled' || item.paidAmount > 0;
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: {
-      bookingId:   item?.bookingId?._id  || item?.bookingId  || '',
-      agentId:     item?.agentId?._id    || item?.agentId    || '',
-      invoiceDate: item?.invoiceDate ? item.invoiceDate.slice(0, 10) : '',
-      dueDate:     item?.dueDate     ? item.dueDate.slice(0, 10)     : '',
-      amount:      item?.amount      || '',
-      currency:    item?.currency    || 'USD',
-      status:      item?.status      || 'Draft',
-      notes:       item?.notes       || '',
+      invoiceDate: item.invoiceDate ? item.invoiceDate.slice(0, 10) : '',
+      dueDate:     item.dueDate     ? item.dueDate.slice(0, 10)     : '',
+      currency:    item.currency    || 'USD',
+      notes:       item.notes       || '',
+      status:      item.status,
     },
   });
 
-  const watchedBookingId = watch('bookingId');
-  const watchedStatus    = watch('status');
+  const allowedNext = { Draft: ['Draft', 'Issued', 'Cancelled'], Issued: ['Issued', 'Cancelled'] }[item.status] || [item.status];
 
-  /* ── Booking dropdown ────────────────────────────────────────────────────── */
-  const { data: bkData } = useQuery({
-    queryKey: ['bookings-dd'],
-    queryFn:  () => bookingsService.list({ limit: 200 }).then(r => r.data.data),
-  });
-  const bookings = (bkData || []).filter(b => b.status !== 'Cancelled');
-
-  /* ── Agent dropdown ──────────────────────────────────────────────────────── */
-  const { data: agData } = useQuery({
-    queryKey: ['agents-dd'],
-    queryFn:  () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
-  });
-  const agents = agData || [];
-
-  /* ── Auto-fill agent from booking ───────────────────────────────────────── */
-  const selectedBooking = bookings.find(b => b._id === watchedBookingId);
-  useEffect(() => {
-    if (!isEditing && selectedBooking?.agentId) {
-      const aid = selectedBooking.agentId?._id || selectedBooking.agentId;
-      setValue('agentId', aid);
-      if (selectedBooking.totalFreight) setValue('amount', selectedBooking.totalFreight);
-    }
-  }, [watchedBookingId, selectedBooking, isEditing, setValue]);
-
-  /* ── Allowed status options ──────────────────────────────────────────────── */
-  const allowedStatuses = isEditing
-    ? [item.status, ...(TRANSITIONS[item.status] || [])]
-    : INVOICE_STATUS.filter(s => s !== 'Paid' && s !== 'Overdue');
-
-  /* ── Save ────────────────────────────────────────────────────────────────── */
   const mutation = useMutation({
-    mutationFn: (data) =>
-      isEditing ? invoicesService.update(item._id, data) : invoicesService.create(data),
+    mutationFn: (data) => invoicesService.update(item._id, data),
     onSuccess: () => {
-      toast.success(isEditing ? 'Invoice updated' : 'Invoice created');
+      toast.success('Invoice updated');
       qc.invalidateQueries(['invoices']);
+      qc.invalidateQueries(['invoice', item._id]);
       router.push('/invoices');
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
@@ -91,144 +56,287 @@ export default function InvoiceForm({ item }) {
 
   return (
     <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="flex flex-col gap-5">
-
-      {/* Paid warning */}
-      {isPaid && (
-        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-          <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <p className="text-sm text-green-700 font-medium">This invoice is Paid and cannot be modified.</p>
+      {locked && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <p className="text-sm text-amber-700 font-medium">
+            {item.paidAmount > 0 ? 'This invoice has recorded payments and cannot be modified.' : 'This invoice cannot be modified.'}
+          </p>
         </div>
       )}
 
-      {/* ── Booking section ──────────────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">
-        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Booking</p>
-
-        <div>
-          <label className={lc}>Booking <span className="text-red-400">*</span></label>
-          <select
-            {...register('bookingId', { required: 'Booking is required' })}
-            disabled={isEditing || isPaid}
-            className={`${ic(errors.bookingId)} ${isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            <option value="">Select booking…</option>
-            {bookings.map(b => (
-              <option key={b._id} value={b._id}>
-                {b.bookingNumber} — {b.shipper} ({b.status})
-              </option>
-            ))}
-          </select>
-          {errors.bookingId && <p className={ec}>{errors.bookingId.message}</p>}
-          {isEditing && <p className="mt-1 text-[11px] text-amber-500">Booking cannot be changed on an existing invoice</p>}
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+          Line Items — {item.invoiceType} Invoice
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr className="table-header">
+                {['Booking', 'Container', 'Voyage', 'Round', 'Freight'].map(h => <th key={h}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {(item.lineItems || []).map(li => (
+                <tr key={li._id} className="table-row">
+                  <td className="mono text-xs font-semibold text-teal-600">{li.bookingNumber}{li.orphaned && <span className="ml-1 text-red-500" title={li.orphanedReason}>⚠</span>}</td>
+                  <td className="mono text-xs text-gray-600">{li.containerNumber || '—'}</td>
+                  <td className="mono text-xs text-gray-500">{li.voyageNumber || '—'}</td>
+                  <td className="mono text-xs text-gray-500">{li.roundNumber || '—'}</td>
+                  <td className="text-xs text-gray-700">{fmtMoney(li.freightAmount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+        <div className="flex justify-end gap-4 text-xs">
+          <span className="text-gray-500">Total <b className="text-gray-800 ml-1">{fmtMoney(item.totalAmount)}</b></span>
+          <span className="text-gray-500">Paid <b className="text-green-700 ml-1">{fmtMoney(item.paidAmount)}</b></span>
+          <span className="text-gray-500">Balance <b className="text-amber-700 ml-1">{fmtMoney(item.balanceAmount)}</b></span>
+        </div>
+      </div>
 
-        {/* Booking summary strip */}
-        {selectedBooking && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {[
-              { label: 'Booking No',     val: <span className="mono font-bold text-teal-600">{selectedBooking.bookingNumber}</span> },
-              { label: 'Status',         val: selectedBooking.status },
-              { label: 'Total Freight',  val: fmtMoney(selectedBooking.totalFreight) },
-              { label: 'Shipper',        val: selectedBooking.shipper },
-              { label: 'Consignee',      val: selectedBooking.consignee },
-            ].map(({ label, val }) => (
-              <div key={label} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
-                <p className="text-[13px] font-medium text-gray-700 truncate">{val}</p>
-              </div>
-            ))}
+      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Invoice Details</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className={lc}>Invoice Date</label>
+            <input type="date" {...register('invoiceDate', { required: true })} disabled={locked} className={ic(errors.invoiceDate)} />
           </div>
+          <div>
+            <label className={lc}>Due Date</label>
+            <input type="date" {...register('dueDate', { required: true })} disabled={locked} className={ic(errors.dueDate)} />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className={lc}>Currency</label>
+            <input {...register('currency', { required: true })} disabled={locked} className={`${ic(errors.currency)} uppercase`} />
+          </div>
+          <div>
+            <label className={lc}>Status</label>
+            <select {...register('status')} disabled={locked} className={`${ic(false)} cursor-pointer`}>
+              {allowedNext.map(s => <option key={s} value={s}>{s}{s === item.status ? ' (current)' : ''}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className={lc}>Notes</label>
+          <textarea {...register('notes')} rows={3} disabled={locked} className={`${ic(false)} resize-none`} />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={() => router.push('/invoices')} className="btn btn-secondary btn-md">Cancel</button>
+        <button type="submit" disabled={mutation.isPending || locked} className="btn btn-primary btn-md">
+          {mutation.isPending ? 'Saving…' : 'Save Changes'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ── Creating a new invoice — Booking / Voyage / Round composition ─────────────
+function CreateInvoiceForm() {
+  const router = useRouter();
+  const qc     = useQueryClient();
+
+  const [invoiceType, setInvoiceType] = useState('Booking');
+  const [agentId, setAgentId]         = useState('');
+  const [roundId, setRoundId]         = useState('');
+  const [voyageId, setVoyageId]       = useState('');
+  const [selected, setSelected]       = useState([]); // bookingIds
+  const [invoiceDate, setInvoiceDate] = useState('');
+  const [dueDate, setDueDate]         = useState('');
+  const [currency, setCurrency]       = useState('USD');
+  const [notes, setNotes]             = useState('');
+
+  // Reset downstream selections whenever the scope changes
+  useEffect(() => { setVoyageId(''); setSelected([]); }, [roundId, invoiceType]);
+  useEffect(() => { setSelected([]); }, [voyageId, agentId]);
+
+  const { data: agData } = useQuery({
+    queryKey: ['agents-dd'],
+    queryFn:  () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
+  });
+  const agents = agData || [];
+
+  const { rounds } = useRounds();
+  const { data: voyageData } = useQuery({
+    queryKey: ['voyages-dropdown', roundId],
+    queryFn:  () => voyagesService.list({ roundId, limit: 200 }).then(r => r.data.data),
+    enabled:  !!roundId,
+  });
+  const voyages = (voyageData || []).filter(v => v.status !== 'Cancelled');
+
+  // Booking-type: agent's own Final Loading bookings, direct dropdown
+  const { data: flBookings } = useQuery({
+    queryKey: ['fl-bookings-dd', agentId],
+    queryFn:  () => bookingsService.list({ limit: 200, agentId, status: 'Final Loading' }).then(r => r.data.data),
+    enabled:  invoiceType === 'Booking' && !!agentId,
+  });
+
+  // Voyage/Round-type: eligible-bookings composition table
+  const { data: eligible, isFetching: eligibleLoading } = useQuery({
+    queryKey: ['eligible-bookings', agentId, invoiceType, voyageId, roundId],
+    queryFn:  () => invoicesService.getEligibleBookings(
+      invoiceType === 'Voyage' ? { agentId, voyageId } : { agentId, roundId }
+    ).then(r => r.data.data),
+    enabled: !!agentId && (
+      (invoiceType === 'Voyage' && !!voyageId) ||
+      (invoiceType === 'Round'  && !!roundId)
+    ),
+  });
+
+  const toggleBooking = (bookingId) => {
+    setSelected(prev => prev.includes(bookingId) ? prev.filter(id => id !== bookingId) : [...prev, bookingId]);
+  };
+
+  const mutation = useMutation({
+    mutationFn: (data) => invoicesService.create(data),
+    onSuccess: () => {
+      toast.success('Invoice created');
+      qc.invalidateQueries(['invoices']);
+      router.push('/invoices');
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!agentId)                   return toast.error('Select an agent');
+    if (!selected.length)            return toast.error('Select at least one booking');
+    if (!invoiceDate || !dueDate)    return toast.error('Invoice date and due date are required');
+
+    mutation.mutate({
+      invoiceType, agentId,
+      voyageId: invoiceType === 'Voyage' ? voyageId : undefined,
+      roundId:  invoiceType === 'Round'  ? roundId  : undefined,
+      bookingIds: selected,
+      invoiceDate, dueDate, currency, notes,
+    });
+  };
+
+  const eligibleRows = eligible || [];
+  const flRows = (flBookings || []).filter(b => b.status === 'Final Loading');
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      {/* ── Invoice Type ─────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Invoice Type</p>
+        <div className="flex gap-2">
+          {INVOICE_TYPES.map(tp => (
+            <button
+              key={tp} type="button"
+              onClick={() => setInvoiceType(tp)}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${
+                invoiceType === tp ? 'bg-teal-50 border-teal-400 text-teal-700' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              {tp}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-400">
+          Only <b>Final Loading</b> bookings can be invoiced — Pending and Confirmed bookings are never eligible.
+        </p>
+      </div>
+
+      {/* ── Scope ────────────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Scope</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className={lc}>Agent <span className="text-red-400">*</span></label>
+            <select value={agentId} onChange={e => setAgentId(e.target.value)} className={`${ic(false)} cursor-pointer`}>
+              <option value="">Select agent…</option>
+              {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode} — {a.agentName}</option>)}
+            </select>
+          </div>
+          {(invoiceType === 'Voyage' || invoiceType === 'Round') && (
+            <div>
+              <label className={lc}>Round <span className="text-red-400">*</span></label>
+              <select value={roundId} onChange={e => setRoundId(e.target.value)} className={`${ic(false)} cursor-pointer`}>
+                <option value="">Select round…</option>
+                {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+              </select>
+            </div>
+          )}
+          {invoiceType === 'Voyage' && (
+            <div>
+              <label className={lc}>Voyage <span className="text-red-400">*</span></label>
+              <select value={voyageId} onChange={e => setVoyageId(e.target.value)} disabled={!roundId} className={`${ic(false)} cursor-pointer`}>
+                <option value="">Select voyage…</option>
+                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Booking selection ───────────────────────────────────────────── */}
+      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-3">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Final Loading Bookings</p>
+
+        {invoiceType === 'Booking' && (
+          !agentId ? <p className="text-sm text-gray-400 italic py-4 text-center">Select an agent first.</p> :
+          flRows.length === 0 ? <p className="text-sm text-gray-400 italic py-4 text-center">No Final Loading bookings for this agent.</p> : (
+            <div className="flex flex-col gap-2">
+              {flRows.map(b => (
+                <label key={b._id} className={`flex items-center gap-3 border rounded-lg px-3 py-2 cursor-pointer transition ${selected.includes(b._id) ? 'border-teal-400 bg-teal-50/50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                  <input type="radio" name="single-booking" checked={selected.includes(b._id)}
+                    onChange={() => setSelected([b._id])} className="w-4 h-4 accent-teal-500" />
+                  <span className="mono text-xs font-bold text-teal-600">{b.bookingNumber}</span>
+                  <span className="text-xs text-gray-500">{b.shipper}</span>
+                  <span className="ml-auto text-xs font-semibold text-gray-700">{fmtMoney(b.totalFreight)}</span>
+                </label>
+              ))}
+            </div>
+          )
+        )}
+
+        {(invoiceType === 'Voyage' || invoiceType === 'Round') && (
+          !agentId || (invoiceType === 'Voyage' ? !voyageId : !roundId)
+            ? <p className="text-sm text-gray-400 italic py-4 text-center">Select an agent and {invoiceType === 'Voyage' ? 'voyage' : 'round'} to see eligible bookings.</p>
+            : eligibleLoading
+              ? <p className="text-sm text-gray-400 italic py-4 text-center">Loading…</p>
+              : <EligibleBookingsTable bookings={eligibleRows} selected={selected} onToggle={toggleBooking} />
         )}
       </div>
 
       {/* ── Invoice details ──────────────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">
         <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Invoice Details</p>
-
-        <div>
-          <label className={lc}>Agent <span className="text-red-400">*</span></label>
-          <select
-            {...register('agentId', { required: 'Agent is required' })}
-            disabled={isPaid}
-            className={`${ic(errors.agentId)} cursor-pointer`}
-          >
-            <option value="">Select agent…</option>
-            {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode} — {a.agentName}</option>)}
-          </select>
-          {errors.agentId && <p className={ec}>{errors.agentId.message}</p>}
-        </div>
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={lc}>Invoice Date <span className="text-red-400">*</span></label>
-            <input type="date"
-              {...register('invoiceDate', { required: 'Invoice date is required' })}
-              disabled={isPaid}
-              className={ic(errors.invoiceDate)}
-            />
-            {errors.invoiceDate && <p className={ec}>{errors.invoiceDate.message}</p>}
+            <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className={ic(false)} />
           </div>
           <div>
             <label className={lc}>Due Date <span className="text-red-400">*</span></label>
-            <input type="date"
-              {...register('dueDate', { required: 'Due date is required' })}
-              disabled={isPaid}
-              className={ic(errors.dueDate)}
-            />
-            {errors.dueDate && <p className={ec}>{errors.dueDate.message}</p>}
+            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={ic(false)} />
           </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={lc}>Amount <span className="text-red-400">*</span></label>
-            <input type="number" min="0" step="0.01"
-              {...register('amount', { required: 'Amount is required', min: { value: 0, message: 'Min 0' } })}
-              disabled={isPaid}
-              className={ic(errors.amount)}
-            />
-            {errors.amount && <p className={ec}>{errors.amount.message}</p>}
-          </div>
-          <div>
-            <label className={lc}>Currency <span className="text-red-400">*</span></label>
-            <input
-              {...register('currency', { required: 'Currency is required' })}
-              placeholder="USD"
-              disabled={isPaid}
-              className={`${ic(errors.currency)} uppercase`}
-            />
-            {errors.currency && <p className={ec}>{errors.currency.message}</p>}
-          </div>
-        </div>
-
         <div>
-          <label className={lc}>Status</label>
-          <select {...register('status')} disabled={isPaid} className={`${ic(false)} cursor-pointer`}>
-            {allowedStatuses.map(s => (
-              <option key={s} value={s}>{s}{isEditing && s === item.status ? ' (current)' : ''}</option>
-            ))}
-          </select>
+          <label className={lc}>Currency <span className="text-red-400">*</span></label>
+          <input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="USD" className={`${ic(false)} uppercase`} style={{ maxWidth: 160 }} />
         </div>
-
         <div>
           <label className={lc}>Notes</label>
-          <textarea {...register('notes')} rows={3} placeholder="Optional notes…" disabled={isPaid} className={`${ic(false)} resize-none`} />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional notes…" className={`${ic(false)} resize-none`} />
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={() => router.push('/invoices')} className="btn btn-secondary btn-md">
-          Cancel
-        </button>
-        <button type="submit" disabled={mutation.isPending || isPaid} className="btn btn-primary btn-md flex items-center gap-1.5">
-          {mutation.isPending ? (
-            <><svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>Saving…</>
-          ) : isEditing ? 'Save Changes' : 'Create Invoice'}
+        <button type="button" onClick={() => router.push('/invoices')} className="btn btn-secondary btn-md">Cancel</button>
+        <button type="submit" disabled={mutation.isPending} className="btn btn-primary btn-md">
+          {mutation.isPending ? 'Creating…' : 'Create Invoice'}
         </button>
       </div>
     </form>
   );
+}
+
+export default function InvoiceForm({ item }) {
+  return item ? <EditInvoiceForm item={item} /> : <CreateInvoiceForm />;
 }

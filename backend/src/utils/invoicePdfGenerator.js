@@ -40,8 +40,6 @@ const ML  = 45;       // margin left
 const MR  = 45;       // margin right
 const CW  = PW - ML - MR;   // usable content width
 
-const AED_RATE = 3.692;
-
 // ─── Low-level helpers ────────────────────────────────────────────────────────
 const rgb = (hex) => {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -89,11 +87,12 @@ const fmtNum = (n) =>
 const fmtMoney = (n, cur = 'USD') => `${cur} ${fmtNum(n)}`;
 
 const statusColor = (s) => ({
-  Draft:     C.muted,
-  Issued:    C.accent,
-  Paid:      '#1A7A4A',
-  Overdue:   '#8B1A1A',
-  Cancelled: C.muted,
+  Draft:            C.muted,
+  Issued:           C.accent,
+  'Partially Paid': '#8A6D1A',
+  Paid:             '#1A7A4A',
+  Overdue:          '#8B1A1A',
+  Cancelled:        C.muted,
 }[s] || C.mid);
 
 // ─── Main generator ───────────────────────────────────────────────────────────
@@ -106,38 +105,39 @@ const generateInvoicePdf = (invoice) => {
   const bufs = [];
   doc.on('data', (c) => bufs.push(c));
 
-  // ── Unpack invoice data ──────────────────────────────────────────────────
-  const booking = invoice.bookingId || {};
-  const agent   = invoice.agentId   || {};
-  const voyage  = booking.voyageId  || {};
-  const pol     = booking.polId     || {};
-  const pod     = booking.podId     || {};
-  const vessel  = voyage.roundId?.vesselId || {};
+  // ── Unpack invoice data (Sprint 033) ──────────────────────────────────────
+  // Line items are historical SNAPSHOTS taken at invoice-creation time — the
+  // PDF never reads a live Booking/Voyage/Round document, so a re-downloaded
+  // PDF for an old invoice always matches what was originally generated.
+  const agent   = invoice.agentId || {};
   const contact = Array.isArray(agent.contacts) && agent.contacts[0]
     ? agent.contacts[0] : {};
+  const lineItems = Array.isArray(invoice.lineItems) ? invoice.lineItems : [];
+  const first = lineItems[0] || {};
 
-  const invNum   = invoice.invoiceNumber || '--';
-  const invDate  = fmtDate(invoice.invoiceDate);
-  const dueDate  = fmtDate(invoice.dueDate);
-  const currency = (invoice.currency || 'USD').toUpperCase();
-  const amount   = Number(invoice.amount || 0);
-  const status   = invoice.status || 'Draft';
+  const invNum      = invoice.invoiceNumber || '--';
+  const invType     = invoice.invoiceType || 'Booking';
+  const invDate     = fmtDate(invoice.invoiceDate);
+  const dueDate     = fmtDate(invoice.dueDate);
+  const currency    = (invoice.currency || 'USD').toUpperCase();
+  const totalAmount = Number(invoice.totalAmount || 0);
+  const paidAmount  = Number(invoice.paidAmount || 0);
+  const balance     = Math.max(0, totalAmount - paidAmount);
+  const status      = invoice.status || 'Draft';
 
   const agentName  = agent.agentName  || '--';
   const agentCode  = agent.agentCode  || '';
   const agentMob   = contact.mobile   || '--';
   const agentEmail = contact.email    || '--';
 
-  const bkNum    = booking.bookingNumber || '--';
-  const shipper  = booking.shipper      || '--';
-  const consignee= booking.consignee    || '--';
-  const commodity= booking.commodity    || '--';
-  const qty      = Number(booking.quantity   || 1);
-  const rate     = Number(booking.freightRate || (amount / (qty || 1)));
-  const polName  = pol.name    || pol.code    || '--';
-  const podName  = pod.name    || pod.code    || '--';
-  const vesselNm = vessel.vesselName || vessel.vesselCode || '--';
-  const voyNum   = voyage.voyageNumber || '--';
+  // Shipment summary strip: for a single-booking invoice this is that
+  // booking's own POL/POD/voyage/round; for a Voyage/Round invoice it
+  // summarizes the scope (one voyage/round, N bookings).
+  const polName  = first.polName  || '--';
+  const podName  = first.podName  || '--';
+  const voyNum   = invType === 'Voyage' ? first.voyageNumber : (lineItems.length === 1 ? first.voyageNumber : '--');
+  const roundNum = invType === 'Round'  ? first.roundNumber  : (lineItems.length === 1 ? first.roundNumber  : '--');
+  const bkNum    = lineItems.length === 1 ? first.bookingNumber : `${lineItems.length} bookings`;
 
   // ════════════════════════════════════════════════════════════════════════════
   // 1. HEADER BAR
@@ -215,34 +215,32 @@ const generateInvoicePdf = (invoice) => {
     t(doc, value,  RX + 60,  ry, { size: 8, color: C.dark, font: 'Helvetica-Bold', width: RW - 62 });
   };
 
-  sRow('POL',     polName,  billStartY);
-  sRow('POD',     podName,  billStartY + 14);
-  sRow('Vessel',  vesselNm, billStartY + 28);
-  sRow('Voyage',  voyNum,   billStartY + 42);
-  sRow('Booking', bkNum,    billStartY + 56);
+  sRow('Type',    invType,                                billStartY);
+  sRow('POL',     polName,                                billStartY + 14);
+  sRow('POD',     podName,                                billStartY + 28);
+  sRow('Voyage',  voyNum,                                  billStartY + 42);
+  sRow('Round',   roundNum,                                billStartY + 56);
 
   y += 20;
   hLine(doc, ML, y, PW - MR);
   y += 18;
 
   // ════════════════════════════════════════════════════════════════════════════
-  // 4. LINE ITEMS TABLE
+  // 4. LINE ITEMS TABLE (Sprint 033 — one row per invoiced booking, rendered
+  //    entirely from each line item's own historical snapshot, never a live
+  //    Booking read — see INVOICE LINE ITEM SNAPSHOT)
   // ════════════════════════════════════════════════════════════════════════════
-  // Column layout: # | Description | Shipper/Consignee | Qty | Unit Price | Amount
   const TC = [
     { label: '#',                  w: 22,  align: 'center' },
-    { label: 'Description',        w: 132, align: 'left'   },
-    { label: 'Shipper / Consignee',w: 138, align: 'left'   },
-    { label: 'Qty',                w: 36,  align: 'center' },
-    { label: 'Unit Price',         w: 74,  align: 'right'  },
+    { label: 'Booking / Container',w: 118, align: 'left'   },
+    { label: 'Voyage / Round',     w: 100, align: 'left'   },
+    { label: 'Shipper / Consignee',w: 118, align: 'left'   },
     { label: 'Amount',             w: 0,   align: 'right'  }, // fills remaining
   ];
 
-  // Compute last column width
   const fixedW = TC.slice(0,-1).reduce((s, c) => s + c.w, 0);
   TC[TC.length - 1].w = CW - fixedW;
 
-  // Compute x positions
   let cx = ML;
   TC.forEach((col) => { col.x = cx; cx += col.w; });
 
@@ -250,7 +248,6 @@ const generateInvoicePdf = (invoice) => {
   const TR = 28;   // table row height
   const TP = 5;    // cell padding x
 
-  // Table header
   fillBox(doc, ML, y, CW, TH, C.accent);
   TC.forEach((col) => {
     t(doc, col.label, col.x + TP, y + 6, {
@@ -260,32 +257,25 @@ const generateInvoicePdf = (invoice) => {
   });
   y += TH;
 
-  // Line item rows — one booking = one primary row
-  const lineItems = [
-    {
-      num:        '1',
-      desc:       commodity,
-      party:      { shipper, consignee },
-      qty:        qty,
-      unitPrice:  rate,
-      amount:     amount,
-    },
-  ];
-
   lineItems.forEach((li, idx) => {
     const bg = idx % 2 === 0 ? C.altRow : C.white;
     fillBox(doc, ML, y, CW, TR, bg);
 
-    const cy = y + (TR - 8.5) / 2;  // vertically centred text y
+    t(doc, String(idx + 1), TC[0].x + TP, y + 8, { size: 8, color: C.muted, width: TC[0].w - TP*2, align: 'center' });
 
-    t(doc, li.num,            TC[0].x + TP, cy, { size: 8, color: C.muted, width: TC[0].w - TP*2, align: 'center' });
-    t(doc, li.desc,           TC[1].x + TP, cy, { font: 'Helvetica-Bold', size: 8.5, color: C.black, width: TC[1].w - TP*2 });
-    // Shipper on top line, consignee below
-    t(doc, li.party.shipper,   TC[2].x + TP, y + 8,  { size: 8, color: C.dark,  width: TC[2].w - TP*2 });
-    t(doc, `> ${li.party.consignee}`, TC[2].x + TP, y + 18, { size: 7.5, color: C.muted, width: TC[2].w - TP*2 });
-    t(doc, String(li.qty),    TC[3].x + TP, cy, { size: 8.5, color: C.dark, width: TC[3].w - TP*2, align: 'center' });
-    t(doc, fmtNum(li.unitPrice), TC[4].x + TP, cy, { size: 8, color: C.dark,  width: TC[4].w - TP*2, align: 'right' });
-    t(doc, fmtNum(li.amount), TC[5].x + TP, cy, { font: 'Helvetica-Bold', size: 8.5, color: C.black, width: TC[5].w - TP*2, align: 'right' });
+    t(doc, li.bookingNumber || '--',   TC[1].x + TP, y + 5,  { font: 'Helvetica-Bold', size: 8, color: C.black, width: TC[1].w - TP*2 });
+    t(doc, li.containerNumber || '--', TC[1].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[1].w - TP*2 });
+
+    t(doc, li.voyageNumber || '--', TC[2].x + TP, y + 5,  { size: 8, color: C.dark, width: TC[2].w - TP*2 });
+    t(doc, li.roundNumber  || '--', TC[2].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[2].w - TP*2 });
+
+    t(doc, li.shipper || '--',            TC[3].x + TP, y + 5,  { size: 8, color: C.dark,  width: TC[3].w - TP*2 });
+    t(doc, `> ${li.consignee || '--'}`,   TC[3].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[3].w - TP*2 });
+
+    t(doc, fmtNum(li.freightAmount), TC[4].x + TP, y + 9, { font: 'Helvetica-Bold', size: 8.5, color: C.black, width: TC[4].w - TP*2, align: 'right' });
+    if (li.orphaned) {
+      t(doc, 'Booking cancelled after invoicing', TC[4].x + TP, y + 19, { size: 6.5, color: '#8B1A1A', width: TC[4].w - TP*2, align: 'right' });
+    }
 
     hLine(doc, ML, y + TR, PW - MR, C.border, 0.4);
     y += TR;
@@ -313,8 +303,8 @@ const generateInvoicePdf = (invoice) => {
   const ROTH = 22;             // row height for subtotals
 
   const totals = [
-    { label: 'Subtotal',            value: fmtMoney(amount, currency) },
-    { label: `AED (x${AED_RATE})`,  value: `AED ${fmtNum(amount * AED_RATE)}` },
+    { label: 'Subtotal',  value: fmtMoney(totalAmount, currency) },
+    { label: 'Paid',      value: fmtMoney(paidAmount, currency) },
   ];
 
   const totalsStartY = y;
@@ -329,11 +319,13 @@ const generateInvoicePdf = (invoice) => {
 
   y += totals.length * ROTH;
 
-  // TOTAL DUE — accent background
+  // BALANCE DUE — accent background (Sprint 033: reflects exact remaining
+  // balance after Payment.allocations, not the full invoice total once any
+  // payment has been recorded)
   const TDUEH = 26;
   fillBox(doc, TBX, y, TBW, TDUEH, C.accent);
-  t(doc, 'TOTAL DUE', TBX + 10, y + 8, { font: 'Helvetica-Bold', size: 8, color: C.white });
-  t(doc, fmtMoney(amount, currency), TBX + TLBW, y + 8, {
+  t(doc, 'BALANCE DUE', TBX + 10, y + 8, { font: 'Helvetica-Bold', size: 8, color: C.white });
+  t(doc, fmtMoney(balance, currency), TBX + TLBW, y + 8, {
     font: 'Helvetica-Bold', size: 9.5, color: C.white, width: TVBW, align: 'right',
   });
 

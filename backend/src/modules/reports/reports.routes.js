@@ -15,5 +15,6 @@ router.get('/bookings',             ctrl.getBookingReport);
 router.get('/revenue',              ctrl.getRevenueReport);
 router.get('/expenses',             ctrl.getExpenseReport);
 router.get('/round-capacity',       ctrl.getRoundCapacityReport);
+router.get('/booking-revenue-details', ctrl.getBookingRevenueDetails); // Sprint 034 Task 2
 
 module.exports = router;

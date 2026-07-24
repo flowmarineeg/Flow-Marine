@@ -8,7 +8,10 @@ export const expenseTypesService = {
 
   // Category management
   getCategories:  ()                     => api.get(`${BASE}/categories`),
-  createCategory: (name)                 => api.post(`${BASE}/categories`, { name }),
+  createCategory: (name, costClassification) => api.post(`${BASE}/categories`, { name, costClassification }),
+  // Sprint 035 — the only editable field on a category is its Voyage
+  // Profitability cost classification; name is not renameable.
+  updateCategory: (id, costClassification)   => api.put(`${BASE}/categories/${id}`, { costClassification }),
   deleteCategory: (id)                   => api.delete(`${BASE}/categories/${id}`),
 
   // Expense type CRUD

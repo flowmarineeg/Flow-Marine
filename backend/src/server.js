@@ -57,6 +57,7 @@ app.use('/api/v1/voyages', require('./modules/voyages/voyage.routes'));
 app.use('/api/v1/bookings', require('./modules/bookings/booking.routes'));
 app.use('/api/v1/expenses', require('./modules/expenses/expense.routes'));
 app.use('/api/v1/invoices', require('./modules/invoices/invoice.routes'));
+app.use('/api/v1/payments', require('./modules/invoices/payment.routes')); // Sprint 033
 app.use('/api/v1/tracking', require('./modules/tracking/tracking.routes'));
 app.use('/api/v1/reports', require('./modules/reports/reports.routes'));
 app.use('/api/v1/dashboard', require('./modules/dashboard/dashboard.routes'));

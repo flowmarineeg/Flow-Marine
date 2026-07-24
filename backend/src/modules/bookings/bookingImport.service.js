@@ -418,6 +418,29 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
         if (b.containerNumber && !savedContainerNumbers.has(b.containerNumber))
           cancelled.push(b.containerNumber);
       });
+
+      // Sprint 033 Edge Case 1: a booking cancelled here may already be
+      // referenced by a non-cancelled Invoice's lineItems (only Final Loading
+      // bookings are ever invoiced — Decision 1 — so this reconciliation and
+      // the invoiced population fully overlap). Ownership lives on the
+      // Invoice side only (no field on Booking), so flag the matching line
+      // item directly via arrayFilters — never silently leave the invoice
+      // overstating its total.
+      const cancelledIds = cancelledDocs.map(b => b._id);
+      if (cancelledIds.length) {
+        const Invoice = require('../invoices/invoice.model');
+        await Invoice.updateMany(
+          { 'lineItems.bookingId': { $in: cancelledIds }, isDeleted: false, status: { $ne: 'Cancelled' } },
+          {
+            $set: {
+              'lineItems.$[li].orphaned':       true,
+              'lineItems.$[li].orphanedAt':      new Date(),
+              'lineItems.$[li].orphanedReason':  'Booking cancelled by Final Loading import reconciliation (Sprint 031)',
+            },
+          },
+          { arrayFilters: [{ 'li.bookingId': { $in: cancelledIds }, 'li.orphaned': false }] }
+        );
+      }
     }
   }
 

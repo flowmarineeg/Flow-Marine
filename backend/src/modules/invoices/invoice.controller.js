@@ -6,10 +6,19 @@ const { success, created, error, paginate } = require('../../utils/responseHelpe
 
 const list = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, bookingId = '', agentId = '', status = '', dateFrom = '', dateTo = '' } = req.query;
-    const { data, total } = await invoiceService.list({ page, limit, bookingId, agentId, status, dateFrom, dateTo });
+    const { page = 1, limit = 20, agentId = '', status = '', invoiceType = '', dateFrom = '', dateTo = '' } = req.query;
+    const { data, total } = await invoiceService.list({ page, limit, agentId, status, invoiceType, dateFrom, dateTo });
     return success(res, data, 'Invoices retrieved', 200, paginate(total, page, limit));
   } catch (err) { next(err); }
+};
+
+// Sprint 033 Decision 6 — the eligible-bookings table shown before a
+// Voyage/Round invoice is generated.
+const eligibleBookings = async (req, res, next) => {
+  try {
+    const { agentId = '', voyageId = '', roundId = '' } = req.query;
+    return success(res, await invoiceService.getEligibleBookings({ agentId, voyageId, roundId }));
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
 const getById = async (req, res, next) => {
@@ -51,4 +60,4 @@ const downloadPdf = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { list, getById, create, update, remove, downloadPdf };
+module.exports = { list, eligibleBookings, getById, create, update, remove, downloadPdf };

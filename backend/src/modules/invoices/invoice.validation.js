@@ -2,7 +2,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { badRequest } = require('../../utils/responseHelper');
-const { INVOICE_STATUS } = require('../../config/constants');
+const { INVOICE_TYPES } = require('../../config/constants');
 
 const handle = (req, res, next) => {
   const errors = validationResult(req);
@@ -12,24 +12,28 @@ const handle = (req, res, next) => {
   next();
 };
 
+// Sprint 033: an invoice now owns an array of bookingIds (Booking type = 1,
+// Voyage/Round type = many), never a single bookingId.
 const validateCreate = [
-  body('bookingId').notEmpty().isMongoId().withMessage('Valid booking is required'),
-  body('agentId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  body('invoiceType').notEmpty().isIn(INVOICE_TYPES).withMessage('Valid invoice type is required'),
+  body('agentId').notEmpty().isMongoId().withMessage('Valid agent is required'),
+  body('voyageId').if(body('invoiceType').equals('Voyage')).notEmpty().isMongoId().withMessage('voyageId is required for a Voyage invoice'),
+  body('roundId').if(body('invoiceType').equals('Round')).notEmpty().isMongoId().withMessage('roundId is required for a Round invoice'),
+  body('bookingIds').isArray({ min: 1 }).withMessage('At least one booking is required'),
+  body('bookingIds.*').isMongoId().withMessage('Every bookingId must be valid'),
   body('invoiceDate').notEmpty().isISO8601().withMessage('Valid invoice date is required'),
   body('dueDate').notEmpty().isISO8601().withMessage('Valid due date is required'),
-  body('amount').notEmpty().isFloat({ min: 0 }).withMessage('Amount must be a non-negative number'),
   body('currency').trim().notEmpty().withMessage('Currency is required').isLength({ max: 10 }),
-  body('status').optional().isIn(INVOICE_STATUS),
+  body('notes').optional({ nullable: true, checkFalsy: true }).isString(),
   handle,
 ];
 
 const validateUpdate = [
-  body('agentId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   body('invoiceDate').optional().isISO8601(),
   body('dueDate').optional().isISO8601(),
-  body('amount').optional().isFloat({ min: 0 }),
   body('currency').optional().trim().notEmpty().isLength({ max: 10 }),
-  body('status').optional().isIn(INVOICE_STATUS),
+  body('status').optional().isIn(['Issued', 'Cancelled']),
+  body('notes').optional({ nullable: true, checkFalsy: true }).isString(),
   handle,
 ];
 

@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "seed": "node src/config/seed.js"
+    "seed": "node src/config/seed.js",
+    "migrate:invoice-v2": "node src/config/migrations/migrate-invoice-v2.js"
   },
   "dependencies": {
     "archiver": "^7.0.1",

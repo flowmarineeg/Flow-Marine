@@ -20,6 +20,8 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
   // ── "Add new category" inline state ────────────────────────────────────────
   const [addingCat,    setAddingCat]    = useState(false);
   const [newCatValue,  setNewCatValue]  = useState('');
+  // Sprint 035 — Voyage Profitability cost classification for a new category
+  const [newCatClass,  setNewCatClass]  = useState('Other Voyage Cost');
   const newCatInputRef                  = useRef(null);
 
   // ── RHF ────────────────────────────────────────────────────────────────────
@@ -55,7 +57,7 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
 
   // ── Save new category ───────────────────────────────────────────────────────
   const saveCatMutation = useMutation({
-    mutationFn: (name) => expenseTypesService.createCategory(name),
+    mutationFn: ({ name, costClassification }) => expenseTypesService.createCategory(name, costClassification),
     onSuccess:  (res) => {
       const created = res.data.data;
       toast.success(`Category "${created.name}" added`);
@@ -64,8 +66,18 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
       setValue('category', created.name, { shouldValidate: true });
       setAddingCat(false);
       setNewCatValue('');
+      setNewCatClass('Other Voyage Cost');
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to add category'),
+  });
+
+  // ── Sprint 035: toggle an existing category's cost classification ──────────
+  const updateCatMutation = useMutation({
+    mutationFn: ({ id, costClassification }) => expenseTypesService.updateCategory(id, costClassification),
+    onSuccess:  () => {
+      qc.invalidateQueries(['expense-type-categories']);
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed to update category'),
   });
 
   // ── Delete category ─────────────────────────────────────────────────────────
@@ -86,7 +98,7 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
   const handleSaveNewCat = () => {
     const trimmed = newCatValue.trim();
     if (!trimmed) { toast.error('Category name cannot be empty'); return; }
-    saveCatMutation.mutate(trimmed);
+    saveCatMutation.mutate({ name: trimmed, costClassification: newCatClass });
   };
 
   const handleCatKeyDown = (e) => {
@@ -161,6 +173,23 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
               >
                 {c.name}
               </button>
+              {/* Sprint 035 — click to toggle Voyage Cost / Other Voyage Cost classification */}
+              <button
+                type="button"
+                onClick={() => updateCatMutation.mutate({
+                  id: c._id,
+                  costClassification: c.costClassification === 'Voyage Cost' ? 'Other Voyage Cost' : 'Voyage Cost',
+                })}
+                disabled={updateCatMutation.isPending}
+                title="Click to toggle Voyage Profitability classification"
+                className={`ml-0.5 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border transition ${
+                  c.costClassification === 'Voyage Cost'
+                    ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                {c.costClassification === 'Voyage Cost' ? 'Voyage' : 'Other'}
+              </button>
               {/* Delete chip */}
               <button
                 type="button"
@@ -199,6 +228,16 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
                 placeholder="New category name…"
                 className="text-[12px] border border-teal-400 rounded-lg px-2.5 py-1 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500/20 w-40"
               />
+              {/* Sprint 035 — classification for the new category */}
+              <select
+                value={newCatClass}
+                onChange={e => setNewCatClass(e.target.value)}
+                title="Voyage Profitability classification"
+                className="text-[11px] border border-teal-400 rounded-lg px-1.5 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              >
+                <option value="Other Voyage Cost">Other</option>
+                <option value="Voyage Cost">Voyage</option>
+              </select>
               <button
                 type="button"
                 onClick={handleSaveNewCat}
@@ -232,7 +271,8 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
         </div>
 
         <p className="mt-2 text-[10px] text-gray-400">
-          Click a category chip to select it · Click ✕ on a chip to remove that category · Press Enter to save a new one
+          Click a category chip to select it · Click the Voyage/Other badge to toggle its Voyage Profitability
+          classification · Click ✕ on a chip to remove that category · Press Enter to save a new one
         </p>
       </div>
 

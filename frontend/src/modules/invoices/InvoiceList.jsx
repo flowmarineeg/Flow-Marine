@@ -8,7 +8,7 @@ import { invoicesService } from '@/services/invoices.service';
 import { agentsService }   from '@/services/agents.service';
 import { bookingsService } from '@/services/bookings.service';
 import { usePermission }   from '@/context/PermissionContext';
-import { INVOICE_STATUS }  from '@/utils/constants';
+import { INVOICE_STATUS, INVOICE_TYPES } from '@/utils/constants';
 import PageHeader    from '@/components/ui/PageHeader';
 import Button        from '@/components/ui/Button';
 import Badge         from '@/components/ui/Badge';
@@ -40,6 +40,7 @@ export default function InvoiceList() {
 
   const [page,        setPage]        = useState(1);
   const [status,      setStatus]      = useState('');
+  const [invoiceType, setInvoiceType] = useState('');
   const [agentId,     setAgentId]     = useState('');
   const [dateFrom,    setDateFrom]    = useState('');
   const [dateTo,      setDateTo]      = useState('');
@@ -59,8 +60,8 @@ export default function InvoiceList() {
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ['invoices', page, status, agentId, dateFrom, dateTo],
-    queryFn:  () => invoicesService.list({ page, limit: 20, status, agentId, dateFrom, dateTo }).then(r => r.data),
+    queryKey: ['invoices', page, status, invoiceType, agentId, dateFrom, dateTo],
+    queryFn:  () => invoicesService.list({ page, limit: 20, status, invoiceType, agentId, dateFrom, dateTo }).then(r => r.data),
   });
 
   const { data: agData } = useQuery({
@@ -103,6 +104,10 @@ export default function InvoiceList() {
           <option value="">All Statuses</option>
           {INVOICE_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        <select value={invoiceType} onChange={e => { setInvoiceType(e.target.value); setPage(1); }} className={sc}>
+          <option value="">All Types</option>
+          {INVOICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
           className="text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-teal-500" />
         <span className="text-gray-400 text-xs">to</span>
@@ -114,13 +119,13 @@ export default function InvoiceList() {
       {/* Table */}
       <div className="card overflow-hidden">
         {isLoading ? <LoadingSpinner fullPage /> : invoices.length === 0 ? (
-          <EmptyState title="No invoices found" message="Create an invoice linked to a booking." />
+          <EmptyState title="No invoices found" message="Create a Booking, Voyage, or Round invoice from Final Loading bookings." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
-                  {['Invoice No', 'Booking No', 'Agent', 'Invoice Date', 'Due Date', 'Amount', 'Status', 'Actions'].map(h => (
+                  {['Invoice No', 'Type', 'Bookings', 'Agent', 'Invoice Date', 'Due Date', 'Total', 'Paid', 'Balance', 'Status', 'Actions'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -129,13 +134,22 @@ export default function InvoiceList() {
                 {invoices.map(inv => (
                   <tr key={inv._id} className="table-row">
                     <td><span className="mono text-xs font-bold text-teal-600">{inv.invoiceNumber}</span></td>
-                    <td><span className="mono text-xs font-semibold text-gray-600">{inv.bookingId?.bookingNumber}</span></td>
+                    <td className="text-xs text-gray-600">{inv.invoiceType}</td>
+                    <td>
+                      <span className="mono text-xs font-semibold text-gray-600">
+                        {inv.lineItems?.length === 1
+                          ? inv.lineItems[0].bookingNumber
+                          : `${inv.lineItems?.length || 0} bookings`}
+                      </span>
+                    </td>
                     <td className="text-xs text-gray-600">{inv.agentId?.agentName}</td>
                     <td className="text-xs text-gray-600">{fmt(inv.invoiceDate)}</td>
                     <td className={`text-xs font-medium ${new Date(inv.dueDate) < new Date() && inv.status !== 'Paid' ? 'text-red-500' : 'text-gray-600'}`}>
                       {fmt(inv.dueDate)}
                     </td>
-                    <td><span className="mono text-xs font-semibold text-gray-700">{fmtMoney(inv.amount, inv.currency)}</span></td>
+                    <td><span className="mono text-xs font-semibold text-gray-700">{fmtMoney(inv.totalAmount, inv.currency)}</span></td>
+                    <td><span className="mono text-xs font-semibold text-green-700">{fmtMoney(inv.paidAmount, inv.currency)}</span></td>
+                    <td><span className="mono text-xs font-semibold text-amber-700">{fmtMoney(inv.balanceAmount, inv.currency)}</span></td>
                     <td><Badge label={inv.status} /></td>
                     <td>
                       <div className="flex items-center gap-3">
@@ -160,14 +174,11 @@ export default function InvoiceList() {
                           PDF
                         </button>
 
-                        {can('invoices', 'update') && inv.status !== 'Paid' && (
-                          <button onClick={() => router.push(`/invoices/${inv._id}`)}
-                            className="text-xs font-medium text-teal-600 hover:text-teal-800 transition">Edit</button>
-                        )}
-                        {inv.status === 'Paid' && (
-                          <span className="text-xs text-gray-400">View only</span>
-                        )}
-                        {can('invoices', 'delete') && inv.status !== 'Paid' && (
+                        <button onClick={() => router.push(`/invoices/${inv._id}`)}
+                          className="text-xs font-medium text-teal-600 hover:text-teal-800 transition">
+                          {inv.paidAmount > 0 || inv.status === 'Paid' ? 'View' : 'Open'}
+                        </button>
+                        {can('invoices', 'delete') && inv.paidAmount <= 0 && inv.status !== 'Paid' && (
                           <button onClick={() => setDeleteTarget(inv)}
                             className="text-xs font-medium text-red-400 hover:text-red-600 transition">Delete</button>
                         )}

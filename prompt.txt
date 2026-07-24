@@ -1,45 +1,125 @@
-Sprint 033 Revision 3 is approved.
+Sprint 035 has been reviewed and approved.
 
-The overall architecture, business flow, data model, financial workflow, and Agent Financial Account design are approved.
+This document is now the implementation blueprint.
 
-You may consider this the final approved architecture.
+Your task is NO LONGER architecture or planning.
 
-However, there is one architectural refinement before implementation.
+Your task is to IMPLEMENT Sprint 035 exactly as defined.
 
----
+========================================================
+ROLE
+========================================================
 
-## Payment Allocation
+Act as a Senior Software Engineer and Technical Lead.
 
-Do not use proportional payment allocation.
+Follow Sprint 035 exactly.
 
-Example:
+Do NOT redesign the architecture.
 
-BookingPaid =
-InvoicePaid × (BookingFreight / InvoiceTotal)
+Do NOT introduce new business rules.
 
-This should not be the primary business logic.
+Do NOT over-engineer.
 
-In real shipping operations, agents often pay specific bookings, not a proportional percentage across all bookings.
+If an implementation detail is not explicitly defined, reuse the existing project architecture and coding patterns.
 
-Examples:
+========================================================
+IMPLEMENTATION RULES
+========================================================
 
-- Pay Booking A only.
-- Pay Bookings A + B.
-- Leave Booking C unpaid.
-- Pay one container today and another later.
+Implement Sprint 035 incrementally.
 
-Therefore, redesign the payment application so that a payment can be applied to specific invoice line items.
+Never modify unrelated modules.
 
-The payment record should clearly indicate how much was applied to each booking (invoice line item).
+Preserve backward compatibility wherever possible.
 
-This removes estimation and allows the Agent Financial Account to always show the exact paid and remaining amount for every booking.
+Do not break existing functionality.
 
-Keep the solution as simple as possible.
+Keep commits small and logically separated.
 
-Do not over-engineer it.
+Reuse existing services, controllers, DTOs, validators, hooks and UI components whenever possible.
 
-Reuse the current Invoice + Payment architecture.
+========================================================
+VERY IMPORTANT
+========================================================
 
-Only adjust the payment application model to support explicit allocation to invoice line items.
+This sprint is an EVOLUTION of the existing Round P&L.
 
-After updating Sprint 033 with this refinement, it is approved for implementation.
+DO NOT create:
+
+- a new report
+- a new report page
+- a new endpoint
+- a parallel implementation
+
+Instead:
+
+Extend the existing implementation:
+
+- getRoundPnL()
+- RoundPnlReport.jsx
+- GET /reports/round-pnl
+
+The current Round P&L evolves into the new Voyage Profitability Report.
+
+========================================================
+BUSINESS RULE
+========================================================
+
+Voyage Cost is determined by the business classification configured through Expense Types and Categories, NOT by hardcoded category names.
+
+The implementation must never depend on literal category names such as:
+
+- Port Expense
+- Operating Expense
+- Other
+
+The report must determine Voyage Cost according to the business classification configured in the Expense Types and Expense Categories.
+
+The classification must remain configurable by the business without requiring future code changes.
+
+========================================================
+IMPLEMENTATION STRATEGY
+========================================================
+
+Implement Sprint 035 phase by phase.
+
+After completing each phase:
+
+1. Verify compilation.
+2. Verify TypeScript/ESLint if applicable.
+3. Verify existing functionality is not broken.
+4. Continue to the next phase.
+
+Do not jump between phases.
+
+========================================================
+OUTPUT FORMAT
+========================================================
+
+For every completed phase provide:
+
+## Phase Completed
+
+Files Modified
+
+Reason for every change
+
+Business rule implemented
+
+Architecture decisions reused
+
+Anything that requires manual testing
+
+Then continue to the next phase until Sprint 035 is fully implemented.
+
+Do NOT stop after one phase unless you encounter a genuine blocker.
+
+If a blocker exists:
+
+- Explain it.
+- Explain why it blocks implementation.
+- Propose the smallest architectural solution that is consistent with Sprint 035.
+
+Never redesign the sprint.
+Never invent new business rules.
+Implement exactly what Sprint 035 defines.

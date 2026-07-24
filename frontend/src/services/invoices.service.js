@@ -10,4 +10,12 @@ export const invoicesService = {
   remove:      (id)     => api.delete(`${BASE}/${id}`),
   // Sprint020: download invoice as PDF
   downloadPdf: (id)     => api.get(`${BASE}/${id}/pdf`, { responseType: 'blob' }),
+
+  // Sprint 033 — Decision 6 eligible-bookings composition table
+  getEligibleBookings: (params) => api.get(`${BASE}/eligible-bookings`, { params }),
+
+  // Sprint 033 — explicit per-line-item payment allocation (Revision 4)
+  listPayments: (id)   => api.get(`${BASE}/${id}/payments`),
+  createPayment: (id, data) => api.post(`${BASE}/${id}/payments`, data),
+  voidPayment:  (id, paymentId, data) => api.post(`${BASE}/${id}/payments/${paymentId}/void`, data),
 };

@@ -6,8 +6,8 @@ import PageHeader from '@/components/ui/PageHeader';
 const REPORT_CARDS = [
   {
     href:     '/reports/round-pnl',
-    title:    'Round P&L',
-    desc:     'Revenue vs expenses for a single round — breakdown by expense category.',
+    title:    'Voyage Profitability',
+    desc:     'Revenue, Voyage Cost and Other Voyage Cost for a round or a single voyage within it.',
     icon: (
       <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
         <path strokeLinecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
@@ -69,6 +69,17 @@ const REPORT_CARDS = [
       </svg>
     ),
     color: 'text-amber-600 bg-amber-50 border-amber-200',
+  },
+  {
+    href:     '/reports/booking-revenue-details',
+    title:    'Booking Revenue Details',
+    desc:     'Final Loading bookings grouped by commercial pricing group — Agent, Commodity, POL, POD, Container Type and Freight Rate.',
+    icon: (
+      <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" d="M3 3v18h18M7 15l4-4 3 3 5-6"/>
+      </svg>
+    ),
+    color: 'text-rose-600 bg-rose-50 border-rose-200',
   },
 ];
 

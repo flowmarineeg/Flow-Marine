@@ -204,12 +204,13 @@ const softDelete = async (id, deletedBy) => {
   const booking = await Booking.findOne({ _id: id, isDeleted: false });
   if (!booking) throw { status: 404, message: 'Booking not found' };
 
-  let Invoice;
-  try { Invoice = require('../invoices/invoice.model'); } catch { Invoice = null; }
-  if (Invoice) {
-    const hasInvoice = await Invoice.exists({ bookingId: id, isDeleted: false });
-    if (hasInvoice) throw { status: 400, message: 'Cannot delete — an invoice exists for this booking' };
-  }
+  // Sprint 033: ownership of the booking↔invoice relationship lives entirely
+  // in Invoice.lineItems (no field on Booking) — query from the Invoice side.
+  const Invoice = require('../invoices/invoice.model');
+  const hasInvoice = await Invoice.exists({
+    'lineItems.bookingId': id, isDeleted: false, status: { $ne: 'Cancelled' },
+  });
+  if (hasInvoice) throw { status: 400, message: 'Cannot delete — a non-cancelled invoice references this booking' };
 
   const deletedVoyage = await Voyage.findById(booking.voyageId).select('roundId').lean();
   booking.isDeleted = true;

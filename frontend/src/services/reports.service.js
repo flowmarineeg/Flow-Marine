@@ -9,4 +9,5 @@ export const reportsService = {
   getRevenueReport:      (params) => api.get(`${BASE}/revenue`,             { params }),
   getExpenseReport:      (params) => api.get(`${BASE}/expenses`,            { params }),
   getRoundCapacityReport:(params) => api.get(`${BASE}/round-capacity`,      { params }), // Sprint 022
+  getBookingRevenueDetails: (params) => api.get(`${BASE}/booking-revenue-details`, { params }), // Sprint 034
 };

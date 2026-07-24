@@ -39,4 +39,13 @@ const getRoundCapacityReport = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { getRoundPnL, getVoyagePerformance, getBookingReport, getRevenueReport, getExpenseReport, getRoundCapacityReport };
+const getBookingRevenueDetails = async (req, res, next) => {
+  try {
+    return success(res, await reportsService.getBookingRevenueDetails(req.query), 'Booking revenue details report generated');
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+module.exports = {
+  getRoundPnL, getVoyagePerformance, getBookingReport, getRevenueReport,
+  getExpenseReport, getRoundCapacityReport, getBookingRevenueDetails,
+};
