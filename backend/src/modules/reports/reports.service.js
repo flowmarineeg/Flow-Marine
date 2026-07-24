@@ -9,6 +9,7 @@ const Expense    = require('../expenses/expense.model');
 const Service    = require('../services/service.model');
 const { resolveTEU } = require('../../utils/teuResolver');
 const expenseTypeService = require('../expenseTypes/expenseType.service');
+const { BOOKING_STATUS } = require('../../config/constants');
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const toObjId = (id) => new mongoose.Types.ObjectId(String(id));
@@ -169,10 +170,14 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
   const revenueByVoyage = new Map();
   revenueBookings.forEach(b => {
     const key = String(b.voyageId);
-    if (!revenueByVoyage.has(key)) revenueByVoyage.set(key, { totalRevenue: 0, teus: 0, bookingCount: 0 });
+    if (!revenueByVoyage.has(key)) revenueByVoyage.set(key, { totalRevenue: 0, teus: 0, vgm: 0, bookingCount: 0 });
     const r = revenueByVoyage.get(key);
     r.totalRevenue += b.totalFreight || 0;
     r.teus         += resolveTEU(b.containerTypeId?.size).teu;
+    // Sprint 036 Decision 1 — VGM (MT) is mandatory on Revenue by Voyage.
+    // Booking.vgm is stored in kg (booking.model.js field comment); this
+    // report's unit is MT, so the raw sum is converted once, here.
+    r.vgm          += (b.vgm || 0) / 1000;
     r.bookingCount += 1;
   });
 
@@ -189,10 +194,14 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
       { roundId: toObjId(roundId), voyageId: null },
       { voyageId: { $in: scopedVoyageIds } },
     ],
-  }).populate('expenseTypeId', 'name category').lean();
+  }).populate('expenseTypeId', 'name category').populate('portId', 'name code').lean();
 
   // Voyage Cost — broken out PER VOYAGE, even in round scope.
-  const voyageCostByVoyage = new Map(); // voyageId -> { total, byPort: Map(port->total) }
+  // Sprint 036 — byPort keys on the real portId (Expense.portId, a
+  // reference to that voyage's own POL/POD — never a free-text match)
+  // when present, falling back to the legacy free-text `port` string
+  // for older records that predate Port scope.
+  const voyageCostByVoyage = new Map(); // voyageId -> { total, byPort: Map(key -> {portId, portName, total}) }
   const roundLevelVoyageCostMap = new Map(); // expenseTypeId -> { expenseTypeName, category, total, count } — round-linked, no voyageId
 
   // Other Voyage Cost — SCOPE-WIDE ONLY (one total, never per voyage).
@@ -226,8 +235,13 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
       if (!voyageCostByVoyage.has(vKey)) voyageCostByVoyage.set(vKey, { total: 0, byPort: new Map() });
       const vc = voyageCostByVoyage.get(vKey);
       vc.total += e.amount || 0;
-      const portKey = e.port || 'Unspecified';
-      vc.byPort.set(portKey, (vc.byPort.get(portKey) || 0) + (e.amount || 0));
+      const portKey  = e.portId?._id ? String(e.portId._id) : (e.port || 'Unspecified');
+      const existing = vc.byPort.get(portKey);
+      vc.byPort.set(portKey, {
+        portId:   e.portId?._id || null,
+        portName: e.portId?.name || e.port || 'Unspecified',
+        total:    (existing?.total || 0) + (e.amount || 0),
+      });
       return;
     }
 
@@ -246,19 +260,26 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
   });
 
   const voyages = scopedVoyages.map(v => {
-    const r  = revenueByVoyage.get(String(v._id))  || { totalRevenue: 0, teus: 0, bookingCount: 0 };
+    const r  = revenueByVoyage.get(String(v._id))  || { totalRevenue: 0, teus: 0, vgm: 0, bookingCount: 0 };
     const vc = voyageCostByVoyage.get(String(v._id)) || { total: 0, byPort: new Map() };
+    const polName = v.polId?.name || '';
+    const podName = v.podId?.name || '';
     return {
       voyageId:     v._id,
       voyageNumber: v.voyageNumber,
-      polName:      v.polId?.name || '',
-      podName:      v.podId?.name || '',
+      polName,
+      podName,
       etd: v.etd, eta: v.eta, atd: v.atd, ata: v.ata,
       durationDays: durationByVoyageId.get(String(v._id)) || 0,
-      revenue:    { totalRevenue: r.totalRevenue, teus: r.teus, bookingCount: r.bookingCount },
+      // Sprint 036 Decision 1 — POL/POD/VGM mirrored inside revenue{}
+      // itself so the Revenue-by-Voyage row is self-contained.
+      revenue: {
+        totalRevenue: r.totalRevenue, teus: r.teus, vgm: r.vgm, bookingCount: r.bookingCount,
+        polName, podName,
+      },
       voyageCost: {
         total:  vc.total,
-        byPort: [...vc.byPort.entries()].map(([port, total]) => ({ port, total })),
+        byPort: [...vc.byPort.values()],
       },
     };
   });
@@ -328,8 +349,34 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Report 2 — Voyage Performance
+// Sprint 038 — dual-layer support (Booking Source: L1/L2/Combined) and a
+// Booking Status filter (All / Final Loading), reusing the exact
+// fetch-then-merge-in-JS shape getBookingReport (Sprint 034) already
+// proved, so Layer 1 (ManualBooking) and Layer 2 (Booking) are always
+// aggregated the same way every other dual-layer report in this codebase
+// already does — no new merge pattern invented.
+// The dead `$sum:'$quantity'` field (Booking.quantity was removed from
+// the schema in Sprint 025/026) is removed entirely; the replacement
+// "units" figure is source-aware: Layer 2 contributes its booking count
+// (one booking = one container, same rule capacity.service.js already
+// uses), Layer 1 contributes its own real totalUnits sum — combined when
+// bookingSource === 'combined', mirroring
+// capacity.service.js#computeRoundCapacity's own totalBookedUnits rule.
 // ─────────────────────────────────────────────────────────────────────────────
-const getVoyagePerformance = async ({ voyageId, serviceId, roundId, status, dateFrom, dateTo } = {}) => {
+const getVoyagePerformance = async ({
+  voyageId, serviceId, roundId, status, dateFrom, dateTo,
+  bookingSource = 'combined', bookingStatus = 'all',
+} = {}) => {
+  if (!['L1', 'L2', 'combined'].includes(bookingSource)) {
+    throw { status: 400, message: "bookingSource must be one of: L1, L2, combined" };
+  }
+  // bookingStatus accepts 'all' or any real BOOKING_STATUS value (Pending,
+  // Confirmed, Final Loading, Cancelled) — not just a binary
+  // all/finalLoading choice, so a user can isolate any single status.
+  if (bookingStatus !== 'all' && !BOOKING_STATUS.includes(bookingStatus)) {
+    throw { status: 400, message: `bookingStatus must be one of: all, ${BOOKING_STATUS.join(', ')}` };
+  }
+
   const match = {};
   if (voyageId)  match._id       = toObjId(voyageId);
   if (serviceId) match.serviceId = toObjId(serviceId);
@@ -338,61 +385,61 @@ const getVoyagePerformance = async ({ voyageId, serviceId, roundId, status, date
   const dr = dateRange(dateFrom, dateTo);
   if (dr) match.etd = dr;
 
-  const rows = await Voyage.aggregate([
-    { $match: match },
-    {
-      $lookup: {
-        from:     'bookings',
-        let:      { vid: '$_id' },
-        pipeline: [
-          { $match: { $expr: { $and: [
-            { $eq: ['$voyageId', '$$vid'] },
-            { $eq: ['$isDeleted', false] },
-            { $ne:  ['$status', 'Cancelled'] },
-          ]}}},
-          { $group: {
-              _id:          null,
-              bookingCount: { $sum: 1 },
-              totalFreight: { $sum: '$totalFreight' },
-              totalQty:     { $sum: '$quantity' },
-          }},
-        ],
-        as: 'bookingSummary',
-      },
-    },
-    // FIX: was preserveNullAndEmpty (invalid) → preserveNullAndEmptyArrays
-    { $unwind: { path: '$bookingSummary', preserveNullAndEmptyArrays: true } },
-    { $lookup: { from: 'rounds',   localField: 'roundId',   foreignField: '_id', as: 'round'   } },
-    { $lookup: { from: 'services', localField: 'serviceId', foreignField: '_id', as: 'service' } },
-    { $lookup: { from: 'ports',    localField: 'polId',     foreignField: '_id', as: 'pol'     } },
-    { $lookup: { from: 'ports',    localField: 'podId',     foreignField: '_id', as: 'pod'     } },
-    // FIX: all four were preserveNullAndEmpty → preserveNullAndEmptyArrays
-    { $unwind: { path: '$round',   preserveNullAndEmptyArrays: true } },
-    { $unwind: { path: '$service', preserveNullAndEmptyArrays: true } },
-    { $unwind: { path: '$pol',     preserveNullAndEmptyArrays: true } },
-    { $unwind: { path: '$pod',     preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        voyageNumber:  1, status: 1, etd: 1, eta: 1, sequence: 1,
-        polName:       '$pol.name',
-        podName:       '$pod.name',
-        roundNumber:   '$round.roundNumber',
-        serviceCode:   '$service.serviceCode',
-        serviceName:   '$service.serviceName',
-        bookingCount:  { $ifNull: ['$bookingSummary.bookingCount', 0] },
-        totalFreight:  { $ifNull: ['$bookingSummary.totalFreight', 0] },
-        totalQty:      { $ifNull: ['$bookingSummary.totalQty',     0] },
-      },
-    },
-    { $sort: { etd: 1, sequence: 1 } },
+  const voyages = await Voyage.find(match)
+    .populate('roundId',   'roundNumber')
+    .populate('serviceId', 'serviceCode serviceName')
+    .populate('polId',     'name')
+    .populate('podId',     'name')
+    .sort({ etd: 1, sequence: 1 })
+    .lean();
+  const voyageIds = voyages.map(v => v._id);
+
+  const statusMatch = bookingStatus === 'all'
+    ? { status: { $ne: 'Cancelled' } }
+    : { status: bookingStatus };
+
+  const [l2Agg, l1Agg] = await Promise.all([
+    bookingSource !== 'L1'
+      ? Booking.aggregate([
+          { $match: { voyageId: { $in: voyageIds }, isDeleted: false, ...statusMatch } },
+          { $group: { _id: '$voyageId', bookingCount: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' } } },
+        ])
+      : Promise.resolve([]),
+    bookingSource !== 'L2'
+      ? ManualBooking.aggregate([
+          { $match: { voyageId: { $in: voyageIds }, isDeleted: false, ...statusMatch } },
+          { $group: { _id: '$voyageId', bookingCount: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' }, totalUnits: { $sum: '$totalUnits' } } },
+        ])
+      : Promise.resolve([]),
   ]);
 
-  // slotCount removed in Sprint 017 — totals no longer include it
+  const l2ByVoyage = new Map(l2Agg.map(a => [String(a._id), a]));
+  const l1ByVoyage = new Map(l1Agg.map(a => [String(a._id), a]));
+
+  const rows = voyages.map(v => {
+    const l2 = l2ByVoyage.get(String(v._id)) || { bookingCount: 0, totalFreight: 0 };
+    const l1 = l1ByVoyage.get(String(v._id)) || { bookingCount: 0, totalFreight: 0, totalUnits: 0 };
+    return {
+      _id: v._id,
+      voyageNumber: v.voyageNumber, status: v.status, etd: v.etd, eta: v.eta, sequence: v.sequence,
+      polName:      v.polId?.name || '',
+      podName:      v.podId?.name || '',
+      roundNumber:  v.roundId?.roundNumber || '',
+      serviceCode:  v.serviceId?.serviceCode || '',
+      serviceName:  v.serviceId?.serviceName || '',
+      bookingCount: l2.bookingCount + l1.bookingCount,
+      totalFreight: l2.totalFreight + l1.totalFreight,
+      totalUnits:   l2.bookingCount + l1.totalUnits,
+      layer1: { bookingCount: l1.bookingCount, totalFreight: l1.totalFreight, totalUnits: l1.totalUnits },
+      layer2: { bookingCount: l2.bookingCount, totalFreight: l2.totalFreight },
+    };
+  });
+
   const totals = rows.reduce((acc, r) => ({
     bookingCount: acc.bookingCount + r.bookingCount,
     totalFreight: acc.totalFreight + r.totalFreight,
-    totalQty:     acc.totalQty     + r.totalQty,
-  }), { bookingCount: 0, totalFreight: 0, totalQty: 0 });
+    totalUnits:   acc.totalUnits   + r.totalUnits,
+  }), { bookingCount: 0, totalFreight: 0, totalUnits: 0 });
 
   return { rows, totals };
 };
@@ -495,6 +542,19 @@ const getBookingReport = async ({ voyageId, agentId, status, dateFrom, dateTo, s
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Report 4 — Revenue Report
+// Sprint 038 (final business decision, no longer an open question):
+// Revenue Report represents OPERATIONAL REVENUE — Layer 2 ONLY, status
+// = Final Loading ONLY. Pending and Confirmed bookings are
+// INTENTIONALLY EXCLUDED — this is not a filter the user can relax, it
+// is what "Revenue" means system-wide as of Sprint 033 (Invoice
+// eligibility)/034 (Booking Revenue Details)/035-036 (Voyage
+// Profitability), all independently confirming the same population.
+// The dead `$sum:'$quantity'` field (Booking.quantity does not exist —
+// removed Sprint 025/026) is removed entirely; `bookingCount` (already
+// computed) already fully answers "how many containers," so no
+// replacement units field is added, matching Sprint 034's precedent of
+// removing "Total Slots" outright rather than keeping a duplicate
+// concept under a new name.
 // ─────────────────────────────────────────────────────────────────────────────
 const getRevenueReport = async ({ serviceId, dateFrom, dateTo } = {}) => {
   const voyageMatch = {};
@@ -512,22 +572,19 @@ const getRevenueReport = async ({ serviceId, dateFrom, dateTo } = {}) => {
           { $match: { $expr: { $and: [
             { $eq: ['$voyageId', '$$vid'] },
             { $eq: ['$isDeleted', false] },
-            { $ne:  ['$status', 'Cancelled'] },
+            { $eq:  ['$status', 'Final Loading'] },
           ]}}},
           { $group: {
               _id:          null,
               totalFreight: { $sum: '$totalFreight' },
               bookingCount: { $sum: 1 },
-              totalQty:     { $sum: '$quantity' },
           }},
         ],
         as: 'bk',
       },
     },
-    // FIX: was preserveNullAndEmpty (invalid) → preserveNullAndEmptyArrays
     { $unwind: { path: '$bk',  preserveNullAndEmptyArrays: true } },
     { $lookup: { from: 'services', localField: 'serviceId', foreignField: '_id', as: 'svc' } },
-    // FIX: was preserveNullAndEmpty (invalid) → preserveNullAndEmptyArrays
     { $unwind: { path: '$svc', preserveNullAndEmptyArrays: true } },
     {
       $group: {
@@ -537,7 +594,6 @@ const getRevenueReport = async ({ serviceId, dateFrom, dateTo } = {}) => {
         voyageCount:  { $sum: 1 },
         bookingCount: { $sum: { $ifNull: ['$bk.bookingCount', 0] } },
         totalRevenue: { $sum: { $ifNull: ['$bk.totalFreight', 0] } },
-        totalQty:     { $sum: { $ifNull: ['$bk.totalQty',     0] } },
       },
     },
     { $sort: { totalRevenue: -1 } },
@@ -547,16 +603,25 @@ const getRevenueReport = async ({ serviceId, dateFrom, dateTo } = {}) => {
     voyageCount:  acc.voyageCount  + r.voyageCount,
     bookingCount: acc.bookingCount + r.bookingCount,
     totalRevenue: acc.totalRevenue + r.totalRevenue,
-    totalQty:     acc.totalQty     + r.totalQty,
-  }), { voyageCount: 0, bookingCount: 0, totalRevenue: 0, totalQty: 0 });
+  }), { voyageCount: 0, bookingCount: 0, totalRevenue: 0 });
 
   return { rows, grandTotal };
 };
 
-const getExpenseReport = async ({ category, expenseTypeId, roundId, voyageId, dateFrom, dateTo, currency } = {}) => {
+// Sprint 038 — brought to Sprint 036 parity: portId filter/populate,
+// computed `scope` per row (reusing expense.service.js#deriveScope
+// directly — never re-deriving the same rule a second time, per ADR-4),
+// and a second summary dimension grouped by the exact same
+// costClassification map getRoundPnL already builds, so this report's
+// Voyage Cost/Other Voyage Cost totals are guaranteed to reconcile with
+// Voyage Profitability's for the same round.
+const getExpenseReport = async ({ category, expenseTypeId, roundId, voyageId, portId, dateFrom, dateTo, currency } = {}) => {
+  const { deriveScope } = require('../expenses/expense.service');
+
   const match = {};
   if (roundId)       match.roundId       = toObjId(roundId);
   if (voyageId)      match.voyageId      = toObjId(voyageId);
+  if (portId)        match.portId        = toObjId(portId);
   if (expenseTypeId) match.expenseTypeId = toObjId(expenseTypeId);
   if (currency)      match.currency      = currency.toUpperCase();
   const dr = dateRange(dateFrom, dateTo);
@@ -567,12 +632,16 @@ const getExpenseReport = async ({ category, expenseTypeId, roundId, voyageId, da
     .populate('roundId',       'roundNumber')
     .populate('voyageId',      'voyageNumber')
     .populate('agentId',       'agentCode agentName')
+    .populate('portId',        'name code')
     .sort({ expenseDate: -1 })
     .lean();
 
-  const filtered = category ? rows.filter(e => e.expenseTypeId?.category === category) : rows;
+  const filtered = (category ? rows.filter(e => e.expenseTypeId?.category === category) : rows)
+    .map(e => ({ ...e, scope: deriveScope(e) }));
 
   const summaryMap = {};
+  const classificationMap = await expenseTypeService.getCostClassificationMap();
+  const classificationSummaryMap = {};
   filtered.forEach(e => {
     const cat = e.expenseTypeId?.category || 'Uncategorised';
     const cur = e.currency || 'USD';
@@ -580,10 +649,21 @@ const getExpenseReport = async ({ category, expenseTypeId, roundId, voyageId, da
     if (!summaryMap[key]) summaryMap[key] = { category: cat, currency: cur, total: 0, count: 0 };
     summaryMap[key].total += e.amount || 0;
     summaryMap[key].count += 1;
+
+    const classification = classificationMap[cat.trim().toUpperCase()] || 'Other Voyage Cost';
+    const cKey = `${classification}__${cur}`;
+    if (!classificationSummaryMap[cKey]) {
+      classificationSummaryMap[cKey] = { classification, currency: cur, total: 0, count: 0 };
+    }
+    classificationSummaryMap[cKey].total += e.amount || 0;
+    classificationSummaryMap[cKey].count += 1;
   });
 
   const summary = Object.values(summaryMap).sort((a, b) => a.category.localeCompare(b.category));
-  return { rows: filtered, summary };
+  const classificationSummary = Object.values(classificationSummaryMap)
+    .sort((a, b) => a.classification.localeCompare(b.classification));
+
+  return { rows: filtered, summary, classificationSummary };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -663,7 +743,11 @@ const getBookingRevenueDetails = async ({ agentId, voyageId, roundId, dateFrom, 
     const g = groups.get(key);
     g.count += 1;
     g.teus  += resolveTEU(size).teu;
-    g.vgm   += (b.vgm || 0);
+    // Sprint 038 (Cross Report Consistency) — Booking.vgm is stored in
+    // kg; converted to MT here so this report's VGM figure agrees with
+    // getRoundPnL's (Sprint 036), which already made this same
+    // conversion. Same unit, same source field, now one rule.
+    g.vgm   += (b.vgm || 0) / 1000;
   });
 
   const rows = [...groups.values()].map(g => {

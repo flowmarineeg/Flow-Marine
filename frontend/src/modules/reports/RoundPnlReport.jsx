@@ -212,17 +212,18 @@ export default function RoundPnlReport() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="table-header">
-                      {['Voyage', 'POL', 'POD', 'Bookings', 'TEUs', 'Revenue'].map(h => <th key={h}>{h}</th>)}
+                      {['Voyage', 'POL', 'POD', 'Bookings', 'TEUs', 'VGM (MT)', 'Revenue'].map(h => <th key={h}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {data.voyages.map(v => (
                       <tr key={v.voyageId} className="table-row">
                         <td className="mono text-xs font-semibold text-teal-700">{v.voyageNumber}</td>
-                        <td className="text-xs text-gray-500">{v.polName || '—'}</td>
-                        <td className="text-xs text-gray-500">{v.podName || '—'}</td>
+                        <td className="text-xs text-gray-500">{v.revenue.polName || v.polName || '—'}</td>
+                        <td className="text-xs text-gray-500">{v.revenue.podName || v.podName || '—'}</td>
                         <td className="text-xs text-gray-600">{fmtNum(v.revenue.bookingCount)}</td>
                         <td className="text-xs text-gray-600">{fmtNum(v.revenue.teus)}</td>
+                        <td className="text-xs text-gray-600">{fmtNum(v.revenue.vgm)}</td>
                         <td className="mono text-xs font-bold text-teal-700">{fmtMoney(v.revenue.totalRevenue)}</td>
                       </tr>
                     ))}
@@ -230,6 +231,7 @@ export default function RoundPnlReport() {
                       <td colSpan={3} className="px-4 py-2.5 text-xs font-bold text-gray-700">TOTAL</td>
                       <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(data.voyages.reduce((s, v) => s + v.revenue.bookingCount, 0))}</td>
                       <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(data.summary?.totalTEU)}</td>
+                      <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(data.voyages.reduce((s, v) => s + v.revenue.vgm, 0))}</td>
                       <td className="px-4 py-2.5 mono text-xs font-bold text-teal-700">{fmtMoney(data.summary?.totalRevenue)}</td>
                     </tr>
                   </tbody>
@@ -258,9 +260,9 @@ export default function RoundPnlReport() {
                     {data.voyages?.flatMap(v => (
                       v.voyageCost.byPort.length > 0
                         ? v.voyageCost.byPort.map((p, i) => (
-                          <tr key={`${v.voyageId}-${p.port}`} className="table-row">
+                          <tr key={`${v.voyageId}-${p.portId || p.portName}`} className="table-row">
                             {i === 0 && <td rowSpan={v.voyageCost.byPort.length} className="mono text-xs font-semibold text-teal-700 align-top">{v.voyageNumber}</td>}
-                            <td className="text-xs text-gray-500">{p.port}</td>
+                            <td className="text-xs text-gray-500">{p.portName}</td>
                             <td className="mono text-xs font-semibold text-red-600">{fmtMoney(p.total)}</td>
                           </tr>
                         ))

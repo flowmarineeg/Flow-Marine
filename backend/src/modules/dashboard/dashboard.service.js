@@ -7,7 +7,6 @@ const Voyage   = require('../voyages/voyage.model');
 const Booking  = require('../bookings/booking.model');
 const ManualBooking = require('../bookings/manualBooking.model');
 const Invoice  = require('../invoices/invoice.model');
-const Expense  = require('../expenses/expense.model');
 const AuditLog = require('../auditLogs/auditLog.model');
 const cache    = require('../../utils/cache');
 
@@ -20,11 +19,19 @@ const computeStats = async () => {
   const sixMonths = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
   // ── All KPI counts in parallel ────────────────────────────────────────────
+  // Sprint 039 ADR-2 — revenueAgg/monthlyTrend/revByService now match the
+  // exact Operational Revenue rule Sprint 038 made final everywhere else
+  // (Layer 2, status = 'Final Loading' ONLY — reports.service.js#
+  // getRevenueReport's own match condition, reused verbatim here so this
+  // Dashboard can never disagree with Revenue Report about what "revenue"
+  // means). Previously this aggregated on 'Confirmed'/non-Cancelled, which
+  // predates that rule — a confirmed drift, not a design choice, per
+  // sprints/039-sprint.txt Section 3.1.
   const [
     activeVessels, activeRounds, plannedRounds, completedRounds,
     totalVoyages, activeVoyages,
     totalBookings, confirmedBookings, pendingBookings, cancelledBookings,
-    totalAgents, draftInvoices, overdueInvoices, paidInvoices, totalExpenses,
+    totalAgents, draftInvoices, overdueInvoices, paidInvoices,
     revenueAgg, monthlyTrend, revByService,
     bookingsByStatus, voyagesByStatus, invoicesByStatus, recentActivity,
   ] = await Promise.all([
@@ -42,19 +49,18 @@ const computeStats = async () => {
     Invoice.countDocuments({ status: 'Draft',     isDeleted: false }),
     Invoice.countDocuments({ status: 'Overdue',   isDeleted: false }),
     Invoice.countDocuments({ status: 'Paid',      isDeleted: false }),
-    Expense.countDocuments({}),
     // aggregations run in same Promise.all — no sequential waits
     Booking.aggregate([
-      { $match: { status: 'Confirmed', isDeleted: false, createdAt: { $gte: thirty } } },
+      { $match: { status: 'Final Loading', isDeleted: false, createdAt: { $gte: thirty } } },
       { $group: { _id: null, total: { $sum: '$totalFreight' }, count: { $sum: 1 } } },
     ]),
     Booking.aggregate([
-      { $match: { isDeleted: false, status: { $ne: 'Cancelled' }, createdAt: { $gte: sixMonths } } },
+      { $match: { isDeleted: false, status: 'Final Loading', createdAt: { $gte: sixMonths } } },
       { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, totalFreight: { $sum: '$totalFreight' }, count: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
     Booking.aggregate([
-      { $match: { isDeleted: false, status: { $ne: 'Cancelled' } } },
+      { $match: { isDeleted: false, status: 'Final Loading' } },
       { $lookup: { from: 'voyages',  localField: 'voyageId',         foreignField: '_id', as: 'voyage'  } },
       { $unwind: { path: '$voyage',  preserveNullAndEmptyArrays: true } },
       { $lookup: { from: 'services', localField: 'voyage.serviceId', foreignField: '_id', as: 'service' } },
@@ -110,7 +116,7 @@ const computeStats = async () => {
       totalVoyages, activeVoyages,
       totalBookings, confirmedBookings, pendingBookings, cancelledBookings,
       totalAgents, draftInvoices, overdueInvoices, paidInvoices,
-      totalExpenses, revenue30d: revenueAgg[0]?.total ?? 0,
+      revenue30d: revenueAgg[0]?.total ?? 0,
       // Layer 1 (Manual Bookings) — Sprint 023
       totalManualBookings, pendingManualBookings, confirmedManualBookings,
       manualRevenue30d,
@@ -147,8 +153,17 @@ const getDashboardStats = async () => {
 /**
  * Returns a summary of per-leg peak TEU utilisation for every Active round.
  * Each entry gives: vessel name, round number, peakOnboardTEU, peakPct,
- * totalBookedTEU, segmentCount and a colour tag for the dashboard widget.
+ * totalLoadedTEU, voyageCount, and a colour tag for the dashboard widget.
  * Leverages the capacity engine cache — cold call < 100ms per round.
+ *
+ * Sprint 039 fixes: `totalBookedTEU` did not exist on
+ * computeRoundCapacity()'s payload (the real field is `totalLoadedTEU`) —
+ * this was always rendering 0/undefined, the same stale-field bug class
+ * Sprint 037/038 found in three separate reports. Also now passes through
+ * each round's raw `warnings[]` (not just a count) and each voyage's own
+ * `utilisationPct`, so the Dashboard's Alerts section (Capacity Warnings,
+ * Voyages Near Capacity) can read them directly — same data
+ * computeRoundCapacity() already returns, previously discarded here.
  */
 const getFleetUtilisation = async () => {
   const { computeRoundCapacity } = require('../capacity/capacity.service');
@@ -184,9 +199,13 @@ const getFleetUtilisation = async () => {
       vesselCapacity: cap,
       peakOnboardTEU: peakTEU,
       peakPct,
-      totalBookedTEU: d.totals?.totalBookedTEU ?? 0,
+      totalLoadedTEU: d.totals?.totalLoadedTEU ?? 0,
       voyageCount:    d.voyages?.length ?? 0,
       warningCount:   d.warnings?.length ?? 0,
+      warnings:       d.warnings ?? [],
+      voyages:        (d.voyages || []).map(v => ({
+        voyageId: v.voyageId, voyageNumber: v.voyageNumber, utilisationPct: v.utilisationPct,
+      })),
       color,
     });
   });

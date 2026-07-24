@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -24,13 +24,22 @@ export default function ExpenseForm({ item }) {
   const qc         = useQueryClient();
   const isEditing  = !!item;
   const fileRef    = useRef(null);
-  const [linkType, setLinkType] = useState(item?.voyageId ? 'voyage' : 'round');
+  // Sprint 036 — three-way scope: Round / Voyage / Port. There is no
+  // `scope` field sent to the API (it's always inferred server-side from
+  // roundId/voyageId/portId) — linkType is purely local UI state that
+  // decides which of those three IDs this form submits.
+  const [linkType, setLinkType] = useState(item?.portId ? 'port' : item?.voyageId ? 'voyage' : 'round');
+  // Cascade state for Voyage/Port link types (Decisions 5/6: Round → Voyage[ → Port]).
+  // Preselected from the existing voyage's own roundId on edit, same
+  // pattern as BookingForm.jsx (Sprint 030).
+  const [cascadeRoundId, setCascadeRoundId] = useState(item?.voyageId?.roundId?._id || item?.voyageId?.roundId || '');
   const [fileError, setFileError] = useState('');
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm({
     defaultValues: {
       roundId:       item?.roundId?._id   || item?.roundId   || '',
       voyageId:      item?.voyageId?._id  || item?.voyageId  || '',
+      portId:        item?.portId?._id    || item?.portId    || '',
       expenseTypeId: item?.expenseTypeId?._id || item?.expenseTypeId || '',
       agentId:       item?.agentId?._id   || item?.agentId   || '',
       port:          item?.port           || '',
@@ -40,17 +49,41 @@ export default function ExpenseForm({ item }) {
       description:   item?.description   || '',
     },
   });
+  const selectedVoyageId = watch('voyageId');
 
   /* ── Dropdown data ───────────────────────────────────────────────────────── */
   const { data: etData }  = useQuery({ queryKey: ['expense-types-dd'], queryFn: () => expenseTypesService.list({ limit: 200 }).then(r => r.data.data) });
   const { data: agData }  = useQuery({ queryKey: ['agents-dd'],        queryFn: () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data) });
   const { data: rdData }  = useQuery({ queryKey: ['rounds-dd'],        queryFn: () => roundsService.list({ limit: 200 }).then(r => r.data.data) });
-  const { data: vgData }  = useQuery({ queryKey: ['voyages-dd'],       queryFn: () => voyagesService.list({ limit: 200 }).then(r => r.data.data) });
+  // Voyage dropdown cascades from cascadeRoundId when linking to Voyage/Port
+  // (Sprint 036 Decisions 5/6) — reuses the same populated polId/podId
+  // voyagesService.list() already returns, so a Port dropdown can be built
+  // client-side with no new endpoint (ADR-3).
+  const { data: vgData }  = useQuery({
+    queryKey: ['voyages-dd', cascadeRoundId],
+    queryFn:  () => voyagesService.list({ roundId: cascadeRoundId, limit: 200 }).then(r => r.data.data),
+    enabled:  linkType !== 'round' && !!cascadeRoundId,
+  });
+
+  // Reset the selected Port whenever the Voyage changes (skip the very
+  // first render so an existing item's portId survives on edit).
+  const voyageMounted = useRef(false);
+  useEffect(() => {
+    if (!voyageMounted.current) { voyageMounted.current = true; return; }
+    setValue('portId', '');
+  }, [selectedVoyageId, setValue]);
 
   const expenseTypes = etData?.data || etData || [];
   const agents       = agData?.data || agData || [];
   const rounds       = rdData?.data || rdData || [];
   const voyages      = vgData?.data || vgData || [];
+  const selectedVoyage = voyages.find(v => v._id === selectedVoyageId);
+  // Sprint 036 Decision 6 — Port options are exactly the selected voyage's
+  // own POL and POD (current schema limitation: a Voyage has only two
+  // ports — see sprints/036-sprint.txt Business Validation section 6).
+  const voyagePortOptions = selectedVoyage
+    ? [selectedVoyage.polId, selectedVoyage.podId].filter(Boolean)
+    : [];
 
   /* ── File validation ─────────────────────────────────────────────────────── */
   const validateFile = (file) => {
@@ -79,9 +112,11 @@ export default function ExpenseForm({ item }) {
     if (file && !validateFile(file)) return;
 
     const fd = new FormData();
-    // Link type
-    if (linkType === 'round')   { fd.append('roundId',  data.roundId  || ''); fd.append('voyageId', ''); }
-    if (linkType === 'voyage')  { fd.append('voyageId', data.voyageId || ''); fd.append('roundId',  ''); }
+    // Link type — no `scope` field is ever sent; the server infers scope
+    // from whichever of roundId/voyageId/portId are present (Sprint 036 ADR-2).
+    if (linkType === 'round')  { fd.append('roundId', data.roundId || ''); fd.append('voyageId', ''); fd.append('portId', ''); }
+    if (linkType === 'voyage') { fd.append('voyageId', data.voyageId || ''); fd.append('roundId', ''); fd.append('portId', ''); }
+    if (linkType === 'port')   { fd.append('voyageId', data.voyageId || ''); fd.append('portId', data.portId || ''); fd.append('roundId', ''); }
 
     fd.append('expenseTypeId', data.expenseTypeId);
     fd.append('agentId',       data.agentId       || '');
@@ -104,18 +139,22 @@ export default function ExpenseForm({ item }) {
       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">
         <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Link To</p>
         <div className="flex gap-2">
-          {['round', 'voyage'].map(t => (
+          {['round', 'voyage', 'port'].map(t => (
             <button
               key={t}
               type="button"
-              onClick={() => setLinkType(t)}
+              onClick={() => {
+                setLinkType(t);
+                setValue('portId', '');
+                if (t !== 'voyage' && t !== 'port') setValue('voyageId', '');
+              }}
               className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
                 linkType === t
                   ? 'bg-teal-600 text-white border-teal-600'
                   : 'bg-white text-gray-500 border-gray-200 hover:border-teal-400'
               }`}
             >
-              {t === 'round' ? '🔄 Round' : '🚢 Voyage'}
+              {t === 'round' ? '🔄 Round' : t === 'voyage' ? '🚢 Voyage' : '⚓ Port'}
             </button>
           ))}
         </div>
@@ -131,14 +170,50 @@ export default function ExpenseForm({ item }) {
           </div>
         )}
 
-        {linkType === 'voyage' && (
+        {(linkType === 'voyage' || linkType === 'port') && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={lc}>Round <span className="text-red-400">*</span></label>
+              <select
+                value={cascadeRoundId}
+                onChange={e => { setCascadeRoundId(e.target.value); setValue('voyageId', ''); setValue('portId', ''); }}
+                className={`${ic(!cascadeRoundId)} cursor-pointer`}
+              >
+                <option value="">Select round…</option>
+                {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+              </select>
+              {!cascadeRoundId && <p className={ec}>Select a Round to narrow the Voyage list</p>}
+            </div>
+            <div>
+              <label className={lc}>Voyage <span className="text-red-400">*</span></label>
+              <select
+                {...register('voyageId', { required: 'Voyage is required' })}
+                disabled={!cascadeRoundId}
+                className={`${ic(errors.voyageId)} cursor-pointer disabled:opacity-50`}
+              >
+                <option value="">Select voyage…</option>
+                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+              </select>
+              {errors.voyageId && <p className={ec}>{errors.voyageId.message}</p>}
+            </div>
+          </div>
+        )}
+
+        {linkType === 'port' && (
           <div>
-            <label className={lc}>Voyage <span className="text-red-400">*</span></label>
-            <select {...register('voyageId', { required: linkType === 'voyage' ? 'Voyage is required' : false })} className={`${ic(errors.voyageId)} cursor-pointer`}>
-              <option value="">Select voyage…</option>
-              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+            <label className={lc}>Port <span className="text-red-400">*</span></label>
+            <select
+              {...register('portId', { required: linkType === 'port' ? 'Port is required' : false })}
+              disabled={!selectedVoyageId}
+              className={`${ic(errors.portId)} cursor-pointer disabled:opacity-50`}
+            >
+              <option value="">Select port…</option>
+              {voyagePortOptions.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
             </select>
-            {errors.voyageId && <p className={ec}>{errors.voyageId.message}</p>}
+            {errors.portId && <p className={ec}>{errors.portId.message}</p>}
+            <p className="mt-1.5 text-[10px] text-gray-400">
+              Only this voyage&apos;s own POL/POD are selectable (current schema limitation — a voyage models a single leg).
+            </p>
           </div>
         )}
       </div>
@@ -197,10 +272,15 @@ export default function ExpenseForm({ item }) {
           </div>
         </div>
 
-        <div>
-          <label className={lc}>Port</label>
-          <input {...register('port')} placeholder="Port name (optional)" className={ic(false)} />
-        </div>
+        {linkType !== 'port' && (
+          <div>
+            <label className={lc}>Port (free text, legacy)</label>
+            <input {...register('port')} placeholder="Port name (optional)" className={ic(false)} />
+            <p className="mt-1 text-[10px] text-gray-400">
+              For structured, reportable per-port costing use the &quot;⚓ Port&quot; link type above instead.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className={lc}>Description</label>

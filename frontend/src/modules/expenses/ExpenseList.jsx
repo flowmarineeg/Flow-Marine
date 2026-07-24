@@ -97,7 +97,7 @@ export default function ExpenseList() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
-                  {['Date', 'Type', 'Category', 'Round / Voyage', 'Agent', 'Amount', 'Port', 'File', 'Actions'].map(h => (
+                  {['Date', 'Type', 'Category', 'Scope', 'Round / Voyage', 'Agent', 'Amount', 'Port', 'File', 'Actions'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -115,6 +115,16 @@ export default function ExpenseList() {
                       </span>
                     </td>
                     <td>
+                      {/* Sprint 036 — scope is computed server-side (deriveScope), never re-derived here */}
+                      <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                        exp.scope === 'Port'   ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                        : exp.scope === 'Voyage' ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                        : 'bg-teal-50 text-teal-700 border border-teal-200'
+                      }`}>
+                        {exp.scope || '—'}
+                      </span>
+                    </td>
+                    <td>
                       {exp.roundId  && <span className="mono text-xs text-teal-600 font-semibold">{exp.roundId.roundNumber}</span>}
                       {exp.voyageId && <span className="mono text-xs text-purple-600 font-semibold">{exp.voyageId.voyageNumber}</span>}
                     </td>
@@ -122,7 +132,7 @@ export default function ExpenseList() {
                     <td>
                       <span className="mono text-xs font-semibold text-gray-700">{fmtMoney(exp.amount, exp.currency)}</span>
                     </td>
-                    <td className="text-xs text-gray-500">{exp.port || '—'}</td>
+                    <td className="text-xs text-gray-500">{exp.portId?.name || exp.port || '—'}</td>
                     <td>
                       {exp.attachmentUrl ? (
                         <a

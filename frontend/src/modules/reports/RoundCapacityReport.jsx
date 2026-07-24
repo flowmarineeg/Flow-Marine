@@ -7,8 +7,8 @@ import { ReportStatCard, ReportEmptyState } from './reportHelpers';
 import { reportsService } from '@/services/reports.service';
 import { roundsService }  from '@/services/rounds.service';
 import CapacityTimeline     from '@/modules/vessels/components/CapacityTimeline';
-import CapacitySegmentTable from '@/modules/vessels/components/CapacitySegmentTable';
 import CapacityWarnings     from '@/modules/vessels/components/CapacityWarnings';
+import VoyageCapacityCard   from './VoyageCapacityCard';
 
 const fmt = (n) => (n ?? 0).toLocaleString();
 
@@ -46,7 +46,7 @@ export default function RoundCapacityReport() {
   return (
     <ReportLayout
       title="Round Capacity Report"
-      subtitle="Per-leg TEU utilisation for any round"
+      subtitle="Operational vessel timeline — one card per voyage in chronological order"
       filters={
         <div className="flex flex-wrap items-end gap-3">
           {/* Round selector */}
@@ -87,12 +87,12 @@ export default function RoundCapacityReport() {
             <ReportStatCard
               label="Peak Onboard"
               value={`${fmt(raw.totals?.peakOnboardTEU)} TEU`}
-              sub={`Segment ${raw.totals?.peakSegmentIndex ?? '—'}`}
+              sub={`Voyage ${raw.voyages?.find(v => String(v.voyageId) === String(raw.totals?.peakVoyageId))?.voyageNumber ?? '—'}`}
               accent
             />
             <ReportStatCard
-              label="Total Booked TEU"
-              value={`${fmt(raw.totals?.totalBookedTEU)} TEU`}
+              label="Total Loaded TEU"
+              value={`${fmt(raw.totals?.totalLoadedTEU)} TEU`}
               sub={`${fmt(raw.totals?.totalBookedUnits)} containers`}
             />
             <ReportStatCard
@@ -103,7 +103,7 @@ export default function RoundCapacityReport() {
             <ReportStatCard
               label="Avg Utilisation"
               value={raw.totals?.avgUtilisationPct != null ? `${raw.totals.avgUtilisationPct}%` : '—'}
-              sub={`${raw.segments?.length ?? 0} segments`}
+              sub={`${raw.voyages?.length ?? 0} voyages`}
             />
           </div>
         ) : null
@@ -149,22 +149,32 @@ export default function RoundCapacityReport() {
             </div>
           )}
 
-          {/* Voyage capacity table */}
+          {/* Sprint 038 — one full-width operational card per voyage,
+              chronological order (raw.voyages is already sorted by
+              sequence by capacity.service.js). */}
           {raw.voyages?.length > 0 ? (
-            <div className="card p-5">
-              <CapacitySegmentTable
-                voyages={raw.voyages}
-                vesselCapacity={raw.vessel?.capacity}
-              />
+            <div className="flex flex-col gap-4">
+              {raw.voyages.map(v => (
+                <VoyageCapacityCard
+                  key={String(v.voyageId)}
+                  voyage={v}
+                  vesselName={raw.vessel?.vesselName}
+                  vesselCapacity={raw.vessel?.capacity}
+                  warnings={raw.warnings}
+                />
+              ))}
             </div>
           ) : (
             <ReportEmptyState message="No bookings found for this round with the selected statuses." />
           )}
 
-          {/* Warnings */}
-          {raw.warnings?.length > 0 && (
+          {/* Round/booking-level warnings only — voyage-level warnings
+              (those carrying a voyageId) already render inline on their
+              own card above (Sprint 038 refinement 3), so they are
+              excluded here to avoid showing the same warning twice. */}
+          {raw.warnings?.filter(w => !w.voyageId).length > 0 && (
             <div className="card p-5">
-              <CapacityWarnings warnings={raw.warnings} />
+              <CapacityWarnings warnings={raw.warnings.filter(w => !w.voyageId)} />
             </div>
           )}
         </div>

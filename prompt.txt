@@ -1,125 +1,41 @@
-Sprint 035 has been reviewed and approved.
+There is a misunderstanding regarding Sprint 040.
 
-This document is now the implementation blueprint.
+I am NOT talking about Report Exports.
 
-Your task is NO LONGER architecture or planning.
+I am NOT asking to design Revenue Export, Voyage Performance Export, Round Capacity Export, Dashboard Export, or any new export architecture.
 
-Your task is to IMPLEMENT Sprint 035 exactly as defined.
+Please ignore that direction.
 
-========================================================
-ROLE
-========================================================
+What I mean is the existing **Export tab** inside the Dashboard (Bulk Export module).
 
-Act as a Senior Software Engineer and Technical Lead.
+This module already exists.
 
-Follow Sprint 035 exactly.
+Its purpose is to export the system data (Vessels, Agents, Voyages, Bookings, Expenses, Invoices, Tracking, Audit Logs, etc.).
 
-Do NOT redesign the architecture.
+Sprint 040 should ONLY audit and validate this existing Export module.
 
-Do NOT introduce new business rules.
+The goal is to verify that every existing export still matches the latest architecture after all the changes made in previous sprints.
 
-Do NOT over-engineer.
+For example:
 
-If an implementation detail is not explicitly defined, reuse the existing project architecture and coding patterns.
+- Booking export reflects the current Booking architecture.
+- Expense export reflects the latest Expense module changes.
+- Voyage export reflects the latest Voyage schema.
+- Round export reflects the latest Round schema.
+- Invoice export reflects the latest Invoice changes.
+- Tracking export reflects the latest Tracking changes.
+- Every exported column matches the current models.
+- Removed fields are no longer exported.
+- Newly added fields are exported where appropriate.
+- Filters still work correctly.
+- Bulk export still works correctly.
 
-========================================================
-IMPLEMENTATION RULES
-========================================================
+The objective is simply to make sure the existing Export tab evolves together with the rest of the platform.
 
-Implement Sprint 035 incrementally.
+We are NOT introducing Report Exports in this sprint.
 
-Never modify unrelated modules.
+We are NOT redesigning the Export module.
 
-Preserve backward compatibility wherever possible.
+We are only auditing, validating, and updating the existing Bulk Export module to match the current platform architecture.
 
-Do not break existing functionality.
-
-Keep commits small and logically separated.
-
-Reuse existing services, controllers, DTOs, validators, hooks and UI components whenever possible.
-
-========================================================
-VERY IMPORTANT
-========================================================
-
-This sprint is an EVOLUTION of the existing Round P&L.
-
-DO NOT create:
-
-- a new report
-- a new report page
-- a new endpoint
-- a parallel implementation
-
-Instead:
-
-Extend the existing implementation:
-
-- getRoundPnL()
-- RoundPnlReport.jsx
-- GET /reports/round-pnl
-
-The current Round P&L evolves into the new Voyage Profitability Report.
-
-========================================================
-BUSINESS RULE
-========================================================
-
-Voyage Cost is determined by the business classification configured through Expense Types and Categories, NOT by hardcoded category names.
-
-The implementation must never depend on literal category names such as:
-
-- Port Expense
-- Operating Expense
-- Other
-
-The report must determine Voyage Cost according to the business classification configured in the Expense Types and Expense Categories.
-
-The classification must remain configurable by the business without requiring future code changes.
-
-========================================================
-IMPLEMENTATION STRATEGY
-========================================================
-
-Implement Sprint 035 phase by phase.
-
-After completing each phase:
-
-1. Verify compilation.
-2. Verify TypeScript/ESLint if applicable.
-3. Verify existing functionality is not broken.
-4. Continue to the next phase.
-
-Do not jump between phases.
-
-========================================================
-OUTPUT FORMAT
-========================================================
-
-For every completed phase provide:
-
-## Phase Completed
-
-Files Modified
-
-Reason for every change
-
-Business rule implemented
-
-Architecture decisions reused
-
-Anything that requires manual testing
-
-Then continue to the next phase until Sprint 035 is fully implemented.
-
-Do NOT stop after one phase unless you encounter a genuine blocker.
-
-If a blocker exists:
-
-- Explain it.
-- Explain why it blocks implementation.
-- Propose the smallest architectural solution that is consistent with Sprint 035.
-
-Never redesign the sprint.
-Never invent new business rules.
-Implement exactly what Sprint 035 defines.
+Please revise Sprint 040 accordingly and remove all planning related to Report Exports.

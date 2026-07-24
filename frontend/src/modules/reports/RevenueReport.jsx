@@ -87,7 +87,7 @@ export default function RevenueReport() {
   return (
     <ReportLayout
       title="Revenue Report"
-      subtitle="Total freight revenue grouped by service"
+      subtitle="Operational Revenue — Layer 2, Final Loading bookings only. Pending and Confirmed bookings are intentionally excluded."
       filters={
         <div className="flex flex-wrap gap-3 items-end">
           <div>
@@ -135,7 +135,7 @@ export default function RevenueReport() {
           <svg className="w-12 h-12 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
             <path strokeLinecap="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
-          <p className="text-sm">Set filters and click "Run Report"</p>
+          <p className="text-sm">Set filters and click &quot;Run Report&quot;</p>
         </div>
       ) : rows.length === 0 && !isRunning ? (
         <ReportEmptyState />
@@ -148,7 +148,7 @@ export default function RevenueReport() {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="table-header">
-                    {['Service Code', 'Service Name', 'Voyages', 'Bookings', 'Units', 'Revenue', 'Share'].map(h => <th key={h}>{h}</th>)}
+                    {['Service Code', 'Service Name', 'Voyages', 'Bookings', 'Revenue', 'Share'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -162,7 +162,6 @@ export default function RevenueReport() {
                         <td className="text-xs text-gray-700 max-w-[140px] truncate">{r.serviceName}</td>
                         <td className="text-xs text-gray-600">{fmtNum(r.voyageCount)}</td>
                         <td className="text-xs text-gray-600">{fmtNum(r.bookingCount)}</td>
-                        <td className="text-xs text-gray-600">{fmtNum(r.totalQty)}</td>
                         <td>
                           <span className="mono text-xs font-bold text-teal-700">{fmtMoney(r.totalRevenue)}</span>
                           {/* Share bar */}
@@ -182,7 +181,6 @@ export default function RevenueReport() {
                     <td colSpan={2} className="px-4 py-2.5 text-xs font-bold text-gray-700">GRAND TOTAL</td>
                     <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(grandTotal.voyageCount)}</td>
                     <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(grandTotal.bookingCount)}</td>
-                    <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(grandTotal.totalQty)}</td>
                     <td className="px-4 py-2.5 mono text-xs font-bold text-teal-700" colSpan={2}>
                       {fmtMoney(grandTotal.totalRevenue)}
                     </td>

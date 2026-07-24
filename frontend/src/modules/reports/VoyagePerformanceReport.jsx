@@ -6,7 +6,7 @@ import { Chart, registerables } from 'chart.js';
 import { reportsService }  from '@/services/reports.service';
 import { servicesService } from '@/services/services.service';
 import { roundsService }   from '@/services/rounds.service';
-import { VOYAGE_STATUS }   from '@/utils/constants';
+import { VOYAGE_STATUS, BOOKING_STATUS } from '@/utils/constants';
 import ReportLayout        from './ReportLayout';
 import { ReportStatCard, ReportEmptyState, rsc, fmtMoney, fmtNum } from './reportHelpers';
 import Badge from '@/components/ui/Badge';
@@ -77,6 +77,10 @@ export default function VoyagePerformanceReport() {
   const [dateFrom,  setDateFrom]  = useState('');
   const [dateTo,    setDateTo]    = useState('');
   const [hasRun,    setHasRun]    = useState(false);
+  // Sprint 038 refinement 4 — two explicitly labeled filter groups
+  // (Booking Source / Booking Status), not one generic layer toggle.
+  const [bookingSource, setBookingSource] = useState('combined'); // 'L1' | 'L2' | 'combined'
+  const [bookingStatus, setBookingStatus] = useState('all');       // 'all' | 'finalLoading'
 
   // ── Dropdowns ──────────────────────────────────────────────────────────────
   const { data: svcData } = useQuery({
@@ -97,7 +101,7 @@ export default function VoyagePerformanceReport() {
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['report-voyage-perf'],
     queryFn:  () => reportsService.getVoyagePerformance({
-      serviceId, roundId, status, dateFrom, dateTo,
+      serviceId, roundId, status, dateFrom, dateTo, bookingSource, bookingStatus,
     }).then(r => r.data.data),
     enabled: false,   // ← never auto-runs; only fires via refetch()
   });
@@ -111,7 +115,7 @@ export default function VoyagePerformanceReport() {
   return (
     <ReportLayout
       title="Voyage Performance"
-      subtitle="Booking counts, freight and slot utilisation per voyage"
+      subtitle="Booking counts and freight per voyage — Estimated (Layer 1), Actual (Layer 2), or Combined"
       filters={
         <div className="flex flex-wrap gap-3 items-end">
           <div>
@@ -135,6 +139,25 @@ export default function VoyagePerformanceReport() {
               {VOYAGE_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          {/* Sprint 038 refinement 4 — Booking Source (Estimated/Actual/Combined) */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Booking Source</p>
+            <select value={bookingSource} onChange={e => setBookingSource(e.target.value)} className={rsc}>
+              <option value="L1">Layer 1 (Estimated)</option>
+              <option value="L2">Layer 2 (Actual)</option>
+              <option value="combined">Combined</option>
+            </select>
+          </div>
+
+          {/* Sprint 038 refinement 4 — Booking Status (All/Final Loading) */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Booking Status</p>
+            <select value={bookingStatus} onChange={e => setBookingStatus(e.target.value)} className={rsc}>
+              <option value="all">All</option>
+              {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">ETD From</p>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -164,8 +187,7 @@ export default function VoyagePerformanceReport() {
           <ReportStatCard label="Voyages"        value={fmtNum(rows.length)} />
           <ReportStatCard label="Total Bookings" value={fmtNum(totals.bookingCount)} />
           <ReportStatCard label="Total Freight"  value={fmtMoney(totals.totalFreight)} accent />
-          <ReportStatCard label="Total Slots"    value={fmtNum(totals.totalSlots)}
-            sub={`${fmtNum(totals.totalQty)} units`} />
+          <ReportStatCard label="Total Units"    value={fmtNum(totals.totalUnits)} />
         </div>
       )}
     >
@@ -174,7 +196,7 @@ export default function VoyagePerformanceReport() {
           <svg className="w-12 h-12 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
             <path strokeLinecap="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
           </svg>
-          <p className="text-sm">Set filters and click "Run Report"</p>
+          <p className="text-sm">Set filters and click &quot;Run Report&quot;</p>
         </div>
       ) : rows.length === 0 && !isRunning ? (
         <ReportEmptyState />
@@ -198,7 +220,7 @@ export default function VoyagePerformanceReport() {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="table-header">
-                    {['Voyage', 'Service', 'Round', 'POL', 'POD', 'ETD', 'ETA', 'Bookings', 'Slots', 'Freight', 'Status'].map(h => <th key={h}>{h}</th>)}
+                    {['Voyage', 'Service', 'Round', 'POL', 'POD', 'ETD', 'ETA', 'Bookings', 'Units', 'Freight', 'Status'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -212,7 +234,7 @@ export default function VoyagePerformanceReport() {
                       <td className="text-xs text-gray-500">{fmt(r.etd)}</td>
                       <td className="text-xs text-gray-500">{fmt(r.eta)}</td>
                       <td className="text-xs text-gray-600 font-medium">{fmtNum(r.bookingCount)}</td>
-                      <td className="text-xs text-gray-600">{fmtNum(r.totalSlots)}</td>
+                      <td className="text-xs text-gray-600">{fmtNum(r.totalUnits)}</td>
                       <td><span className="mono text-xs font-semibold text-teal-700">{fmtMoney(r.totalFreight)}</span></td>
                       <td><Badge label={r.status} /></td>
                     </tr>
@@ -221,7 +243,7 @@ export default function VoyagePerformanceReport() {
                   <tr className="bg-teal-50 font-semibold border-t-2 border-teal-200">
                     <td colSpan={7} className="px-4 py-2.5 text-xs font-bold text-gray-600">TOTALS</td>
                     <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(totals.bookingCount)}</td>
-                    <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(totals.totalSlots)}</td>
+                    <td className="px-4 py-2.5 text-xs font-bold">{fmtNum(totals.totalUnits)}</td>
                     <td className="px-4 py-2.5 mono text-xs font-bold text-teal-700">{fmtMoney(totals.totalFreight)}</td>
                     <td />
                   </tr>

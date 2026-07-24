@@ -313,6 +313,13 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
       onboardTEU,          // TEU onboard while transiting (after load, before discharge at POD)
       remainingTEU,
       utilisationPct,
+      // Sprint 038 — presentation-only, additive field for the Round
+      // Capacity Report's per-voyage cards (same category as Sprint 029's
+      // loadedExact: computed alongside the real onboard chain, never fed
+      // back into it). "How much TEU room existed before this voyage's
+      // own load/discharge activity" — the complement to remainingTEU,
+      // which is room left AFTER that activity.
+      capacityBeforeLoading: cap != null ? cap - onboardStart : null,
       // L1/L2 breakdown
       layer1: {
         loadedTEU:     loadedL1[i],

@@ -19,6 +19,9 @@ const validateCreate = [
   body('agentId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   body('roundId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   body('voyageId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  // Sprint 036 — Port Expense scope. No `scope` field exists; scope is
+  // always inferred from roundId/voyageId/portId (expense.service.js#deriveScope).
+  body('portId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   handle,
 ];
 
@@ -30,6 +33,7 @@ const validateUpdate = [
   body('agentId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   body('roundId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   body('voyageId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  body('portId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   handle,
 ];
 

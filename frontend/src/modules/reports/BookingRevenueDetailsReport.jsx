@@ -102,7 +102,7 @@ export default function BookingRevenueDetailsReport() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <ReportStatCard label="Pricing Groups" value={fmtNum(rows.length)} />
           <ReportStatCard label="Total TEUs"     value={fmtNum(grandTotal.teus)} />
-          <ReportStatCard label="Total VGM"      value={fmtNum(grandTotal.vgm)} sub="kg" />
+          <ReportStatCard label="Total VGM"      value={fmtNum(grandTotal.vgm)} sub="MT" />
           <ReportStatCard label="Total Revenue"  value={fmtMoney(grandTotal.totalRevenue)} accent />
         </div>
       )}
@@ -122,7 +122,7 @@ export default function BookingRevenueDetailsReport() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
-                  {['Sr', 'Agent', 'Commodity', 'POL', 'POD', '20 Qty', '40 Qty', 'TEUs', 'VGM', 'Rate 20', 'Rate 40', 'Revenue 20', 'Revenue 40', 'Total Revenue (USD)'].map(h => (
+                  {['Sr', 'Agent', 'Commodity', 'POL', 'POD', '20 Qty', '40 Qty', 'TEUs', 'VGM (MT)', 'Rate 20', 'Rate 40', 'Revenue 20', 'Revenue 40', 'Total Revenue (USD)'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
