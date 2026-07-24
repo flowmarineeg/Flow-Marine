@@ -295,6 +295,7 @@ export default function BookingList() {
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          <ExportButton module="manualBookings" filters={{ voyageId: manualVoyageId, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />
         </div>
 
         <div className="card overflow-hidden min-w-0">

@@ -14,7 +14,8 @@ import { MdLabelImportant }        from 'react-icons/md';   // Expense Types
 import { MdAltRoute }              from 'react-icons/md';   // Services
 import { TbClockPlay }             from 'react-icons/tb';   // Rounds
 import { MdOutlineSailing }        from 'react-icons/md';   // Voyages
-import { FaClipboardList }         from 'react-icons/fa';   // Bookings
+import { FaClipboardList }         from 'react-icons/fa';   // Bookings (Layer 2)
+import { FaClipboardCheck }        from 'react-icons/fa';   // Bookings (Layer 1)
 import { FaMoneyBillWave }         from 'react-icons/fa';   // Expenses
 import { FaFileInvoiceDollar }     from 'react-icons/fa';   // Invoices
 import { MdMyLocation }            from 'react-icons/md';   // Tracking History
@@ -82,8 +83,16 @@ const MODULES = [
     activeText: 'text-sky-700',
   },
   {
+    key:   'manualBookings',
+    label: 'Bookings (Layer 1)',
+    Icon:  FaClipboardCheck,
+    color: 'text-purple-500',
+    activeBg: 'bg-purple-50 border-purple-300',
+    activeText: 'text-purple-700',
+  },
+  {
     key:   'bookings',
-    label: 'Bookings',
+    label: 'Bookings (Layer 2)',
     Icon:  FaClipboardList,
     color: 'text-indigo-500',
     activeBg: 'bg-indigo-50 border-indigo-300',
@@ -253,7 +262,7 @@ export default function ExportPanel() {
           <span className="ml-1.5 text-gray-300 font-normal normal-case">(optional)</span>
         </p>
         <p className="text-xs text-gray-400 mb-3">
-          Applied to modules that support date filtering — expenses, invoices, rounds, audit logs, etc.
+          Applied only to modules that support date filtering — Expenses, Invoices, Rounds, Audit Logs. Other modules ignore this filter.
         </p>
         <div className="flex flex-wrap gap-3 items-center">
           <div>

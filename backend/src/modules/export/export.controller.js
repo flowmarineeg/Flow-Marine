@@ -17,8 +17,11 @@ const exportExcel = async (req, res, next) => {
         message: `Export not supported for: ${moduleName}. Allowed: ${ALLOWED_MODULES.join(', ')}`,
       });
 
+    // Sprint 040 — Export Metadata: pass the requesting user's display
+    // name/email through so it can be recorded on the Export Info sheet.
+    const generatedBy = req.user?.name || req.user?.email || null;
     const { buffer, filename, count } = await exportService.exportSingle(
-      moduleName, filters, selectedIds
+      moduleName, filters, selectedIds, generatedBy
     );
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -62,7 +65,8 @@ const exportZip = async (req, res, next) => {
     res.setHeader('Content-Disposition', `attachment; filename="logistics-export-${date}.zip"`);
 
     // Stream ZIP directly to response
-    await exportService.buildZipStream(exportList, res);
+    const generatedBy = req.user?.name || req.user?.email || null;
+    await exportService.buildZipStream(exportList, res, generatedBy);
 
   } catch (err) {
     // Headers not yet sent if validation failed above — safe to send JSON
