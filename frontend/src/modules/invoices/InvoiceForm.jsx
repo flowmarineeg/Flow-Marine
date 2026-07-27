@@ -12,7 +12,7 @@ import { agentsService }   from '@/services/agents.service';
 import { useRounds }  from '@/hooks/useRounds';
 import { voyagesService } from '@/services/voyages.service';
 import { INVOICE_TYPES } from '@/utils/constants';
-import EligibleBookingsTable from './EligibleBookingsTable';
+import BookingsSummaryCard from '@/components/ui/BookingsSummaryCard';
 
 // Sprint 033: an invoice now owns a SET of Final Loading bookings (Booking /
 // Voyage / Round type), never a single hand-picked booking with a manual
@@ -188,9 +188,15 @@ function CreateInvoiceForm() {
     ),
   });
 
-  const toggleBooking = (bookingId) => {
-    setSelected(prev => prev.includes(bookingId) ? prev.filter(id => id !== bookingId) : [...prev, bookingId]);
-  };
+  // Sprint 044 — Voyage/Round invoices always include EVERY eligible Final
+  // Loading booking, with no manual exclusion. As soon as the eligible set
+  // loads (or changes), it becomes the full selection — there is no
+  // checkbox UI for this scope anymore (see BookingsSummaryCard below).
+  useEffect(() => {
+    if ((invoiceType === 'Voyage' || invoiceType === 'Round') && eligible) {
+      setSelected(eligible.map(b => b.bookingId));
+    }
+  }, [eligible, invoiceType]);
 
   const mutation = useMutation({
     mutationFn: (data) => invoicesService.create(data),
@@ -282,7 +288,7 @@ function CreateInvoiceForm() {
         {invoiceType === 'Booking' && (
           !agentId ? <p className="text-sm text-gray-400 italic py-4 text-center">Select an agent first.</p> :
           flRows.length === 0 ? <p className="text-sm text-gray-400 italic py-4 text-center">No Final Loading bookings for this agent.</p> : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 max-h-[360px] overflow-y-auto pr-1">
               {flRows.map(b => (
                 <label key={b._id} className={`flex items-center gap-3 border rounded-lg px-3 py-2 cursor-pointer transition ${selected.includes(b._id) ? 'border-teal-400 bg-teal-50/50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
                   <input type="radio" name="single-booking" checked={selected.includes(b._id)}
@@ -301,7 +307,17 @@ function CreateInvoiceForm() {
             ? <p className="text-sm text-gray-400 italic py-4 text-center">Select an agent and {invoiceType === 'Voyage' ? 'voyage' : 'round'} to see eligible bookings.</p>
             : eligibleLoading
               ? <p className="text-sm text-gray-400 italic py-4 text-center">Loading…</p>
-              : <EligibleBookingsTable bookings={eligibleRows} selected={selected} onToggle={toggleBooking} />
+              : (
+                <>
+                  <p className="text-[11px] text-gray-400 -mt-1">
+                    Every eligible Final Loading booking below is automatically included in this invoice.
+                  </p>
+                  <BookingsSummaryCard
+                    bookings={eligibleRows}
+                    emptyMessage="No eligible Final Loading bookings found for this selection."
+                  />
+                </>
+              )
         )}
       </div>
 

@@ -8,6 +8,7 @@ import { invoicesService } from '@/services/invoices.service';
 import { paymentsService } from '@/services/payments.service';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import BookingsSummaryCard from '@/components/ui/BookingsSummaryCard';
 
 // Sprint 033 — Agent Details is the financial engine's primary consumer.
 // This is a connected account statement (Agent → Round → Voyage → Final
@@ -51,29 +52,8 @@ function MoneyStrip({ freight, paid, remaining, size = 'sm' }) {
   );
 }
 
-function BookingRow({ b, router }) {
-  return (
-    <tr className="table-row">
-      <td><span className="mono text-xs font-semibold text-teal-600">{b.bookingNumber}</span></td>
-      <td className="mono text-xs text-gray-600">{b.containerNumber || '—'}</td>
-      <td className="text-xs text-gray-700">{fmtMoney(b.totalFreight)}</td>
-      <td><Badge label={b.invoiceStatus} /></td>
-      <td className="text-xs text-green-700 font-medium">{fmtMoney(b.paidAmount)}</td>
-      <td className={`text-xs font-medium ${b.remaining > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{fmtMoney(b.remaining)}</td>
-      <td>
-        {b.invoiceId ? (
-          <button onClick={() => router.push(`/invoices/${b.invoiceId}`)} className="text-xs text-teal-600 hover:underline font-medium">
-            {b.invoiceNumber}
-          </button>
-        ) : <span className="text-xs text-gray-300">—</span>}
-        {b.orphaned && <span className="ml-2 text-[10px] font-bold text-red-500">⚠ orphaned</span>}
-      </td>
-    </tr>
-  );
-}
-
 // ── Rounds level — the primary statement surface (expand → Voyages → Bookings) ─
-function RoundsStatement({ rounds, router }) {
+function RoundsStatement({ rounds }) {
   const [openRound, setOpenRound] = useState(null);
   const [openVoyage, setOpenVoyage] = useState(null);
 
@@ -120,18 +100,17 @@ function RoundsStatement({ rounds, router }) {
                         </div>
                         <MoneyStrip freight={v.totalFreight} paid={v.totalPaid} remaining={v.remaining} />
                       </button>
+                      {/* Sprint 044 — same aggregate summary shape as the
+                          Bookings tab / invoice creation overview, not a
+                          per-booking table: booking count, total revenue,
+                          per-container-type breakdown. */}
                       {vOpen && (
-                        <div className="overflow-x-auto border-t border-gray-100">
-                          <table className="w-full border-collapse text-[13px]">
-                            <thead>
-                              <tr className="table-header">
-                                {['Booking', 'Container', 'Freight', 'Status', 'Paid', 'Remaining', 'Invoice'].map(h => <th key={h}>{h}</th>)}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {v.bookings.map(b => <BookingRow key={b.bookingId} b={b} router={router} />)}
-                            </tbody>
-                          </table>
+                        <div className="border-t border-gray-100 p-3">
+                          <BookingsSummaryCard
+                            bookings={v.bookings}
+                            getAmount={(b) => b.totalFreight}
+                            emptyMessage="No Final Loading bookings for this voyage."
+                          />
                         </div>
                       )}
                     </div>
@@ -175,38 +154,21 @@ function VoyagesLedger({ rounds }) {
   );
 }
 
-function BookingsLedger({ rounds, router }) {
-  const rows = rounds.flatMap(r => r.voyages.flatMap(v => v.bookings.map(b => ({ ...b, roundNumber: r.roundNumber, roundName: r.roundName, voyageNumber: v.voyageNumber, voyageName: v.voyageName }))));
-  if (!rows.length) return <p className="text-sm text-gray-400 italic py-8 text-center">No Final Loading bookings yet.</p>;
+// Sprint 044 — replaced the old one-row-per-booking flat table with the
+// same aggregate summary shape used by invoice creation's Voyage/Round
+// scope (BookingsSummaryCard): booking count, total revenue, and a
+// per-container-type breakdown. No individual booking numbers here
+// anymore — that per-booking drill-down still lives one level up, in the
+// Rounds tab's expandable Round -> Voyage -> Booking statement (BookingRow
+// inside RoundsStatement, untouched by this sprint).
+function BookingsLedger({ rounds }) {
+  const rows = rounds.flatMap(r => r.voyages.flatMap(v => v.bookings));
   return (
-    <div className="card overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[13px]">
-          <thead>
-            <tr className="table-header">{['Booking', 'Container', 'Round', 'Voyage', 'Freight', 'Status', 'Paid', 'Remaining', 'Invoice'].map(h => <th key={h}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {rows.map(b => (
-              <tr key={b.bookingId} className="table-row">
-                <td><span className="mono text-xs font-semibold text-teal-600">{b.bookingNumber}</span></td>
-                <td className="mono text-xs text-gray-600">{b.containerNumber || '—'}</td>
-                <td className="mono text-xs text-gray-500">{b.roundNumber}<p className="text-[11px] text-gray-400">{b.roundName || '(unnamed)'}</p></td>
-                <td className="mono text-xs text-gray-500">{b.voyageNumber}<p className="text-[11px] text-gray-400">{b.voyageName || '(unnamed)'}</p></td>
-                <td className="text-xs text-gray-700">{fmtMoney(b.totalFreight)}</td>
-                <td><Badge label={b.invoiceStatus} /></td>
-                <td className="text-xs text-green-700">{fmtMoney(b.paidAmount)}</td>
-                <td className={`text-xs font-medium ${b.remaining > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{fmtMoney(b.remaining)}</td>
-                <td>
-                  {b.invoiceId ? (
-                    <button onClick={() => router.push(`/invoices/${b.invoiceId}`)} className="text-xs text-teal-600 hover:underline font-medium">{b.invoiceNumber}</button>
-                  ) : <span className="text-xs text-gray-300">—</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <BookingsSummaryCard
+      bookings={rows}
+      getAmount={(b) => b.totalFreight}
+      emptyMessage="No Final Loading bookings yet."
+    />
   );
 }
 
@@ -381,9 +343,9 @@ export default function AgentFinancialAccount({ id, onEdit }) {
         </div>
       )}
 
-      {tab === 'Rounds'   && <RoundsStatement rounds={rounds} router={router} />}
+      {tab === 'Rounds'   && <RoundsStatement rounds={rounds} />}
       {tab === 'Voyages'  && <VoyagesLedger rounds={rounds} />}
-      {tab === 'Bookings' && <BookingsLedger rounds={rounds} router={router} />}
+      {tab === 'Bookings' && <BookingsLedger rounds={rounds} />}
       {tab === 'Invoices' && <InvoicesTab agentId={id} router={router} />}
       {tab === 'Payments' && <PaymentsTab agentId={id} />}
     </div>

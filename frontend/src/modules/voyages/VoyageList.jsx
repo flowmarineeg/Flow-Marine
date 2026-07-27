@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
+import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
 import { voyagesService } from '@/services/voyages.service';
 import { servicesService } from '@/services/services.service';
 import { usePermission } from '@/context/PermissionContext';
@@ -79,6 +80,27 @@ export default function VoyageList() {
   const pagination = data?.pagination;
   const groups = useMemo(() => groupByRound(voyages), [voyages]);
 
+  // Sprint 043 — display order by physical vessel flow, not raw `sequence`.
+  // Fetch each visible Round's own route legs (same endpoint VoyageAddForm
+  // already uses) so sortVoyagesForDisplay can resolve each voyage's real
+  // leg position — display-only, does not touch sequence/capacity/DB data.
+  const roundIds = useMemo(
+    () => groups.map(g => g.roundId).filter(id => id && id !== 'unknown'),
+    [groups]
+  );
+  const legsQueries = useQueries({
+    queries: roundIds.map(roundId => ({
+      queryKey: ['round-route-ports', roundId],
+      queryFn:  () => voyagesService.getRoundRoutePorts(roundId).then(r => r.data.data),
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+  const legsByRound = useMemo(() => {
+    const map = {};
+    roundIds.forEach((roundId, i) => { map[roundId] = legsQueries[i]?.data || []; });
+    return map;
+  }, [roundIds, legsQueries]);
+
   const selectCls = 'text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:border-teal-500 cursor-pointer';
 
   return (
@@ -110,7 +132,9 @@ export default function VoyageList() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          {groups.map(g => (
+          {groups.map(g => {
+            const displayVoyages = sortVoyagesForDisplay(g.voyages, legsByRound[g.roundId] || []);
+            return (
             <div key={g.roundId} className="flex flex-col gap-2">
               {/* Round label */}
               <div className="flex items-center gap-2 px-1">
@@ -131,7 +155,7 @@ export default function VoyageList() {
                       </tr>
                     </thead>
                     <tbody>
-                      {g.voyages.map(v => (
+                      {displayVoyages.map(v => (
                         <tr key={v._id} className="table-row">
                           <td>
                             <span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span>
@@ -178,7 +202,8 @@ export default function VoyageList() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

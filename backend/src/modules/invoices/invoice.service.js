@@ -108,6 +108,7 @@ const getEligibleBookings = async ({ agentId, voyageId = '', roundId = '' }) => 
 
   const bookings = await Booking.find(scopeQuery)
     .populate({ path: 'voyageId', select: 'voyageNumber voyageName roundId', populate: { path: 'roundId', select: 'roundNumber roundName' } })
+    .populate('containerTypeId', 'code size type')
     .sort({ containerNumber: 1 })
     .lean();
 
@@ -121,6 +122,10 @@ const getEligibleBookings = async ({ agentId, voyageId = '', roundId = '' }) => 
       bookingId:       b._id,
       bookingNumber:   b.bookingNumber,
       containerNumber: b.containerNumber,
+      // Sprint 044 — container type, for the invoice creation summary
+      // overview (booking count / total revenue / per-container-type
+      // breakdown) — additive only, nothing else in this function changes.
+      containerType:   b.containerTypeId ? `${b.containerTypeId.code} ${b.containerTypeId.size}` : null,
       voyageId:        b.voyageId?._id || null,
       voyageNumber:    b.voyageId?.voyageNumber || null,
       voyageName:      b.voyageId?.voyageName || null,

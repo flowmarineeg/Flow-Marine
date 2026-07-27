@@ -5,12 +5,20 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Chart, registerables } from 'chart.js';
 import { vesselsService } from '@/services/vessels.service';
+import { voyagesService } from '@/services/voyages.service';
 import { usePermission } from '@/context/PermissionContext';
+import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import CapacityTimeline from './components/CapacityTimeline';
 import CapacitySegmentTable from './components/CapacitySegmentTable';
 import CapacityWarnings from './components/CapacityWarnings';
+
+// Sprint 043 — Capacity Engine rows use fromPort/toPort, same adapter as
+// RoundCapacityReport.jsx. Display-only: never touches the underlying
+// voyageRows array or any capacity.service.js-computed number.
+const getCapacityRowPol = (v) => v.fromPort?.portId;
+const getCapacityRowPod = (v) => v.toPort?.portId;
 
 // react-icons
 import { GiCargoShip } from 'react-icons/gi';
@@ -128,6 +136,16 @@ function ActiveRoundCapacity({ activeRound, vessel }) {
   }
 
   const { round, service, voyages: voyageRows = [], totals = {}, warnings = [] } = activeRound;
+
+  // Sprint 043 — display order by physical vessel flow, not raw `sequence`.
+  const { data: routeLegs = [] } = useQuery({
+    queryKey: ['round-route-ports', round?._id],
+    queryFn:  () => voyagesService.getRoundRoutePorts(round._id).then(r => r.data.data),
+    enabled: !!round?._id,
+    staleTime: 5 * 60 * 1000,
+  });
+  const displayVoyageRows = sortVoyagesForDisplay(voyageRows, routeLegs, { getPol: getCapacityRowPol, getPod: getCapacityRowPod });
+
   const peakPct = cap && totals.peakOnboardTEU != null ? Math.round((totals.peakOnboardTEU / cap) * 100) : null;
   const peakColor = peakPct == null ? 'text-gray-400'
     : peakPct >= 100 ? 'text-red-600'
@@ -182,13 +200,13 @@ function ActiveRoundCapacity({ activeRound, vessel }) {
 
       <div className="p-5 flex flex-col gap-6">
         {/* Timeline bar chart */}
-        {voyageRows.length > 0 && (
-          <CapacityTimeline voyages={voyageRows} vesselCapacity={cap} />
+        {displayVoyageRows.length > 0 && (
+          <CapacityTimeline voyages={displayVoyageRows} vesselCapacity={cap} />
         )}
 
         {/* Voyage capacity table */}
-        {voyageRows.length > 0 ? (
-          <CapacitySegmentTable voyages={voyageRows} vesselCapacity={cap} />
+        {displayVoyageRows.length > 0 ? (
+          <CapacitySegmentTable voyages={displayVoyageRows} vesselCapacity={cap} />
         ) : (
           <p className="text-sm text-gray-400 italic">
             No bookings on this round yet — all voyages show 0 TEU.

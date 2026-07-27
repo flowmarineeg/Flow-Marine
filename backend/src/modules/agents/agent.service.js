@@ -118,6 +118,10 @@ const getAgentFinancialAccount = async (id) => {
       select: 'voyageNumber voyageName roundId',
       populate: { path: 'roundId', select: 'roundNumber roundName createdAt' },
     })
+    // Sprint 044 — container type, for the Bookings tab's summary overview
+    // (booking count / total revenue / per-container-type breakdown) —
+    // additive only, nothing else in this function changes.
+    .populate('containerTypeId', 'code size type')
     .lean();
 
   const bookingIds = bookings.map(b => b._id);
@@ -182,6 +186,7 @@ const getAgentFinancialAccount = async (id) => {
 
     roundEntry.voyagesMap.get(voyageKey).bookings.push({
       bookingId: b._id, bookingNumber: b.bookingNumber, containerNumber: b.containerNumber,
+      containerType: b.containerTypeId ? `${b.containerTypeId.code} ${b.containerTypeId.size}` : null,
       totalFreight, paidAmount, remaining,
       invoiceId:     invoiceInfo?.invoiceId || null,
       invoiceNumber: invoiceInfo?.invoiceNumber || null,

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
+import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
 import { voyagesService } from '@/services/voyages.service';
 import { usePermission } from '@/context/PermissionContext';
 import Badge        from '@/components/ui/Badge';
@@ -55,6 +56,19 @@ export default function RoundVoyageList({ roundId, round }) {
     queryKey: ['round-voyages', roundId],
     queryFn:  () => voyagesService.list({ roundId, limit: 200 }).then(r => r.data.data),
   });
+
+  // Sprint 043 — display order by physical vessel flow, not raw `sequence`.
+  // Re-fetches (and re-sorts) automatically whenever `round-voyages` is
+  // invalidated, including right after adding a new voyage.
+  const { data: routeLegs = [] } = useQuery({
+    queryKey: ['round-route-ports', roundId],
+    queryFn:  () => voyagesService.getRoundRoutePorts(roundId).then(r => r.data.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const displayVoyages = useMemo(
+    () => sortVoyagesForDisplay(voyages, routeLegs),
+    [voyages, routeLegs]
+  );
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -149,7 +163,7 @@ export default function RoundVoyageList({ roundId, round }) {
               </tr>
             </thead>
             <tbody>
-              {voyages.map((v) => (
+              {displayVoyages.map((v) => (
                 <tr key={v._id} className="table-row">
 
                   {/* Sequence */}

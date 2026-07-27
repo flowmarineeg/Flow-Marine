@@ -1,14 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery }  from '@tanstack/react-query';
 import ReportLayout  from './ReportLayout';
 import { ReportStatCard, ReportEmptyState } from './reportHelpers';
 import { reportsService } from '@/services/reports.service';
 import { roundsService }  from '@/services/rounds.service';
+import { voyagesService } from '@/services/voyages.service';
+import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
 import CapacityTimeline     from '@/modules/vessels/components/CapacityTimeline';
 import CapacityWarnings     from '@/modules/vessels/components/CapacityWarnings';
 import VoyageCapacityCard   from './VoyageCapacityCard';
+
+// Sprint 043 — Capacity Engine rows use fromPort/toPort (not the raw
+// Voyage document's polId/podId shape), so sortVoyagesForDisplay needs the
+// adapter accessors below. Display-only: this never touches raw.voyages
+// itself or any of the numbers capacity.service.js already computed onto
+// each row (onboardTEU, loadedTEU, utilisationPct, etc.).
+const getCapacityRowPol = (v) => v.fromPort?.portId;
+const getCapacityRowPod = (v) => v.toPort?.portId;
 
 const fmt = (n) => (n ?? 0).toLocaleString();
 
@@ -40,6 +50,18 @@ export default function RoundCapacityReport() {
     }).then(r => r.data.data),
     enabled: !!roundId,
   });
+
+  // Sprint 043 — display order by physical vessel flow, not raw `sequence`.
+  const { data: routeLegs = [] } = useQuery({
+    queryKey: ['round-route-ports', roundId],
+    queryFn:  () => voyagesService.getRoundRoutePorts(roundId).then(r => r.data.data),
+    enabled: !!roundId,
+    staleTime: 5 * 60 * 1000,
+  });
+  const displayVoyages = useMemo(
+    () => sortVoyagesForDisplay(raw?.voyages || [], routeLegs, { getPol: getCapacityRowPol, getPod: getCapacityRowPod }),
+    [raw, routeLegs]
+  );
 
   const rounds = roundsData || [];
 
@@ -146,18 +168,20 @@ export default function RoundCapacityReport() {
           </div>
 
           {/* Timeline chart */}
-          {raw.voyages?.length > 0 && (
+          {displayVoyages.length > 0 && (
             <div className="card p-5">
-              <CapacityTimeline voyages={raw.voyages} vesselCapacity={raw.vessel?.capacity} />
+              <CapacityTimeline voyages={displayVoyages} vesselCapacity={raw.vessel?.capacity} />
             </div>
           )}
 
-          {/* Sprint 038 — one full-width operational card per voyage,
-              chronological order (raw.voyages is already sorted by
-              sequence by capacity.service.js). */}
-          {raw.voyages?.length > 0 ? (
+          {/* Sprint 038 — one full-width operational card per voyage.
+              Sprint 043 — displayVoyages re-sorts a rendering-time copy of
+              raw.voyages by physical vessel flow (not raw `sequence`);
+              every number on each card still comes from capacity.service.js
+              unchanged. */}
+          {displayVoyages.length > 0 ? (
             <div className="flex flex-col gap-4">
-              {raw.voyages.map(v => (
+              {displayVoyages.map(v => (
                 <VoyageCapacityCard
                   key={String(v.voyageId)}
                   voyage={v}
