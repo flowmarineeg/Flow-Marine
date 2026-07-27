@@ -65,6 +65,8 @@ export default function CapacityTimeline({ voyages = [], vesselCapacity = null }
       onboardTEU:   v.onboardTEU,
       utilisationPct: v.utilisationPct,
       isManual:     v.isManual,
+      // Sprint 045 — presentation-only flag, does not affect onboardTEU/bar width above.
+      remainingOnboardTEU: v.remainingOnboardTEU || 0,
     });
 
     // The arrival port of this voyage = departure port of next voyage
@@ -159,6 +161,14 @@ export default function CapacityTimeline({ voyages = [], vesselCapacity = null }
                         <span className="text-[8px] font-normal text-gray-400 ml-0.5">TEU</span>
                       </span>
                     </div>
+
+                    {/* Sprint 045 — operational warning: TEU expected to discharge
+                        on this voyage but not found by a Discharge import */}
+                    {leg.remainingOnboardTEU > 0 && (
+                      <p className="text-[9px] font-semibold text-red-600 text-right whitespace-nowrap">
+                        ⚠ {fmt(leg.remainingOnboardTEU)} TEU remaining
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

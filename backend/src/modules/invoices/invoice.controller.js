@@ -1,6 +1,7 @@
 'use strict';
 
 const invoiceService = require('./invoice.service');
+const rbac = require('../../middleware/rbac');
 const { generateInvoicePdf } = require('../../utils/invoicePdfGenerator');
 const { success, created, error, paginate } = require('../../utils/responseHelper');
 
@@ -36,7 +37,10 @@ const create = async (req, res, next) => {
 const update = async (req, res, next) => {
   try {
     req.auditOldDoc = await invoiceService.getById(req.params.id);
-    return success(res, await invoiceService.update(req.params.id, req.body, req.user._id), 'Invoice updated');
+    // Sprint046 — an additive capability on top of the base rbac('invoices')
+    // gate already applied at the route level, not a replacement for it.
+    const canOverride = await rbac.hasPermission(req, 'invoices', 'override');
+    return success(res, await invoiceService.update(req.params.id, req.body, req.user._id, canOverride), 'Invoice updated');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 

@@ -15,6 +15,7 @@ const fmt = (n) => n == null ? '—' : Number(n).toLocaleString();
 
 const ICONS = {
   VOYAGE_OVERBOOKED: '🔴',
+  REMAINING_ONBOARD_PAST_DISCHARGE: '🔴',
 };
 
 function Stat({ label, value, sub, accent, danger }) {
@@ -31,13 +32,17 @@ function Stat({ label, value, sub, accent, danger }) {
 
 export default function VoyageCapacityCard({ voyage: v, vesselName, vesselCapacity, warnings = [] }) {
   const isOverbooked = v.remainingTEU != null && v.remainingTEU < 0;
+  // Sprint 045 — TEU expected to discharge at this voyage but still
+  // physically onboard (Discharge import found it "Remaining"). Purely a
+  // presentation flag — never affects onboardTEU/remainingTEU above.
+  const hasRemaining = (v.remainingOnboardTEU || 0) > 0;
   // Sprint 038 refinement 3 — voyage-scoped warnings render inline on
   // their own card; warnings with no voyageId (round/booking-level) are
   // left to the shared CapacityWarnings block instead.
   const ownWarnings = warnings.filter(w => w.voyageId && String(w.voyageId) === String(v.voyageId));
 
   return (
-    <div className={`card p-5 border-2 ${isOverbooked ? 'border-red-300 bg-red-50/30' : 'border-transparent'}`}>
+    <div className={`card p-5 border-2 ${isOverbooked || hasRemaining ? 'border-red-300 bg-red-50/30' : 'border-transparent'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-gray-100">
         <div className="flex items-center gap-3">
           <span className="mono text-sm font-bold text-teal-700">{v.voyageNumber}</span>
@@ -75,6 +80,14 @@ export default function VoyageCapacityCard({ voyage: v, vesselName, vesselCapaci
         <Stat label="Layer 1 Discharged" value={`−${fmt(v.layer1?.dischargedTEU)}`} />
         <Stat label="Layer 2 Loaded" value={`+${fmt(v.layer2?.loadedTEU)}`} />
         <Stat label="Layer 2 Discharged" value={`−${fmt(v.layer2?.dischargedTEU)}`} />
+        {hasRemaining && (
+          <Stat
+            label="Remaining Onboard"
+            value={`${fmt(v.remainingOnboardTEU)} TEU`}
+            sub="expected to discharge here, not found"
+            danger
+          />
+        )}
       </div>
 
       {ownWarnings.length > 0 && (

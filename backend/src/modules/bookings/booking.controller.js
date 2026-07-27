@@ -5,8 +5,8 @@ const { success, created, error, paginate } = require('../../utils/responseHelpe
 
 const list = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search = '', voyageId = '', agentId = '', status = '', dateFrom = '', dateTo = '' } = req.query;
-    const { data, total } = await bookingService.list({ page, limit, search, voyageId, agentId, status, dateFrom, dateTo });
+    const { page = 1, limit = 20, search = '', voyageId = '', agentId = '', status = '', dateFrom = '', dateTo = '', dischargeStatus = '' } = req.query;
+    const { data, total } = await bookingService.list({ page, limit, search, voyageId, agentId, status, dateFrom, dateTo, dischargeStatus });
     return success(res, data, 'Bookings retrieved', 200, paginate(total, page, limit));
   } catch (err) { next(err); }
 };

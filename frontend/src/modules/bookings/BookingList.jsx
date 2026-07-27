@@ -45,11 +45,13 @@ export default function BookingList() {
   const [manualDeleteTarget, setManualDeleteTarget] = useState(null);
   const [dischargeOpen, setDischargeOpen] = useState(false); // Sprint 027
 
-  // Layer 2
+  // Layer 2 — 'detail' (Operational), 'discharged' and 'remaining' (Sprint 045) all
+  // share this same query/table, just scoped by dischargeStatus.
+  const dischargeStatusParam = activeTab === 'discharged' ? 'Discharged' : activeTab === 'remaining' ? 'Remaining' : '';
   const { data, isLoading } = useQuery({
-    queryKey: ['bookings', page, search, status, voyageId, agentId],
-    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, voyageId, agentId }).then(r => r.data),
-    enabled:  activeTab === 'detail',
+    queryKey: ['bookings', page, search, status, voyageId, agentId, dischargeStatusParam],
+    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, voyageId, agentId, dischargeStatus: dischargeStatusParam }).then(r => r.data),
+    enabled:  ['detail', 'discharged', 'remaining'].includes(activeTab),
   });
 
   // Layer 1 — Manual Bookings
@@ -147,6 +149,8 @@ export default function BookingList() {
         {[
           { key: 'manual', label: 'Estimated Bookings' },
           { key: 'detail', label: 'Operational Bookings' },
+          { key: 'discharged', label: 'Discharged' },
+          { key: 'remaining', label: 'Remaining' },
         ].map(t => (
           <button
             key={t.key}
@@ -160,8 +164,8 @@ export default function BookingList() {
         ))}
       </div>
 
-      {/* ── DETAIL TAB ─────────────────────────────────────────────── */}
-      {activeTab === 'detail' && (<>
+      {/* ── DETAIL / DISCHARGED / REMAINING TABS (Sprint 045: same table, scoped by dischargeStatus) ── */}
+      {['detail', 'discharged', 'remaining'].includes(activeTab) && (<>
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2.5 mb-4">
@@ -204,7 +208,16 @@ export default function BookingList() {
           {isLoading ? (
             <LoadingSpinner fullPage />
           ) : !bookings.length ? (
-            <EmptyState title="No bookings found" message="Create a booking to attach cargo to a voyage." />
+            <EmptyState
+              title={activeTab === 'discharged' ? 'No discharged bookings found' : activeTab === 'remaining' ? 'No remaining bookings found' : 'No bookings found'}
+              message={
+                activeTab === 'discharged'
+                  ? 'Bookings appear here once a Discharge import matches their container on this voyage.'
+                  : activeTab === 'remaining'
+                  ? 'Bookings appear here when Final Loading expected them to discharge on a voyage but a Discharge import did not find them.'
+                  : 'Create a booking to attach cargo to a voyage.'
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
               {/* minWidth ensures the table scrolls internally rather than expanding the page */}
@@ -214,7 +227,7 @@ export default function BookingList() {
                     <th className="w-10 px-4 py-2.5">
                       <input type="checkbox" checked={selected.length === bookings.length && bookings.length > 0} onChange={toggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
                     </th>
-                    {['Booking No','Voyage','Agent','Shipper / Consignee','Container','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
+                    {['Booking No','Voyage','Agent','Shipper / Consignee','Container','Total Freight','Status','Discharge','Actions'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -241,6 +254,17 @@ export default function BookingList() {
                       </td>
                       <td><span className="mono text-xs font-semibold text-teal-700 whitespace-nowrap">{fmtMoney(b.totalFreight)}</span></td>
                       <td><Badge label={b.status} /></td>
+                      <td>
+                        {b.dischargeStatus ? (
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                            b.dischargeStatus === 'Discharged' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}>
+                            {b.dischargeStatus}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-gray-300">—</span>
+                        )}
+                      </td>
                       <td>
                         <div className="flex items-center gap-2">
                           <button onClick={() => router.push(`/bookings/${b._id}`)} className="text-xs font-medium text-teal-600 hover:text-teal-800 transition whitespace-nowrap">View</button>

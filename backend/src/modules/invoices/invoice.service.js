@@ -246,15 +246,24 @@ const create = async (data, createdBy) => {
 };
 
 // ─── Update (notes/dates/currency + manual Draft/Issued/Cancelled transitions) ─
-const update = async (id, data, updatedBy) => {
+// Sprint046: `canOverride` (invoices:override permission, or SuperAdmin) is an
+// additive escape hatch — it skips the paidAmount/Paid|Cancelled lock below
+// AND the narrow MANUAL_TRANSITIONS whitelist, letting an admin force `status`
+// to any INVOICE_STATUS value at any time. Everything in this function stays
+// the same for a non-override caller. recalcInvoiceStatus() (the payment-
+// driven auto engine) is untouched — a later payment event may still
+// recompute/overwrite whatever status is set here.
+const update = async (id, data, updatedBy, canOverride = false) => {
   const invoice = await Invoice.findOne({ _id: id, isDeleted: false });
   if (!invoice) throw { status: 404, message: 'Invoice not found' };
 
-  if (invoice.paidAmount > 0) throw { status: 400, message: 'Invoices with recorded payments cannot be modified' };
-  if (['Paid', 'Cancelled'].includes(invoice.status)) throw { status: 400, message: `${invoice.status} invoices cannot be modified` };
+  if (!canOverride) {
+    if (invoice.paidAmount > 0) throw { status: 400, message: 'Invoices with recorded payments cannot be modified' };
+    if (['Paid', 'Cancelled'].includes(invoice.status)) throw { status: 400, message: `${invoice.status} invoices cannot be modified` };
+  }
 
   if (data.status && data.status !== invoice.status) {
-    validateManualTransition(invoice.status, data.status);
+    if (!canOverride) validateManualTransition(invoice.status, data.status);
     invoice.status = data.status;
   }
 

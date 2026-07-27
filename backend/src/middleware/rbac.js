@@ -49,4 +49,25 @@ const rbac = (module, actionOverride) => async (req, res, next) => {
   }
 };
 
+// Sprint046 — programmatic (non-gating) permission check for use inside a
+// controller, e.g. "does this user ALSO have invoices:override", on top of
+// the base rbac('invoices') gate already applied at the route level. Same
+// cached lookup as the middleware above, just returns a boolean instead of
+// calling next()/forbidden().
+const hasPermission = async (req, module, action) => {
+  if (req.user?.roleId?.isSystem) return true; // SuperAdmin bypasses all checks
+
+  const roleId = String(req.user?.roleId?._id || req.user?.roleId);
+  const cacheKey = `perm:${roleId}:${module}`;
+
+  let permission = cache.get(cacheKey);
+  if (!permission) {
+    permission = await Permission.findOne({ roleId, module }).lean();
+    if (permission) cache.set(cacheKey, permission, PERM_TTL);
+  }
+
+  return !!permission?.actions?.[action];
+};
+
 module.exports = rbac;
+module.exports.hasPermission = hasPermission;

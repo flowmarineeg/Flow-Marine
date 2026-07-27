@@ -2,7 +2,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { badRequest } = require('../../utils/responseHelper');
-const { INVOICE_TYPES } = require('../../config/constants');
+const { INVOICE_TYPES, INVOICE_STATUS } = require('../../config/constants');
 
 const handle = (req, res, next) => {
   const errors = validationResult(req);
@@ -32,7 +32,11 @@ const validateUpdate = [
   body('invoiceDate').optional().isISO8601(),
   body('dueDate').optional().isISO8601(),
   body('currency').optional().trim().notEmpty().isLength({ max: 10 }),
-  body('status').optional().isIn(['Issued', 'Cancelled']),
+  // Sprint046: the narrow Issued/Cancelled-only business rule now lives in
+  // validateManualTransition() (invoice.service.js), which only runs for
+  // non-override requests — this just confirms it's a real enum value so an
+  // admin override request isn't rejected before it reaches the service.
+  body('status').optional().isIn(INVOICE_STATUS),
   body('notes').optional({ nullable: true, checkFalsy: true }).isString(),
   handle,
 ];

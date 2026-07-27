@@ -94,7 +94,10 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
       isDeleted: false,
       status:    { $in: l2Statuses },
     })
-      .select('voyageId polId podId containerTypeId containerNumber status')
+      // Sprint 045 — dischargeStatus read-only here, only to decide whether
+      // this booking's TEU actually left the vessel at its planned discharge
+      // voyage (see Step C/E below) — never written by this function.
+      .select('voyageId polId podId containerTypeId containerNumber status dischargeStatus')
       .populate('containerTypeId', 'code size isDeleted')
       .lean(),
 
@@ -177,7 +180,18 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
       String(b.polId) === String(anchorVoyage.polId?._id || anchorVoyage.polId) &&
       String(b.podId) === String(anchorVoyage.podId?._id || anchorVoyage.podId);
 
-    l2Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu: effectiveTEU, source: 'l2', exactSegment });
+    // Sprint 045 — `dischargeIdx` is still always the resolved/PLANNED
+    // discharge voyage, computed exactly as before (resolveDischargeIdx is
+    // completely unchanged). Whether Step E is allowed to actually decrement
+    // dischargedTEU there now depends on the booking's real-world outcome:
+    //   - dischargeStatus === 'Remaining' → did NOT actually leave the vessel
+    //     there; its TEU must keep counting as onboard through every later
+    //     voyage in the round (business rule, Sprint 045).
+    //   - 'Discharged', or null (not yet assessed — no discharge import has
+    //     run for this voyage yet) → behaves exactly as before this sprint,
+    //     the planned/on-schedule assumption stands.
+    const stuckRemaining = b.dischargeStatus === 'Remaining';
+    l2Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu: effectiveTEU, source: 'l2', exactSegment, stuckRemaining });
   }
 
   // ── Step D: Layer 1 manual bookings (REVISION 2 + REVISION 3) ────────────
@@ -248,15 +262,36 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
   const loadedExactL1  = new Array(voyages.length).fill(0);
   const loadedExactL2  = new Array(voyages.length).fill(0);
 
+  // Sprint 045 — presentation-adjacent only, same category as Sprint 038's
+  // capacityBeforeLoading / Sprint 029's loadedExact*: computed alongside the
+  // real chain, exposed per voyage, NEVER fed back into onboardTEU/
+  // remainingTEU/utilisationPct. TEU that was expected to discharge at this
+  // voyage (dischargeStatus:'Remaining') but is still physically onboard.
+  const remainingOnboardTEU = new Array(voyages.length).fill(0);
+
   for (const ev of allEvents) {
-    loadedTEU[ev.loadVoyageIdx]         += ev.teu;
-    dischargedTEU[ev.dischargeVoyageIdx] += ev.teu;
-    if (ev.source === 'l1') {
-      loadedL1[ev.loadVoyageIdx]           += ev.teu;
-      dischargedL1[ev.dischargeVoyageIdx]  += ev.teu;
+    loadedTEU[ev.loadVoyageIdx] += ev.teu;
+
+    if (ev.stuckRemaining) {
+      // Sprint 045 — confirmed NOT actually discharged here: suppress the
+      // dischargedTEU decrement entirely (the ONLY behavioral change this
+      // sprint makes to the cargo-flow chain) so the TEU keeps counting as
+      // onboard through every later voyage. Tracked separately, at its
+      // ORIGINAL planned discharge voyage, purely for the red-highlight
+      // warning below — never subtracted from onboardTEU anywhere.
+      remainingOnboardTEU[ev.dischargeVoyageIdx] += ev.teu;
     } else {
-      loadedL2[ev.loadVoyageIdx]           += ev.teu;
-      dischargedL2[ev.dischargeVoyageIdx]  += ev.teu;
+      // Discharged, or not yet assessed — byte-for-byte the same behavior
+      // as every round before this sprint.
+      dischargedTEU[ev.dischargeVoyageIdx] += ev.teu;
+      if (ev.source === 'l1') dischargedL1[ev.dischargeVoyageIdx] += ev.teu;
+      else                    dischargedL2[ev.dischargeVoyageIdx] += ev.teu;
+    }
+
+    if (ev.source === 'l1') {
+      loadedL1[ev.loadVoyageIdx] += ev.teu;
+    } else {
+      loadedL2[ev.loadVoyageIdx] += ev.teu;
     }
 
     if (ev.exactSegment) {
@@ -286,6 +321,19 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
         voyageNumber: v.voyageNumber,
         voyageName:   v.voyageName || null,
         over:         Math.abs(remainingTEU),
+      });
+    }
+
+    // Sprint 045 — operational warning: containers confirmed still onboard
+    // past the voyage where they were expected to discharge.
+    if (remainingOnboardTEU[i] > 0) {
+      warnings.push({
+        code:         'REMAINING_ONBOARD_PAST_DISCHARGE',
+        message:      `${remainingOnboardTEU[i]} TEU still onboard past expected discharge at voyage ${v.voyageNumber}`,
+        voyageId:     v._id,
+        voyageNumber: v.voyageNumber,
+        voyageName:   v.voyageName || null,
+        teu:          remainingOnboardTEU[i],
       });
     }
 
@@ -322,6 +370,12 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
       // own load/discharge activity" — the complement to remainingTEU,
       // which is room left AFTER that activity.
       capacityBeforeLoading: cap != null ? cap - onboardStart : null,
+      // Sprint 045 — presentation-only (see the comment above the array's
+      // declaration in Step E). TEU expected to discharge here but still
+      // physically onboard (dischargeStatus:'Remaining') — drives the red
+      // "operational warning" highlight in the capacity UI. Zero for every
+      // round that hasn't used the Discharge import feature.
+      remainingOnboardTEU: remainingOnboardTEU[i],
       // L1/L2 breakdown
       layer1: {
         loadedTEU:     loadedL1[i],

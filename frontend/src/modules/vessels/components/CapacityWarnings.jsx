@@ -15,6 +15,7 @@ export default function CapacityWarnings({ warnings = [] }) {
     MISSING_TEU_MAPPING:         '🟡',
     MISSING_CONTAINER_TYPE:      '🟡',
     DELETED_CONTAINER_TYPE:      '🔵',
+    REMAINING_ONBOARD_PAST_DISCHARGE: '🔴',
   };
 
   return (

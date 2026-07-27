@@ -11,7 +11,8 @@ import { bookingsService } from '@/services/bookings.service';
 import { agentsService }   from '@/services/agents.service';
 import { useRounds }  from '@/hooks/useRounds';
 import { voyagesService } from '@/services/voyages.service';
-import { INVOICE_TYPES } from '@/utils/constants';
+import { INVOICE_TYPES, INVOICE_STATUS } from '@/utils/constants';
+import { usePermission } from '@/context/PermissionContext';
 import BookingsSummaryCard from '@/components/ui/BookingsSummaryCard';
 
 // Sprint 033: an invoice now owns a SET of Final Loading bookings (Booking /
@@ -30,7 +31,15 @@ const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { mini
 function EditInvoiceForm({ item }) {
   const router = useRouter();
   const qc     = useQueryClient();
-  const locked = item.status === 'Paid' || item.status === 'Cancelled' || item.paidAmount > 0;
+  const { can } = usePermission();
+  // Sprint046 — invoices:override (granted per-role via Roles → Permissions,
+  // or implicit for SuperAdmin) is an additive escape hatch: it unlocks the
+  // entire form even while paidAmount>0 or status is Paid/Cancelled, and
+  // frees the status dropdown to any INVOICE_STATUS value. Everyone else
+  // sees exactly today's behavior.
+  const canOverride = can('invoices', 'override');
+  const wouldBeLocked = item.status === 'Paid' || item.status === 'Cancelled' || item.paidAmount > 0;
+  const locked = !canOverride && wouldBeLocked;
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: {
@@ -42,7 +51,9 @@ function EditInvoiceForm({ item }) {
     },
   });
 
-  const allowedNext = { Draft: ['Draft', 'Issued', 'Cancelled'], Issued: ['Issued', 'Cancelled'] }[item.status] || [item.status];
+  const allowedNext = canOverride
+    ? INVOICE_STATUS
+    : ({ Draft: ['Draft', 'Issued', 'Cancelled'], Issued: ['Issued', 'Cancelled'] }[item.status] || [item.status]);
 
   const mutation = useMutation({
     mutationFn: (data) => invoicesService.update(item._id, data),
@@ -61,6 +72,16 @@ function EditInvoiceForm({ item }) {
         <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <p className="text-sm text-amber-700 font-medium">
             {item.paidAmount > 0 ? 'This invoice has recorded payments and cannot be modified.' : 'This invoice cannot be modified.'}
+          </p>
+        </div>
+      )}
+
+      {canOverride && wouldBeLocked && (
+        <div className="flex items-center gap-2 bg-pink-50 border border-pink-200 rounded-xl px-4 py-3">
+          <p className="text-sm text-pink-700 font-medium">
+            Admin override active — this invoice would normally be locked
+            {item.paidAmount > 0 ? ' (recorded payments exist)' : ` (status is ${item.status})`}, but your Override
+            permission allows editing anyway. A future payment event may still recompute the status automatically.
           </p>
         </div>
       )}

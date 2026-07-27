@@ -6,8 +6,12 @@ const { success, created, error } = require('../../utils/responseHelper');
 // POST /bookings/import/preview
 const preview = async (req, res, next) => {
   try {
-    const { rows, agentId, roundId, importType } = req.body;
-    const result = await importService.previewImport({ rows, agentId, roundId, importType });
+    const { rows, agentId, roundId, voyageId, importType } = req.body;
+    // Sprint 045 — Discharge is its own, separate code path (Voyage-scoped,
+    // match-only) — see bookingImport.service.js's "Sprint 045" section.
+    const result = importType === 'discharge'
+      ? await importService.previewDischargeImport({ rows, agentId, voyageId })
+      : await importService.previewImport({ rows, agentId, roundId, importType });
     return success(res, result, 'Preview generated');
   } catch (err) {
     if (err.status) return error(res, err.message, err.status);
@@ -18,7 +22,15 @@ const preview = async (req, res, next) => {
 // POST /bookings/import/save
 const save = async (req, res, next) => {
   try {
-    const { rows, agentId, roundId, importType } = req.body;
+    const { rows, agentId, roundId, voyageId, importType } = req.body;
+    if (importType === 'discharge') {
+      const result = await importService.saveDischargeImport({
+        rows, agentId, voyageId, createdBy: req.user._id,
+      });
+      return created(res, result,
+        `Discharge recorded — ${result.discharged.length} discharged, ${result.remainingCount} remaining`
+      );
+    }
     const result = await importService.saveImport({
       rows, agentId, roundId, importType, createdBy: req.user._id,
     });

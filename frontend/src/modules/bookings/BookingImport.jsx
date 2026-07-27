@@ -25,6 +25,7 @@ const ROW_STYLES = {
   ambiguous:  { bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', label: 'Confirm Voyage' },
   duplicate:  { bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',       label: 'Duplicate' },
   invalid:    { bg: 'bg-red-50',    badge: 'bg-red-100 text-red-600',       label: 'Invalid' },
+  match:      { bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',   label: 'Match' }, // Sprint 045 — Discharge rows
 };
 
 // ─── Excel column header → internal field ────────────────────────────────────
@@ -130,6 +131,7 @@ export default function BookingImport() {
 
   const [agentId, setAgentId] = useState('');
   const [roundId, setRoundId] = useState('');  // Sprint 031: replaces the single-Voyage selector
+  const [voyageId, setVoyageId] = useState(''); // Sprint 045 — required, Discharge import only
   const [importType, setImportType] = useState('booking');
   const [fileName, setFileName] = useState('');
   const [rawRows, setRawRows] = useState([]);
@@ -209,11 +211,12 @@ export default function BookingImport() {
   const handlePreview = async () => {
     if (!agentId) { toast.error('Please select an agent'); return; }
     if (!roundId) { toast.error('Please select a round'); return; }
+    if (importType === 'discharge' && !voyageId) { toast.error('Please select a voyage'); return; }
     if (!rawRows.length) { toast.error('Please upload an Excel file'); return; }
     setIsPreviewing(true);
     setConfirmed(false);
     try {
-      const res = await bookingsService.importPreview({ rows: rawRows, agentId, roundId, importType });
+      const res = await bookingsService.importPreview({ rows: rawRows, agentId, roundId, voyageId, importType });
       setPreview(res.data.data);
     } catch (e) {
       showErrorToast(e, 'preview');
@@ -231,25 +234,31 @@ export default function BookingImport() {
     setIsPreviewing(true);
     try {
       const res = await bookingsService.importPreview({
-        rows: preview.map(r => ({
-          bookingNumber: r.bookingNumber,
-          containerNumber: r.containerNumber,
-          containerType: r.containerType,
-          containerSize: r.containerSize,
-          pol: r.pol, pod: r.pod,
-          rate: r.rate,
-          // currency removed Sprint 026
-          shipper: r.shipper,
-          consignee: r.consignee,
-          carrierName: r.carrierName,
-          commodity: r.commodity,
-          vgm: r.vgm,
-          dg: r.dg,
-          imdgCode: r.imdgCode,    // Sprint 026: replaces dgPercent
-          containerStatus: r.containerStatus,
-          voyageOverrideId: r.voyageOverrideId, // Sprint 031: manual Voyage fallback
-        })),
-        agentId, roundId, importType,
+        rows: importType === 'discharge'
+          // Sprint 045 — Discharge rows only ever carry containerNumber +
+          // pol/pod (for the voyage cross-check) — none of the other
+          // booking-data fields apply, since this import never creates or
+          // edits a booking.
+          ? preview.map(r => ({ containerNumber: r.containerNumber, pol: r.pol, pod: r.pod }))
+          : preview.map(r => ({
+              bookingNumber: r.bookingNumber,
+              containerNumber: r.containerNumber,
+              containerType: r.containerType,
+              containerSize: r.containerSize,
+              pol: r.pol, pod: r.pod,
+              rate: r.rate,
+              // currency removed Sprint 026
+              shipper: r.shipper,
+              consignee: r.consignee,
+              carrierName: r.carrierName,
+              commodity: r.commodity,
+              vgm: r.vgm,
+              dg: r.dg,
+              imdgCode: r.imdgCode,    // Sprint 026: replaces dgPercent
+              containerStatus: r.containerStatus,
+              voyageOverrideId: r.voyageOverrideId, // Sprint 031: manual Voyage fallback
+            })),
+        agentId, roundId, voyageId, importType,
       });
       setPreview(res.data.data);
       toast.success('Re-validated');
@@ -262,35 +271,50 @@ export default function BookingImport() {
 
   // Save
   const saveMutation = useMutation({
-    mutationFn: () => bookingsService.importSave({ rows: preview, agentId, roundId, importType }),
+    mutationFn: () => bookingsService.importSave({ rows: preview, agentId, roundId, voyageId, importType }),
     onSuccess: (res) => {
       const d = res.data.data;
       const parts = [];
-      if (d.created?.length) parts.push(`${d.created.length} created`);
-      if (d.updated?.length) parts.push(`${d.updated.length} updated`);
-      if (d.failed?.length) parts.push(`${d.failed.length} failed`);
-      if (d.markedFinalLoading?.length) parts.push(`${d.markedFinalLoading.length} marked Final Loading`);
-      if (d.cancelled?.length) parts.push(`${d.cancelled.length} cancelled`);
+      if (importType === 'discharge') {
+        if (d.discharged?.length) parts.push(`${d.discharged.length} discharged`);
+        if (d.remainingCount)      parts.push(`${d.remainingCount} remaining`);
+        if (d.failed?.length)      parts.push(`${d.failed.length} failed`);
+      } else {
+        if (d.created?.length) parts.push(`${d.created.length} created`);
+        if (d.updated?.length) parts.push(`${d.updated.length} updated`);
+        if (d.failed?.length) parts.push(`${d.failed.length} failed`);
+        if (d.markedFinalLoading?.length) parts.push(`${d.markedFinalLoading.length} marked Final Loading`);
+        if (d.cancelled?.length) parts.push(`${d.cancelled.length} cancelled`);
+      }
       toast.success(`Import complete — ${parts.join(' · ')}`);
       setConfirmed(true);
     },
     onError: (e) => showErrorToast(e, 'import'),
   });
 
-  const counts = preview ? {
-    valid:       preview.filter(r => r._rowStatus === 'valid').length,
-    new:         preview.filter(r => r._rowStatus === 'new').length,
-    update:      preview.filter(r => r._rowStatus === 'update').length,
-    unresolved:  preview.filter(r => r._rowStatus === 'unresolved').length,
-    ambiguous:   preview.filter(r => r._rowStatus === 'ambiguous').length,
-    duplicate:   preview.filter(r => r._rowStatus === 'duplicate').length,
-    invalid:     preview.filter(r => r._rowStatus === 'invalid').length,
-  } : null;
+  const counts = preview ? (
+    importType === 'discharge'
+      ? {
+          match:   preview.filter(r => r._rowStatus === 'match').length,
+          invalid: preview.filter(r => r._rowStatus === 'invalid').length,
+        }
+      : {
+          valid:       preview.filter(r => r._rowStatus === 'valid').length,
+          new:         preview.filter(r => r._rowStatus === 'new').length,
+          update:      preview.filter(r => r._rowStatus === 'update').length,
+          unresolved:  preview.filter(r => r._rowStatus === 'unresolved').length,
+          ambiguous:   preview.filter(r => r._rowStatus === 'ambiguous').length,
+          duplicate:   preview.filter(r => r._rowStatus === 'duplicate').length,
+          invalid:     preview.filter(r => r._rowStatus === 'invalid').length,
+        }
+  ) : null;
 
   const saveableCount = preview
-    ? preview.filter(r => ['valid', 'new', 'update'].includes(r._rowStatus)).length
+    ? importType === 'discharge'
+      ? preview.filter(r => r._rowStatus === 'match').length
+      : preview.filter(r => ['valid', 'new', 'update'].includes(r._rowStatus)).length
     : 0;
-  const needsVoyageCount = counts ? counts.unresolved + counts.ambiguous : 0;
+  const needsVoyageCount = (counts && importType !== 'discharge') ? counts.unresolved + counts.ambiguous : 0;
 
   const sc = 'w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition cursor-pointer disabled:opacity-60';
   const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
@@ -339,7 +363,7 @@ export default function BookingImport() {
             <label className={lc}>Round <span className="text-red-400">*</span></label>
             <select
               value={roundId}
-              onChange={e => { setRoundId(e.target.value); setPreview(null); setConfirmed(false); }}
+              onChange={e => { setRoundId(e.target.value); setVoyageId(''); setPreview(null); setConfirmed(false); }}
               className={sc}
             >
               <option value="">Select round…</option>
@@ -354,13 +378,34 @@ export default function BookingImport() {
             <label className={lc}>Import Type <span className="text-red-400">*</span></label>
             <select
               value={importType}
-              onChange={e => { setImportType(e.target.value); setPreview(null); setConfirmed(false); }}
+              onChange={e => { setImportType(e.target.value); setVoyageId(''); setPreview(null); setConfirmed(false); }}
               className={sc}
             >
               <option value="booking">Booking</option>
               <option value="finalLoading">Final Loading</option>
+              <option value="discharge">Discharge</option>
             </select>
           </div>
+
+          {/* Voyage — Sprint 045: required for Discharge only. Discharge is a
+              single-voyage arrival event, unlike Booking/Final Loading which
+              resolve each row's voyage automatically within the whole Round. */}
+          {importType === 'discharge' && (
+            <div>
+              <label className={lc}>Voyage <span className="text-red-400">*</span></label>
+              <select
+                value={voyageId}
+                onChange={e => { setVoyageId(e.target.value); setPreview(null); setConfirmed(false); }}
+                disabled={!roundId}
+                className={sc}
+              >
+                <option value="">{roundId ? 'Select voyage…' : 'Select a round first'}</option>
+                {roundVoyages.map(v => (
+                  <option key={v._id} value={v._id}>{v.voyageNumber} — {v.voyageName || '(unnamed)'}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* File */}
           <div>
@@ -379,7 +424,9 @@ export default function BookingImport() {
         {/* Import type description */}
         <div className={`rounded-xl px-4 py-3 text-xs flex items-start gap-2 mb-4 ${importType === 'booking'
           ? 'bg-blue-50 border border-blue-200 text-blue-700'
-          : 'bg-amber-50 border border-amber-200 text-amber-700'
+          : importType === 'discharge'
+            ? 'bg-purple-50 border border-purple-200 text-purple-700'
+            : 'bg-amber-50 border border-amber-200 text-amber-700'
           }`}>
           <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -391,6 +438,18 @@ export default function BookingImport() {
               <strong> Container Number</strong> within this Round + Agent scope — existing containers are
               updated (orange), new ones created (green). Only resolvable, valid rows are saved. No bookings
               are cancelled.
+            </span>
+          ) : importType === 'discharge' ? (
+            <span>
+              <strong>Discharge mode:</strong> Confirms which already-<strong>Final Loading</strong> containers
+              actually left the vessel at the selected <strong>Voyage's</strong> port call — the same file
+              already used for Final Loading can be re-uploaded here. Rows are matched by
+              <strong> Container Number</strong> against existing Final Loading bookings on THIS voyage only —
+              a container belonging to a different voyage in the Round is reported as invalid, never processed.
+              <strong> No booking is ever created</strong> by this import. After confirming: matched containers
+              become <strong>Discharged</strong>; every other Final Loading booking on this voyage NOT in the
+              file becomes <strong>Remaining</strong> (still onboard) — this also updates the Capacity Engine's
+              onboard totals for the rest of the round.
             </span>
           ) : (
             <span>
@@ -406,7 +465,7 @@ export default function BookingImport() {
 
         <div className="flex justify-end">
           <button onClick={handlePreview}
-            disabled={isPreviewing || !rawRows.length || !agentId || !roundId}
+            disabled={isPreviewing || !rawRows.length || !agentId || !roundId || (importType === 'discharge' && !voyageId)}
             className="btn btn-primary btn-md flex items-center gap-2">
             {isPreviewing ? (
               <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -461,7 +520,12 @@ export default function BookingImport() {
           {/* Summary */}
           <div className="card p-4 flex flex-wrap items-center gap-3">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mr-1">Preview</p>
-            {importType === 'booking' ? (
+            {importType === 'discharge' ? (
+              <>
+                {counts.match > 0 && <SummaryBadge label="Will Discharge" count={counts.match} color="bg-green-100 text-green-700" />}
+                {counts.invalid > 0 && <SummaryBadge label="Invalid" count={counts.invalid} color="bg-red-100 text-red-600" />}
+              </>
+            ) : importType === 'booking' ? (
               <>
                 {counts.valid > 0 && <SummaryBadge label="New" count={counts.valid} color="bg-green-100 text-green-700" />}
                 {counts.update > 0 && <SummaryBadge label="Will Update" count={counts.update} color="bg-amber-100 text-amber-700" />}
@@ -487,7 +551,49 @@ export default function BookingImport() {
             </div>
           </div>
 
+          {/* Sprint 045 — Discharge preview: simpler shape than Booking/Final
+              Loading (match-only, no booking-data fields, no voyage picker
+              since Voyage is a single, pre-selected, mandatory scope). */}
+          {importType === 'discharge' && (
+            <div className="card overflow-hidden max-w-full min-w-0">
+              <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
+                <table className="w-full border-collapse text-[12px]">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="table-header text-[11px] bg-white">
+                      {['#', 'Status', 'Container No', 'Booking No', 'POL', 'POD', 'Issues'].map(h => (
+                        <th key={h} className="!py-2 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.map((row, idx) => {
+                      const st = ROW_STYLES[row._rowStatus] || ROW_STYLES.invalid;
+                      return (
+                        <tr key={idx} className={`border-b border-gray-100 ${st.bg}`}>
+                          <td className="px-3 py-1.5 text-center text-gray-400 font-semibold w-8">{idx + 1}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.badge}`}>{st.label}</span>
+                          </td>
+                          <td className="px-2 py-1.5 mono text-xs font-semibold text-gray-700">{row.containerNumber}</td>
+                          <td className="px-2 py-1.5 mono text-xs text-teal-600">{row.bookingNumber || '—'}</td>
+                          <td className="px-2 py-1.5 text-xs text-gray-600">{row.pol || '—'}</td>
+                          <td className="px-2 py-1.5 text-xs text-gray-600">{row.pod || '—'}</td>
+                          <td className="px-2 py-1.5 min-w-[220px]">
+                            {row._errors?.length > 0
+                              ? <ul className="space-y-0.5">{row._errors.map((e, i) => <li key={i} className="text-[10px] text-red-600 leading-snug">• {e}</li>)}</ul>
+                              : <span className="text-[10px] text-green-600">Will be marked Discharged</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Legend */}
+          {importType !== 'discharge' && (
           <div className="flex flex-wrap gap-x-4 gap-y-1 items-center text-[11px] text-gray-500">
             <span className="font-semibold text-gray-400">Legend:</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-300 inline-block" />
@@ -498,6 +604,7 @@ export default function BookingImport() {
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-300 inline-block" />Invalid — skipped</span>
             <span className="text-gray-400">· Edit any cell then Re-validate.</span>
           </div>
+          )}
 
           {/* Final Loading warning */}
           {importType === 'finalLoading' && (
@@ -530,7 +637,9 @@ export default function BookingImport() {
 
           {/* prview Table — overflow-x-auto clips the table, min-w-0 on the card prevents page
               blowout. Sprint 042: overflow-y-auto + max-h caps vertical growth for large imports
-              (hundreds of rows), with a sticky header so columns stay visible while scrolling. */}
+              (hundreds of rows), with a sticky header so columns stay visible while scrolling.
+              Sprint 045: Booking/Final Loading only — Discharge has its own, simpler table above. */}
+          {importType !== 'discharge' && (
           <div className="card overflow-hidden max-w-full min-w-0">
             <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
               <table className="w-full border-collapse text-[12px]" style={{ minWidth: 1600 }}>
@@ -609,6 +718,7 @@ export default function BookingImport() {
               </table>
             </div>
           </div>
+          )}
 
           {/* Confirm */}
           {!confirmed && (
@@ -616,8 +726,8 @@ export default function BookingImport() {
               <div>
                 <p className="text-sm font-semibold text-gray-700">
                   Ready to save {saveableCount} row{saveableCount !== 1 ? 's' : ''}
-                  {counts && (counts.duplicate + counts.invalid + needsVoyageCount) > 0 && (
-                    <span className="text-red-400 font-normal ml-1.5">({counts.duplicate + counts.invalid + needsVoyageCount} will be skipped)</span>
+                  {counts && ((counts.duplicate || 0) + counts.invalid + needsVoyageCount) > 0 && (
+                    <span className="text-red-400 font-normal ml-1.5">({(counts.duplicate || 0) + counts.invalid + needsVoyageCount} will be skipped)</span>
                   )}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">Edit rows then Re-validate. Nothing is saved until you confirm.</p>
@@ -649,42 +759,75 @@ export default function BookingImport() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">Import Complete</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {importType === 'discharge' ? 'Discharge Recorded' : 'Import Complete'}
+                  </p>
                   <div className="flex flex-wrap gap-2 mt-1">
-                    {importResult.created?.length > 0 && (
-                      <span className="text-[11px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
-                        {importResult.created.length} created
-                      </span>
-                    )}
-                    {importResult.updated?.length > 0 && (
-                      <span className="text-[11px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">
-                        {importResult.updated.length} updated
-                      </span>
-                    )}
-                    {importResult.markedFinalLoading?.length > 0 && (
-                      <span className="text-[11px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
-                        {importResult.markedFinalLoading.length} marked Final Loading
-                      </span>
-                    )}
-                    {importResult.cancelled?.length > 0 && (
-                      <span className="text-[11px] bg-red-100 text-red-600 font-semibold px-2 py-0.5 rounded-full">
-                        {importResult.cancelled.length} cancelled (not in manifest)
-                      </span>
-                    )}
-                    {importResult.failed?.length > 0 && (
-                      <span className="text-[11px] bg-gray-100 text-gray-600 font-semibold px-2 py-0.5 rounded-full">
-                        {importResult.failed.length} failed
-                      </span>
+                    {importType === 'discharge' ? (
+                      <>
+                        {importResult.discharged?.length > 0 && (
+                          <span className="text-[11px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.discharged.length} discharged
+                          </span>
+                        )}
+                        {importResult.remainingCount > 0 && (
+                          <span className="text-[11px] bg-red-100 text-red-600 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.remainingCount} remaining (still onboard)
+                          </span>
+                        )}
+                        {importResult.failed?.length > 0 && (
+                          <span className="text-[11px] bg-gray-100 text-gray-600 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.failed.length} failed
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {importResult.created?.length > 0 && (
+                          <span className="text-[11px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.created.length} created
+                          </span>
+                        )}
+                        {importResult.updated?.length > 0 && (
+                          <span className="text-[11px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.updated.length} updated
+                          </span>
+                        )}
+                        {importResult.markedFinalLoading?.length > 0 && (
+                          <span className="text-[11px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.markedFinalLoading.length} marked Final Loading
+                          </span>
+                        )}
+                        {importResult.cancelled?.length > 0 && (
+                          <span className="text-[11px] bg-red-100 text-red-600 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.cancelled.length} cancelled (not in manifest)
+                          </span>
+                        )}
+                        {importResult.failed?.length > 0 && (
+                          <span className="text-[11px] bg-gray-100 text-gray-600 font-semibold px-2 py-0.5 rounded-full">
+                            {importResult.failed.length} failed
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
               </div>
 
+              {importType === 'discharge' && importResult.remainingCount > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-xs text-red-700">
+                  {importResult.remainingCount} Final Loading booking{importResult.remainingCount !== 1 ? 's' : ''} on this
+                  voyage {importResult.remainingCount !== 1 ? 'were' : 'was'} NOT in the uploaded file and{' '}
+                  {importResult.remainingCount !== 1 ? 'are' : 'is'} now marked <strong>Remaining</strong> — still
+                  physically onboard. See the "Remaining" tab or the Capacity Engine's warning highlight for this voyage.
+                </div>
+              )}
+
               {importResult.failed?.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
                   <p className="text-[11px] font-bold text-red-600 mb-1.5">Failed rows:</p>
                   {importResult.failed.map((f, i) => (
-                    <p key={i} className="text-[11px] text-red-600">{f.bookingNumber || `Row ${i + 1}`}: {f.reason}</p>
+                    <p key={i} className="text-[11px] text-red-600">{f.bookingNumber || f.containerNumber || `Row ${i + 1}`}: {f.reason}</p>
                   ))}
                 </div>
               )}

@@ -69,10 +69,12 @@ const list = async ({
   page = DEFAULT_PAGE, limit = DEFAULT_LIMIT,
   search = '', voyageId = '', agentId = '',
   status = '', dateFrom = '', dateTo = '',
+  dischargeStatus = '', // Sprint 045 — additive: 'Discharged' | 'Remaining'
 } = {}) => {
   const query = { isDeleted: false };
   if (voyageId) query.voyageId = voyageId;
   if (agentId)  query.agentId  = agentId;
+  if (dischargeStatus) query.dischargeStatus = dischargeStatus;
   if (status) {
     // Support comma-separated statuses e.g. "Confirmed,Pending"
     query.status = status.includes(',')

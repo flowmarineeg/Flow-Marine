@@ -527,4 +527,159 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
   return { created, updated, failed, markedFinalLoading, cancelled, total: saveable.length };
 };
 
-module.exports = { previewImport, saveImport, getTemplateColumns, buildImportTemplate };
+// ═══════════════════════════════════════════════════════════════════════════
+// Sprint 045 — Discharge import: confirms the ACTUAL operational outcome of
+// already-Final-Loading bookings after a specific Voyage's port call.
+//
+// Deliberately implemented as its own pair of functions, not new branches
+// inside previewImport/saveImport above — the shape of this work is
+// fundamentally different (match-only, never creates/edits booking data,
+// requires one specific Voyage rather than a Round-wide per-row voyage
+// resolution) and keeping it separate avoids threading more conditionals
+// through the already-complex existing functions, which stay byte-for-byte
+// unchanged by this sprint.
+//
+// Only two fields are ever written: Booking.dischargeStatus ('Discharged' |
+// 'Remaining') and dischargedAt. `status` itself is NEVER touched — a
+// Remaining booking stays 'Final Loading' forever, exactly as it was.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const previewDischargeImport = async ({ rows, agentId, voyageId }) => {
+  if (!rows?.length) throw { status: 400, message: 'No rows provided' };
+  if (!agentId)      throw { status: 400, message: 'Agent is required' };
+  if (!voyageId)     throw { status: 400, message: 'Voyage is required' };
+
+  const voyage = await Voyage.findById(voyageId)
+    .populate('polId', 'name code')
+    .populate('podId', 'name code')
+    .lean();
+  if (!voyage) throw { status: 404, message: 'Voyage not found' };
+
+  // Every voyage in the same Round — used only to name the actual voyage a
+  // mismatched container belongs to (a precise error message), never to
+  // resolve or reassign anything.
+  const roundVoyages = await Voyage.find({ roundId: voyage.roundId }).lean();
+  const voyagesById = {};
+  roundVoyages.forEach(v => { voyagesById[String(v._id)] = v; });
+  const roundVoyageIds = roundVoyages.map(v => v._id);
+
+  // Candidate population: every non-deleted booking for this agent anywhere
+  // in the Round (any status) — broad enough to distinguish "wrong voyage"
+  // from "wrong status" from "doesn't exist at all", each with its own
+  // precise error message below.
+  const candidateBookings = await Booking.find({
+    agentId,
+    voyageId:  { $in: roundVoyageIds },
+    isDeleted: false,
+  }).lean();
+  const byContainer = {};
+  candidateBookings.forEach(b => {
+    if (b.containerNumber) byContainer[b.containerNumber] = b;
+  });
+
+  return rows.map((row, idx) => {
+    const errors = [];
+    const cntr = normCntr(row.containerNumber);
+    if (!cntr) errors.push('Container Number is required');
+
+    const existing = cntr ? byContainer[cntr] : null;
+    let matchStatus = 'not-found';
+
+    if (cntr && !existing) {
+      errors.push('No booking found for this container in this Round/Agent');
+      matchStatus = 'not-found';
+    } else if (existing && String(existing.voyageId) !== String(voyageId)) {
+      const otherVoyage = voyagesById[String(existing.voyageId)];
+      errors.push(`Container belongs to voyage ${otherVoyage?.voyageNumber || 'another voyage'}, not the selected voyage ${voyage.voyageNumber}`);
+      matchStatus = 'wrong-voyage';
+    } else if (existing && existing.status !== 'Final Loading') {
+      errors.push(`Booking exists but is not Final Loading (current status: ${existing.status}) — cannot record a discharge outcome for it`);
+      matchStatus = 'wrong-status';
+    } else if (existing) {
+      matchStatus = 'match';
+    }
+
+    // Cross-check the row's own POL/POD text (same shared template as Final
+    // Loading, so these columns are present) against the SELECTED voyage's
+    // actual ports. Voyage is an explicit, mandatory choice for this import
+    // type (unlike Sprint 031's Round-scoped per-row resolution), so a
+    // mismatch here is a hard validation error, never a silent auto-correct.
+    if (matchStatus === 'match' && (row.pol || row.pod)) {
+      const norm = (s) => String(s || '').trim().toUpperCase();
+      const polOk = !row.pol || norm(row.pol) === norm(voyage.polId?.name) || norm(row.pol) === norm(voyage.polId?.code);
+      const podOk = !row.pod || norm(row.pod) === norm(voyage.podId?.name) || norm(row.pod) === norm(voyage.podId?.code);
+      if (!polOk || !podOk) {
+        errors.push(`Row POL/POD ("${row.pol || '—'}" → "${row.pod || '—'}") does not match the selected voyage's actual ports (${voyage.polId?.name || '?'} → ${voyage.podId?.name || '?'})`);
+        matchStatus = 'port-mismatch';
+      }
+    }
+
+    return {
+      _rowIndex:       idx,
+      containerNumber: cntr,
+      pol:             row.pol || '',
+      pod:             row.pod || '',
+      bookingNumber:   existing?.bookingNumber || '',
+      _existingId:     existing?._id || null,
+      _matchStatus:    matchStatus,
+      _errors:         errors,
+      _rowStatus:      errors.length > 0 ? 'invalid' : 'match',
+    };
+  });
+};
+
+const saveDischargeImport = async ({ rows, agentId, voyageId, createdBy }) => {
+  if (!rows?.length) throw { status: 400, message: 'No rows to save' };
+  if (!agentId)      throw { status: 400, message: 'Agent is required' };
+  if (!voyageId)     throw { status: 400, message: 'Voyage is required' };
+
+  const voyage = await Voyage.findById(voyageId).lean();
+  if (!voyage) throw { status: 404, message: 'Voyage not found' };
+
+  const matched = rows.filter(r => r._rowStatus === 'match' && r._existingId);
+  if (!matched.length) throw { status: 400, message: 'No valid rows to save' };
+
+  const matchedIds = matched.map(r => r._existingId);
+
+  // Every matched row's booking → Discharged. Idempotent: re-confirming an
+  // already-Discharged booking just refreshes dischargedAt.
+  await Booking.updateMany(
+    { _id: { $in: matchedIds } },
+    { $set: { dischargeStatus: 'Discharged', dischargedAt: new Date(), updatedBy: createdBy } }
+  );
+
+  // Every OTHER Final Loading booking for this Agent, on THIS SAME VOYAGE,
+  // NOT present in the uploaded file → Remaining ("expected to discharge
+  // here but didn't"). Scoped to one voyage, not the whole Round — narrower
+  // than Final Loading's own Round-wide reconciliation — and its outcome is
+  // 'Remaining', never 'Cancelled'; `status` itself is never touched here.
+  // Not blocked from re-running: a booking previously Discharged that is
+  // absent from a later, corrected file for the same voyage becomes
+  // Remaining again — always reflects the latest upload, same principle as
+  // Final Loading's own reconciliation.
+  const remainingResult = await Booking.updateMany(
+    {
+      voyageId,
+      agentId,
+      status:    'Final Loading',
+      isDeleted: false,
+      _id:       { $nin: matchedIds },
+    },
+    { $set: { dischargeStatus: 'Remaining', updatedBy: createdBy } }
+  );
+
+  invalidateRoundCache(voyage.roundId);
+
+  return {
+    discharged:     matched.map(r => r.containerNumber),
+    remainingCount: remainingResult.modifiedCount,
+    failed:         rows.filter(r => r._rowStatus !== 'match')
+                         .map(r => ({ containerNumber: r.containerNumber, reason: (r._errors || [])[0] || 'Unresolved' })),
+    total: matched.length,
+  };
+};
+
+module.exports = {
+  previewImport, saveImport, getTemplateColumns, buildImportTemplate,
+  previewDischargeImport, saveDischargeImport,
+};

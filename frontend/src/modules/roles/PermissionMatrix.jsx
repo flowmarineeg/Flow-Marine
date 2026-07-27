@@ -11,7 +11,7 @@ import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
 
-const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'hidden'];
+const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'override', 'hidden'];
 
 const ACTION_COLORS = {
   view:   { active: '#DBEAFE', text: '#1E40AF' },
@@ -19,6 +19,11 @@ const ACTION_COLORS = {
   create: { active: '#CCFBF1', text: '#0F766E' },
   update: { active: '#FEF3C7', text: '#92400E' },
   delete: { active: '#FEE2E2', text: '#991B1B' },
+  // Sprint046: invoices-only in practice (full manual status/lock override),
+  // shown for every module row like every other action here — this table
+  // has no per-module column customization (e.g. 'delete' already renders,
+  // unused, for modules like 'reports').
+  override: { active: '#FCE7F3', text: '#9D174D' },
   hidden: { active: '#F3E8FF', text: '#6B21A8' },
 };
 
@@ -78,7 +83,9 @@ export default function PermissionMatrix({ roleId }) {
   };
 
   const setAll = (module, value) => {
-    setPerms(prev => ({ ...prev, [module]: { view: value, read: value, create: value, update: value, delete: value, hidden: false } }));
+    // Sprint046: preserve `override` — it's a deliberate, separately-granted
+    // escalation, not part of the standard CRUD set this quick-set toggles.
+    setPerms(prev => ({ ...prev, [module]: { view: value, read: value, create: value, update: value, delete: value, hidden: false, override: prev[module]?.override || false } }));
   };
 
   const isSystem = roleData?.isSystem;

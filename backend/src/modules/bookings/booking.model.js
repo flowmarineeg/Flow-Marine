@@ -24,6 +24,13 @@ const bookingSchema = new mongoose.Schema(
     containerStatus: { type: String, enum: ['Full', 'Empty'], default: null },      // Full or Empty only
     remarks:         { type: String, trim: true, default: null },
     status:          { type: String, enum: BOOKING_STATUS, default: 'Pending' },
+    // Sprint 045 — actual operational outcome AFTER Final Loading, set only
+    // by the 'discharge' import type. Additive, independent of `status`
+    // (which stays 'Final Loading' forever regardless of discharge outcome).
+    // null = not yet assessed (no discharge import has run for this
+    // booking's voyage yet) — distinct from both real outcomes below.
+    dischargeStatus: { type: String, enum: ['Discharged', 'Remaining'], default: null },
+    dischargedAt:    { type: Date, default: null },
     isDeleted:       { type: Boolean, default: false },
     deletedAt:       { type: Date,    default: null },
     createdBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

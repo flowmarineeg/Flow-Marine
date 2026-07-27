@@ -73,8 +73,13 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
           </thead>
           <tbody>
             {voyages.map((v, i) => {
-              const isOver   = v.remainingTEU != null && v.remainingTEU < 0;
-              const rowBg    = isOver
+              const isOver = v.remainingTEU != null && v.remainingTEU < 0;
+              // Sprint 045 — TEU expected to discharge here but a Discharge
+              // import didn't find it (still physically onboard). Purely a
+              // presentation flag, same as `isOver` — never feeds the
+              // onboard/remaining/utilisation math above.
+              const hasRemaining = (v.remainingOnboardTEU || 0) > 0;
+              const rowBg    = (isOver || hasRemaining)
                 ? 'bg-red-50'
                 : v.utilisationPct >= 90 ? 'bg-orange-50/40'
                 : v.utilisationPct >= 70 ? 'bg-amber-50/30'
@@ -133,6 +138,11 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
                         <span className="text-[10px] text-gray-400 ml-0.5">TEU</span>
                         <Breakdown l2={v.layer2?.dischargedTEU} l1={v.layer1?.dischargedTEU} sign="−" />
                       </>
+                    )}
+                    {hasRemaining && (
+                      <p className="text-[10px] font-semibold text-red-600 mt-0.5 whitespace-nowrap">
+                        ⚠ {fmt(v.remainingOnboardTEU)} TEU remaining onboard
+                      </p>
                     )}
                   </td>
 

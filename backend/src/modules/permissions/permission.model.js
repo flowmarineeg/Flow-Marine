@@ -13,6 +13,7 @@ const actionSchema = new mongoose.Schema(
     export: { type: Boolean, default: false }, // Sprint019: per-module export
     view:   { type: Boolean, default: false },
     hidden: { type: Boolean, default: false },
+    override: { type: Boolean, default: false }, // Sprint046: invoice-only, full manual override
   },
   { _id: false }
 );
