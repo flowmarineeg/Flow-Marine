@@ -86,14 +86,39 @@ Frontend runs on: http://localhost:3000
 
 ---
 
-## Sprint Status
+## Sprint Status (current through Sprint 041 — see `sprints/STATUS.md` for the full table)
+
+The original 13-sprint MVP below shipped in full, and the project has
+since grown through **41 sprints total**: dual-layer bookings (Layer 1
+Manual + Layer 2 Operational) with a TEU capacity engine, a rebuilt
+Invoice/Payment system with explicit payment allocation, an Agent
+Financial Account, 9 reports (was 5), a Round/Voyage/Port-scoped Expense
+module, a rebuilt widget-based Dashboard, and an updated 13-module Export.
+**Sprint 037 was audit-only (no code); Sprint 041 is planning-approved but
+NOT yet implemented** — see claude.md's "Known open gaps" section before
+starting new work. Condensed post-MVP index:
+
+| Sprints | Theme | Status |
+| --- | --- | --- |
+| 014-020 | Dashboard overhaul, booking import, RBAC audit, production hardening | ✅ Complete |
+| 021-032 | Vessel Particulars, Booking Layer 1/2 split + Capacity Engine | ✅ Complete |
+| 033 | Invoice & Agent Financial System | ✅ Complete |
+| 034 | Booking Reports Modernization | ✅ Complete |
+| 035-036 | Voyage Profitability Report + Expense Port-Level Costing | ✅ Complete |
+| 037 | Reporting Modules Architecture Audit | ✅ Audit complete — no code |
+| 038 | Reporting Consolidation (fixes from 037) | ✅ Complete |
+| 039 | Dashboard Architecture & KPI rebuild | ✅ Complete |
+| 040 | Bulk Export Module Update | ✅ Complete |
+| 041 | RBAC Enforcement Audit, Performance & Caching Review | 🟡 Planning approved — **not yet implemented** |
+
+Original MVP sprint table:
 
 | Sprint | Description                     | Status      |
 | ------ | ------------------------------- | ----------- |
 | 001    | Environment & Project Setup     | ✅ Complete |
 | 002    | Auth, Users, Roles, RBAC, Email | ✅ Complete |
-| 003    | Vessel & Agent Masters          | ⏳ Pending  |
-| 004    | Container Types & Expense Types | ⏳ Pending  |
+| 003    | Vessel & Agent Masters          | ✅ Complete |
+| 004    | Container Types & Expense Types | ✅ Complete |
 | 005    | Location Master                 | ✅ Complete |
 | 006    | Service & Route Editor          | ✅ Complete |
 | 007    | Rounds & Voyage Engine          | ✅ Complete |
@@ -109,7 +134,13 @@ Frontend runs on: http://localhost:3000
 ## Development Notes
 
 - See `claude.md` for full coding standards and architecture rules
-- See `docs/` for all planning documents
-- See `sprints/` for task breakdown — work through sprints in order
+  (single source of truth — read it before touching any code)
+- See `docs/` for all planning documents (docs 01-10 describe the original
+  MVP scope and now carry status notes pointing to what's changed since)
+- See `sprints/` for task breakdown — sprints 035-041 contain the full
+  spec/ADRs for everything summarized above
 - API base: `/api/v1/`
-- All protected routes require: `Authorization: Bearer <token>`
+- Auth: httpOnly cookie JWT (set by `POST /auth/login`) — **not** a Bearer
+  token; the browser sends it automatically (`axios` `withCredentials:true`).
+  An `Authorization: Bearer <token>` header is accepted as a fallback for
+  non-browser API clients only.

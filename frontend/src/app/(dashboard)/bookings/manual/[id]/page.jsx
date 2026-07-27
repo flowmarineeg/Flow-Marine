@@ -29,14 +29,14 @@ export default function ManualBookingDetailPage({ params }) {
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" d="M15 19l-7-7 7-7"/>
           </svg>
-          Manual Bookings
+          Estimated Bookings
         </button>
 
         {isLoading && <LoadingSpinner fullPage />}
 
         {isError && (
           <div className="card p-8 flex flex-col items-center gap-4 text-center">
-            <p className="text-sm font-semibold text-gray-700">Manual booking not found</p>
+            <p className="text-sm font-semibold text-gray-700">Estimated booking not found</p>
             <Button variant="secondary" onClick={() => router.push('/bookings?tab=manual')}>Back</Button>
           </div>
         )}

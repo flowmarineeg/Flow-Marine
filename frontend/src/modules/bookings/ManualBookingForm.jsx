@@ -5,6 +5,7 @@ import { useForm, useFieldArray }        from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService }       from '@/services/bookings.service';
 import { voyagesService }        from '@/services/voyages.service';
 import { agentsService }         from '@/services/agents.service';
@@ -22,12 +23,14 @@ const ic = (err) =>
 const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
 const ec = 'mt-1 text-[11px] text-red-500';
 
-function FieldLabel({ children, required, optional }) {
+// Sprint 042 — standardized on a single required-only convention: red
+// asterisk for required, nothing at all for optional (the `optional` prop
+// is intentionally no longer rendered).
+function FieldLabel({ children, required }) {
   return (
     <label className={lc}>
       {children}
       {required && <span className="text-red-400 ml-0.5">*</span>}
-      {optional && <span className="ml-1.5 text-gray-300 font-normal normal-case text-[10px]">(optional)</span>}
     </label>
   );
 }
@@ -128,11 +131,11 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
         ? bookingsService.updateManual(item._id, data)
         : bookingsService.createManual(data),
     onSuccess: (res) => {
-      toast.success(isEditing ? 'Manual booking updated' : 'Manual booking created');
+      toast.success(isEditing ? 'Estimated booking updated' : 'Estimated booking created');
       qc.invalidateQueries(['manual-bookings']);
       onSuccess?.(res.data.data);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   const onSubmit = (data) => {
@@ -185,7 +188,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
             >
               <option value="">Select round…</option>
               {rounds.map(r => (
-                <option key={r._id} value={r._id}>{r.roundNumber}</option>
+                <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>
               ))}
             </select>
             {errors.roundId && <p className={ec}>{errors.roundId.message}</p>}
@@ -200,7 +203,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
               <option value="">{watchedRoundId ? 'Select voyage…' : 'Select a round first…'}</option>
               {voyages.map(v => (
                 <option key={v._id} value={v._id}>
-                  {v.voyageNumber} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
+                  {v.voyageNumber} ({v.voyageName || 'unnamed'}) — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
                 </option>
               ))}
             </select>
@@ -212,7 +215,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
         {selectedVoyage && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
-              { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber}</span> },
+              { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber} <span className="font-normal text-teal-500">({selectedVoyage.voyageName || 'unnamed'})</span></span> },
               { label: 'Status',    val: selectedVoyage.status },
               { label: 'ETD',       val: fmt(selectedVoyage.etd) },
               { label: 'ETA',       val: fmt(selectedVoyage.eta) },
@@ -266,8 +269,19 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
         <div className="flex flex-col gap-3">
           {/* Column headers */}
           <div className="hidden sm:grid grid-cols-[1.8fr_0.6fr_0.8fr_0.5fr_1fr_1fr_0.8fr_auto] gap-2 px-1">
-            {['Container Type','Qty','Rate ($)','DG','DG Value','Commodity','VGM (kg)',''].map(h => (
-              <p key={h} className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{h}</p>
+            {[
+              { h: 'Container Type', req: true },
+              { h: 'Qty', req: true },
+              { h: 'Rate ($)', req: true },
+              { h: 'DG', req: false },
+              { h: 'DG Value', req: false },
+              { h: 'Commodity', req: false },
+              { h: 'VGM (kg)', req: false },
+              { h: '', req: false },
+            ].map(({ h, req }) => (
+              <p key={h} className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                {h}{req && <span className="text-red-400 ml-0.5">*</span>}
+              </p>
             ))}
           </div>
 
@@ -431,7 +445,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
             </svg>Saving…</>
-          ) : isEditing ? 'Save Changes' : 'Create Manual Booking'}
+          ) : isEditing ? 'Save Changes' : 'Create Estimated Booking'}
         </button>
       </div>
     </form>

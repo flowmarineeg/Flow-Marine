@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { vesselsService } from '@/services/vessels.service';
 import { VESSEL_STATUS, OWNERSHIP_TYPES } from '@/utils/constants';
 import Button from '@/components/ui/Button';
@@ -74,7 +75,7 @@ export default function VesselForm({ id = null }) {
   const mutation = useMutation({
     mutationFn: (data) => isEdit ? vesselsService.update(id, data) : vesselsService.create(data),
     onSuccess:  () => { toast.success(isEdit ? 'Vessel updated' : 'Vessel created'); router.push('/vessels'); },
-    onError:    (e) => toast.error(e.response?.data?.message || 'Operation failed'),
+    onError:    (e) => showErrorToast(e, isEdit ? 'update' : 'save'),
   });
 
   if (isEdit && isLoading) return <LoadingSpinner fullPage />;

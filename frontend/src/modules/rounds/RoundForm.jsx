@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { roundsService } from '@/services/rounds.service';
 import { servicesService } from '@/services/services.service';
 import { vesselsService } from '@/services/vessels.service';
@@ -21,6 +22,7 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
       endDate:   item?.endDate   ? item.endDate.slice(0, 10)   : '',
       status:    item?.status    || 'Planned',
       notes:     item?.notes     || '',
+      roundName: item?.roundName || '',
     },
   });
 
@@ -60,7 +62,7 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
       qc.invalidateQueries(['rounds']);
       onSuccess?.(res.data.data);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, isEditing ? 'update' : 'save'),
   });
 
   const inputCls  = (err) => `w-full text-[13.5px] border rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:ring-2 transition ${err ? 'border-red-400 focus:ring-red-500/10' : 'border-gray-200 focus:border-teal-500 focus:ring-teal-500/10'}`;
@@ -102,6 +104,18 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
           ))}
         </select>
         {errors.vesselId && <p className={errCls}>{errors.vesselId.message}</p>}
+      </div>
+
+      {/* Round Name */}
+      <div>
+        <label className={labelCls}>Round Name <span className="text-red-400">*</span></label>
+        <input
+          type="text"
+          {...register('roundName', { required: 'Round Name is required' })}
+          placeholder="e.g. Q3 Red Sea Coffee Run"
+          className={inputCls(errors.roundName)}
+        />
+        {errors.roundName && <p className={errCls}>{errors.roundName.message}</p>}
       </div>
 
       {/* Dates row */}

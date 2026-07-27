@@ -61,6 +61,7 @@ export default function CapacityTimeline({ voyages = [], vesselCapacity = null }
     legs.push({
       voyageId:     v.voyageId,
       voyageNumber: v.voyageNumber,
+      voyageName:   v.voyageName || null,
       onboardTEU:   v.onboardTEU,
       utilisationPct: v.utilisationPct,
       isManual:     v.isManual,
@@ -152,7 +153,7 @@ export default function CapacityTimeline({ voyages = [], vesselCapacity = null }
 
                     {/* Voyage label + TEU under bar */}
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] text-gray-400 mono truncate">{leg.voyageNumber}</span>
+                      <span className="text-[9px] text-gray-400 mono truncate">{leg.voyageNumber} ({leg.voyageName || 'unnamed'})</span>
                       <span className={`text-[10px] font-bold whitespace-nowrap ${textColor(leg.utilisationPct)}`}>
                         {fmt(leg.onboardTEU)}
                         <span className="text-[8px] font-normal text-gray-400 ml-0.5">TEU</span>

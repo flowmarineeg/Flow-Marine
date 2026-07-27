@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { roundsService } from '@/services/rounds.service';
 import { servicesService } from '@/services/services.service';
 import { usePermission } from '@/context/PermissionContext';
@@ -54,7 +55,7 @@ export default function RoundList() {
       qc.invalidateQueries(['rounds']);
       setDeleteTarget(null);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const rounds     = data?.data || [];
@@ -77,7 +78,7 @@ export default function RoundList() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2.5 mb-4">
         <div className="flex-1 min-w-[220px]">
-          <SearchBar value={search} onChange={v => { setSearch(v); setPage(1); }} placeholder="Search round number, notes…" />
+          <SearchBar value={search} onChange={v => { setSearch(v); setPage(1); }} placeholder="Search round number, name, notes…" />
         </div>
         <select value={serviceId} onChange={e => { setServiceId(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Services</option>
@@ -110,9 +111,10 @@ export default function RoundList() {
                 {rounds.map(round => (
                   <tr key={round._id} className="table-row">
 
-                    {/* Round number */}
+                    {/* Round number + name */}
                     <td>
                       <span className="mono font-bold text-teal-600">{round.roundNumber}</span>
+                      <p className="text-xs text-gray-400 mt-0.5">{round.roundName || '(unnamed)'}</p>
                     </td>
 
                     {/* Service */}
@@ -224,7 +226,7 @@ export default function RoundList() {
         onConfirm={() => deleteMutation.mutate(deleteTarget._id)}
         loading={deleteMutation.isPending}
         title="Delete Round"
-        message={`Delete round "${deleteTarget?.roundNumber}"? All generated voyages will be unreachable. This cannot be undone.`}
+        message={`Delete round "${deleteTarget?.roundNumber}" (${deleteTarget?.roundName || 'unnamed'})? All generated voyages will be unreachable. This cannot be undone.`}
       />
     </div>
   );

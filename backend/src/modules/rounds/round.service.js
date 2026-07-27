@@ -28,6 +28,25 @@ const validateTransition = (current, next) => {
   }
 };
 
+// ── Sprint 042 — Round becomes Active cascades its FIRST voyage (lowest
+// sequence, only if currently Scheduled) to Departed. Deliberately scoped to
+// just the first voyage, not every voyage in the round — later legs haven't
+// physically started and stay Scheduled until an admin advances them
+// individually. Deliberately NOT reversible (no revert on later
+// Active→Cancelled) and does NOT write a TrackingHistory entry — pure
+// status-field change only. 'Departed' is the only valid forward transition
+// from 'Scheduled' per voyage.service.js's own STATUS_TRANSITIONS map, so
+// only Scheduled voyages are eligible — Cancelled/Completed/already-advanced
+// voyages are never touched.
+const cascadeFirstVoyageToDeparted = async (roundId, updatedBy) => {
+  const firstVoyage = await Voyage.findOne({ roundId, status: 'Scheduled' }).sort({ sequence: 1 });
+  if (firstVoyage) {
+    firstVoyage.status    = 'Departed';
+    firstVoyage.updatedBy = updatedBy;
+    await firstVoyage.save();
+  }
+};
+
 // ─── List ─────────────────────────────────────────────────────────────────────
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '', serviceId = '' } = {}) => {
   const query = { isDeleted: false };
@@ -36,6 +55,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
   if (search) {
     query.$or = [
       { roundNumber: { $regex: search, $options: 'i' } },
+      { roundName:   { $regex: search, $options: 'i' } },
       { notes:       { $regex: search, $options: 'i' } },
     ];
   }
@@ -131,6 +151,7 @@ const create = async (data, createdBy) => {
   // 5. Save round (no voyageIds yet)
   const round = await Round.create({
     roundNumber,
+    roundName: data.roundName,
     serviceId: data.serviceId,
     vesselId:  data.vesselId,
     startDate: data.startDate,
@@ -148,6 +169,12 @@ const create = async (data, createdBy) => {
   // 7. Update round with voyageIds
   round.voyageIds = voyages.map(v => v._id);
   await round.save();
+
+  // Sprint 042 — Round created directly with status Active cascades its
+  // first voyage to Departed (see cascadeFirstVoyageToDeparted comment).
+  if (round.status === 'Active') {
+    await cascadeFirstVoyageToDeparted(round._id, createdBy);
+  }
 
   const populated = await Round.findById(round._id)
     .populate('serviceId', 'serviceCode serviceName')
@@ -172,6 +199,9 @@ const update = async (id, data, updatedBy) => {
     validateTransition(round.status, data.status);
   }
 
+  // Sprint 042 — captured BEFORE round.status is overwritten below.
+  const becameActive = data.status === 'Active' && round.status !== 'Active';
+
   // Date validation
   const startDate = data.startDate ? new Date(data.startDate) : round.startDate;
   const endDate   = data.endDate   ? new Date(data.endDate)   : round.endDate;
@@ -192,13 +222,19 @@ const update = async (id, data, updatedBy) => {
     }
   }
 
-  const allowed = ['vesselId', 'startDate', 'endDate', 'status', 'notes'];
+  const allowed = ['vesselId', 'startDate', 'endDate', 'status', 'notes', 'roundName'];
   allowed.forEach(field => { if (data[field] !== undefined) round[field] = data[field]; });
   round.updatedBy = updatedBy;
   await round.save();
 
   // Invalidate capacity cache — vessel, dates, or status may have changed
   invalidateRoundCache(id);
+
+  // Sprint 042 — Planned→Active transition cascades the round's first
+  // voyage to Departed (see cascadeFirstVoyageToDeparted comment).
+  if (becameActive) {
+    await cascadeFirstVoyageToDeparted(id, updatedBy);
+  }
 
   return Round.findById(id)
     .populate('serviceId', 'serviceCode serviceName')

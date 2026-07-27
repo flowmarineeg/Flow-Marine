@@ -192,6 +192,7 @@ const getFleetUtilisation = async () => {
     items.push({
       roundId:        String(r._id),
       roundNumber:    r.roundNumber,
+      roundName:      r.roundName || null,
       vesselCode:     d.vessel?.vesselCode,
       vesselName:     d.vessel?.vesselName,
       serviceCode:    d.service?.serviceCode,
@@ -204,7 +205,7 @@ const getFleetUtilisation = async () => {
       warningCount:   d.warnings?.length ?? 0,
       warnings:       d.warnings ?? [],
       voyages:        (d.voyages || []).map(v => ({
-        voyageId: v.voyageId, voyageNumber: v.voyageNumber, utilisationPct: v.utilisationPct,
+        voyageId: v.voyageId, voyageNumber: v.voyageNumber, voyageName: v.voyageName || null, utilisationPct: v.utilisationPct,
       })),
       color,
     });

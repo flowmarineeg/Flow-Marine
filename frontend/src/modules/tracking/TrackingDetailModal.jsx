@@ -45,8 +45,8 @@ export default function TrackingDetailModal({ entry, open, onClose }) {
         <div className="grid grid-cols-2 gap-4">
           <InfoRow label="Vessel"  value={entry.vesselId ? `${entry.vesselId.vesselCode} — ${entry.vesselId.vesselName}` : null} />
           <InfoRow label="Service" value={entry.serviceId ? `${entry.serviceId.serviceCode} — ${entry.serviceId.serviceName}` : null} />
-          <InfoRow label="Voyage"  value={<span className="mono font-bold text-teal-600">{entry.voyageId?.voyageNumber}</span>} />
-          <InfoRow label="Round"   value={<span className="mono text-gray-600">{entry.roundId?.roundNumber}</span>} />
+          <InfoRow label="Voyage"  value={<span className="mono font-bold text-teal-600">{entry.voyageId?.voyageNumber} <span className="font-normal text-teal-500">({entry.voyageId?.voyageName || 'unnamed'})</span></span>} />
+          <InfoRow label="Round"   value={<span className="mono text-gray-600">{entry.roundId?.roundNumber} ({entry.roundId?.roundName || 'unnamed'})</span>} />
         </div>
 
         {/* Position */}

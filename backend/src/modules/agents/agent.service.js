@@ -115,8 +115,8 @@ const getAgentFinancialAccount = async (id) => {
   const bookings = await Booking.find({ agentId: id, status: 'Final Loading', isDeleted: false })
     .populate({
       path: 'voyageId',
-      select: 'voyageNumber roundId',
-      populate: { path: 'roundId', select: 'roundNumber createdAt' },
+      select: 'voyageNumber voyageName roundId',
+      populate: { path: 'roundId', select: 'roundNumber roundName createdAt' },
     })
     .lean();
 
@@ -162,7 +162,7 @@ const getAgentFinancialAccount = async (id) => {
     const roundKey = String(round._id);
     if (!roundsMap.has(roundKey)) {
       roundsMap.set(roundKey, {
-        roundId: round._id, roundNumber: round.roundNumber, createdAt: round.createdAt,
+        roundId: round._id, roundNumber: round.roundNumber, roundName: round.roundName || null, createdAt: round.createdAt,
         voyagesMap: new Map(),
       });
     }
@@ -171,7 +171,7 @@ const getAgentFinancialAccount = async (id) => {
     const voyageKey = String(voyage._id);
     if (!roundEntry.voyagesMap.has(voyageKey)) {
       roundEntry.voyagesMap.set(voyageKey, {
-        voyageId: voyage._id, voyageNumber: voyage.voyageNumber, bookings: [],
+        voyageId: voyage._id, voyageNumber: voyage.voyageNumber, voyageName: voyage.voyageName || null, bookings: [],
       });
     }
 
@@ -201,7 +201,7 @@ const getAgentFinancialAccount = async (id) => {
         const totalFreight = v.bookings.reduce((s, x) => s + x.totalFreight, 0);
         const totalPaid     = v.bookings.reduce((s, x) => s + x.paidAmount, 0);
         return {
-          voyageId: v.voyageId, voyageNumber: v.voyageNumber,
+          voyageId: v.voyageId, voyageNumber: v.voyageNumber, voyageName: v.voyageName || null,
           bookings: v.bookings,
           totalFreight, totalPaid, remaining: Math.max(0, totalFreight - totalPaid),
         };
@@ -209,7 +209,7 @@ const getAgentFinancialAccount = async (id) => {
       const totalFreight = voyages.reduce((s, v) => s + v.totalFreight, 0);
       const totalPaid     = voyages.reduce((s, v) => s + v.totalPaid, 0);
       return {
-        roundId: r.roundId, roundNumber: r.roundNumber,
+        roundId: r.roundId, roundNumber: r.roundNumber, roundName: r.roundName || null,
         voyages,
         totalFreight, totalPaid, remaining: Math.max(0, totalFreight - totalPaid),
       };

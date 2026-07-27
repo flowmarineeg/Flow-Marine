@@ -102,7 +102,6 @@ function LegRow({ leg, index, total, onChange, onRemove, disabled, agents }) {
         <div>
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             Terminal
-            <span className="text-gray-300 ml-1 font-normal">(opt)</span>
           </label>
           <select
             value={leg.terminalId}
@@ -121,7 +120,6 @@ function LegRow({ leg, index, total, onChange, onRemove, disabled, agents }) {
         <div>
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             Agent
-            <span className="text-gray-300 ml-1 font-normal">(opt)</span>
           </label>
           <select
             value={leg.agentId}

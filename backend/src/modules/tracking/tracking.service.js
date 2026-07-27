@@ -7,8 +7,8 @@ const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── Populate helper ──────────────────────────────────────────────────────────
 const pop = (q) =>
-  q.populate('voyageId',   'voyageNumber')
-   .populate('roundId',    'roundNumber')
+  q.populate('voyageId',   'voyageNumber voyageName')
+   .populate('roundId',    'roundNumber roundName')
    .populate('vesselId',   'vesselCode vesselName')
    .populate('serviceId',  'serviceCode serviceName')
    .populate('portId',     'name code')

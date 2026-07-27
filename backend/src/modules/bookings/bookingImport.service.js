@@ -1,5 +1,6 @@
 'use strict';
 
+const ExcelJS       = require('exceljs');
 const Booking       = require('./booking.model');
 const Voyage        = require('../voyages/voyage.model');
 const ContainerType = require('../containerTypes/containerType.model');
@@ -7,9 +8,84 @@ const Port          = require('../locations/port.model');
 const { nextNumberBatch } = require('../../utils/autoNumber');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
 
+// ── Sprint 042 — single source of truth for the import's recognized columns.
+// Used by BOTH the downloadable blank template (buildImportTemplate) AND the
+// frontend's "Expected Excel Columns" guide card (via getTemplateColumns,
+// GET /bookings/import/template-columns) — never duplicated as a second,
+// hand-maintained array on the frontend, so the two can never drift apart.
+// `required` mirrors EXCEL_COLUMN_MAP's primary alias per internal field;
+// imdgCode is conditionally required (only when Hazardous=Yes) and is
+// deliberately NOT flagged required here — same as Sprint 041's original
+// frontend-only TEMPLATE_FIELDS list this replaces.
+const TEMPLATE_FIELDS = [
+  { header: 'Container Number', field: 'containerNumber', note: 'Primary match key e.g. MSCU1234567', required: true },
+  { header: 'Container Type',   field: 'containerType',   note: 'e.g. 40HC, 20DRY — code or size', required: true },
+  { header: 'Container Size',   field: 'containerSize',   note: 'e.g. 40ft, 20ft. Also accepts: Size, Length', required: false },
+  { header: 'Container Status', field: 'containerStatus', note: 'Full or Empty only', required: true },
+  { header: 'POL',              field: 'pol',             note: "Port of Loading — used to auto-resolve this row's Voyage", required: true },
+  { header: 'POD',              field: 'pod',             note: "Port of Discharge — used to auto-resolve this row's Voyage", required: true },
+  { header: 'Rate',             field: 'rate',            note: 'Freight rate per container (one row = one container)', required: true },
+  { header: 'Booking Number',   field: 'bookingNumber',   note: 'Optional — auto-generated if blank', required: false },
+  { header: 'Shipper',          field: 'shipper',         note: 'Optional — shipper company name', required: false },
+  { header: 'Consignee',        field: 'consignee',       note: 'Optional — consignee company name', required: false },
+  { header: 'Carrier Name',     field: 'carrierName',     note: 'Optional — e.g. MSC, Maersk. Also accepts: Carrier', required: false },
+  { header: 'Commodity',        field: 'commodity',       note: 'Optional — cargo description', required: false },
+  { header: 'VGM',              field: 'vgm',             note: 'Optional — Verified Gross Mass in kg', required: false },
+  { header: 'Hazardous',        field: 'dg',              note: 'Optional — Yes/No. Also accepts: DG, Dangerous Goods', required: false },
+  { header: 'IMDG Code',        field: 'imdgCode',        note: 'Required if Hazardous=Yes — free text e.g. 3.1, UN1203', required: false },
+];
+
+const getTemplateColumns = () => TEMPLATE_FIELDS;
+
+// Sprint 042 — required column headers get a light red fill, optional
+// columns a light yellow fill. Only the header CELL is colored, not the
+// full column (confirmed client request). SheetJS (xlsx) community edition
+// cannot write cell styles at all, which is why this moved server-side —
+// ExcelJS already does this exact fill pattern in export.service.js.
+const buildImportTemplate = async () => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Logistics SaaS';
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet('Import Template');
+  worksheet.columns = TEMPLATE_FIELDS.map(f => ({
+    header: f.header, key: f.field, width: Math.max(f.header.length + 4, 16),
+  }));
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 20;
+  headerRow.eachCell((cell, colNumber) => {
+    const field = TEMPLATE_FIELDS[colNumber - 1];
+    cell.font      = { bold: true, color: { argb: 'FF3A2020' } };
+    cell.fill      = {
+      type: 'pattern', pattern: 'solid',
+      fgColor: { argb: field.required ? 'FFF8D7DA' : 'FFFFF3CD' },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'left' };
+  });
+
+  return workbook.xlsx.writeBuffer();
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const parseDg = (val) =>
-  val === true || val === 'true' || val === 'yes' || val === '1' || val === 1;
+// Sprint 041: case-insensitive — Excel cell text case (Yes/YES/TRUE/etc.) must
+// not silently read as false. Accepted literal value set is unchanged, only
+// matched case-insensitively now (same normalization pattern already used
+// below for containerType/containerSize/pol/pod/containerNumber).
+const parseDg = (val) => {
+  if (val === true || val === 1) return true;
+  const s = String(val ?? '').trim().toLowerCase();
+  return s === 'true' || s === 'yes' || s === '1';
+};
+
+// Sprint 041: case-insensitive Full/Empty matching — returns the canonical
+// 'Full'/'Empty' string, or null if unrecognized.
+const normContainerStatus = (val) => {
+  const s = String(val ?? '').trim().toLowerCase();
+  if (s === 'full') return 'Full';
+  if (s === 'empty') return 'Empty';
+  return null;
+};
 
 const parseNum = (val) =>
   val !== undefined && val !== '' && val !== null && !isNaN(Number(val))
@@ -39,7 +115,7 @@ const validateRow = (row) => {
     errors.push('Rate must be a non-negative number');
   // Sprint 026: currency removed; containerStatus required; dgPercent -> imdgCode
   if (!row.containerStatus) errors.push('Container Status is required');
-  else if (!['Full', 'Empty'].includes(row.containerStatus))
+  else if (!normContainerStatus(row.containerStatus))
     errors.push('Container Status must be Full or Empty');
   if (parseDg(row.dg) && (!row.imdgCode || !String(row.imdgCode).trim()))
     errors.push('IMDG Code is required when Hazardous is Yes');
@@ -69,6 +145,7 @@ const resolveRowVoyage = ({ polPort, podPort, voyageOverrideId, voyagesByPair, v
 const serializeVoyage = (v) => ({
   _id:          String(v._id),
   voyageNumber: v.voyageNumber,
+  voyageName:   v.voyageName || null,
   status:       v.status,
   polId:        v.polId ? { _id: String(v.polId._id), name: v.polId.name, code: v.polId.code } : null,
   podId:        v.podId ? { _id: String(v.podId._id), name: v.podId.name, code: v.podId.code } : null,
@@ -303,7 +380,7 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
           vgm:             parseNum(r.vgm),
           dg:              dgFlag,
           imdgCode:        dgFlag ? (r.imdgCode?.trim() || null) : null, // Sprint 026
-          containerStatus: ['Full', 'Empty'].includes(r.containerStatus) ? r.containerStatus : null,
+          containerStatus: normContainerStatus(r.containerStatus),
           remarks:         remarksFor(r),
           status:          'Pending',
           createdBy,
@@ -359,7 +436,7 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
         // containerNumber stays as-is on update — it IS the key
         if (r.vgm            !== undefined) $set.vgm            = parseNum(r.vgm);
         if (r.containerStatus !== undefined)
-          $set.containerStatus = ['Full', 'Empty'].includes(r.containerStatus) ? r.containerStatus : null;
+          $set.containerStatus = normContainerStatus(r.containerStatus);
         // Sprint 031: only touch remarks when the manual-correction audit note applies —
         // ordinary updates leave remarks untouched, same as before this sprint.
         if (r._voyageManual) {
@@ -450,4 +527,4 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
   return { created, updated, failed, markedFinalLoading, cancelled, total: saveable.length };
 };
 
-module.exports = { previewImport, saveImport };
+module.exports = { previewImport, saveImport, getTemplateColumns, buildImportTemplate };

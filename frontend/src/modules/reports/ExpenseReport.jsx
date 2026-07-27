@@ -79,7 +79,7 @@ export default function ExpenseReport() {
               className={rsc}
             >
               <option value="">All Rounds</option>
-              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
             </select>
           </div>
           <div>
@@ -91,7 +91,7 @@ export default function ExpenseReport() {
               className={`${rsc} disabled:opacity-50`}
             >
               <option value="">All Voyages</option>
-              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
             </select>
           </div>
           {/* Sprint 038 — Port filter, cascading from Voyage; options are
@@ -243,8 +243,8 @@ export default function ExpenseReport() {
                         </span>
                       </td>
                       <td>
-                        {e.roundId  && <span className="mono text-xs text-teal-600 font-semibold">{e.roundId.roundNumber}</span>}
-                        {e.voyageId && <span className="mono text-xs text-purple-600 font-semibold">{e.voyageId.voyageNumber}</span>}
+                        {e.roundId  && <div><span className="mono text-xs text-teal-600 font-semibold">{e.roundId.roundNumber}</span><p className="text-[11px] text-gray-400">{e.roundId.roundName || '(unnamed)'}</p></div>}
+                        {e.voyageId && <div><span className="mono text-xs text-purple-600 font-semibold">{e.voyageId.voyageNumber}</span><p className="text-[11px] text-gray-400">{e.voyageId.voyageName || '(unnamed)'}</p></div>}
                       </td>
                       <td className="text-xs text-gray-500">{e.agentId?.agentName || '—'}</td>
                       <td><span className="mono text-xs font-semibold text-gray-700">{Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></td>

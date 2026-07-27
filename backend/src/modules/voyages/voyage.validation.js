@@ -24,6 +24,7 @@ const validateCreate = [
   body('ata').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid ATA'),
   body('status').optional().isIn(VOYAGE_STATUS).withMessage(`Status must be one of: ${VOYAGE_STATUS.join(', ')}`),
   body('voyageCode').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 50 }),
+  body('voyageName').trim().notEmpty().withMessage('Voyage Name is required'),
   handle,
 ];
 
@@ -36,6 +37,7 @@ const validateUpdate = [
   body('ata').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid ATA date'),
   body('status').optional().isIn(VOYAGE_STATUS).withMessage(`Must be one of: ${VOYAGE_STATUS.join(', ')}`),
   body('voyageCode').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 50 }),
+  body('voyageName').optional({ nullable: true, checkFalsy: true }).trim(),
   handle,
 ];
 

@@ -7,6 +7,7 @@ const voyageSchema = new mongoose.Schema(
   {
     voyageNumber: { type: String, required: true, unique: true, trim: true },
     voyageCode:   { type: String, trim: true, default: null, maxlength: 50 },
+    voyageName:   { type: String, trim: true, default: null },
     roundId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Round',   required: true },
     serviceId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: true },
     polId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Port',    required: true },

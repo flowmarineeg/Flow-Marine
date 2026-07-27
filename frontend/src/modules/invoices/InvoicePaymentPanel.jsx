@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { invoicesService } from '@/services/invoices.service';
 import { PAYMENT_METHODS } from '@/utils/constants';
 
@@ -55,7 +56,7 @@ export default function InvoicePaymentPanel({ invoice }) {
       qc.invalidateQueries(['invoice', invoice._id]);
       qc.invalidateQueries(['invoices']);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Payment failed'),
+    onError: (e) => showErrorToast(e, 'payment'),
   });
 
   const voidMutation = useMutation({
@@ -66,7 +67,7 @@ export default function InvoicePaymentPanel({ invoice }) {
       qc.invalidateQueries(['invoice', invoice._id]);
       qc.invalidateQueries(['invoices']);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Void failed'),
+    onError: (e) => showErrorToast(e, 'void'),
   });
 
   const handleSubmit = (e) => {
@@ -130,7 +131,7 @@ export default function InvoicePaymentPanel({ invoice }) {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[13px]">
                 <thead>
-                  <tr className="table-header">{['Booking', 'Freight', 'Remaining', 'Amount to Apply'].map(h => <th key={h}>{h}</th>)}</tr>
+                  <tr className="table-header">{['Booking', 'Freight', 'Remaining'].map(h => <th key={h}>{h}</th>)}<th>Amount to Apply <span className="text-red-400">*</span></th></tr>
                 </thead>
                 <tbody>
                   {(invoice.lineItems || []).map(li => {
@@ -160,12 +161,12 @@ export default function InvoicePaymentPanel({ invoice }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Payment Date</label>
+              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Payment Date <span className="text-red-400 normal-case">*</span></label>
               <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}
                 className="w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-teal-500" />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Method</label>
+              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Method <span className="text-red-400 normal-case">*</span></label>
               <select value={method} onChange={e => setMethod(e.target.value)}
                 className="w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500">
                 {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}

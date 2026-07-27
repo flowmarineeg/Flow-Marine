@@ -88,7 +88,7 @@ export default function DischargeListExportModal({ open, onClose, voyages = [], 
             <option value="">Select voyage…</option>
             {selectableVoyages.map(v => (
               <option key={v._id} value={v._id}>
-                {v.voyageNumber}
+                {v.voyageNumber} ({v.voyageName || 'unnamed'})
                 {v.polId?.name ? ` — ${v.polId.name}` : ''}
                 {v.podId?.name ? ` → ${v.podId.name}` : ''}
                 {` [${v.status}]`}

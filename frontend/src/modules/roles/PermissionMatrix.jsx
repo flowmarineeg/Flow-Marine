@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { rolesService, permissionsService } from '@/services/roles.service';
 import { MODULES } from '@/utils/constants';
 import Button from '@/components/ui/Button';
@@ -66,7 +67,7 @@ export default function PermissionMatrix({ roleId }) {
       await permissionsService.saveByRoleId(roleId, payload);
       toast.success('Permissions saved');
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Save failed');
+      showErrorToast(e, 'save');
     } finally {
       setSaving(false);
     }

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { roundsService } from '@/services/rounds.service';
 import { usePermission } from '@/context/PermissionContext';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -40,7 +41,7 @@ export default function RoundDetailPage({ roundId }) {
       qc.invalidateQueries(['round', roundId]);
       qc.invalidateQueries(['rounds']);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Update failed'),
+    onError: (e) => showErrorToast(e, 'update'),
   });
 
   if (isLoading) return <LoadingSpinner fullPage />;
@@ -70,7 +71,7 @@ export default function RoundDetailPage({ roundId }) {
           Rounds
         </button>
         <span className="text-gray-200">/</span>
-        <span className="mono text-sm font-bold text-gray-600">{round.roundNumber}</span>
+        <span className="mono text-sm font-bold text-gray-600">{round.roundNumber} <span className="font-normal text-gray-400">({round.roundName || '(unnamed)'})</span></span>
       </div>
 
       {/* Header card */}
@@ -90,6 +91,7 @@ export default function RoundDetailPage({ roundId }) {
                 <span className="mono text-lg font-bold text-gray-800">{round.roundNumber}</span>
                 <Badge label={round.status} />
               </div>
+              <p className="text-sm font-semibold text-gray-700 mb-0.5">{round.roundName || '(unnamed)'}</p>
               <p className="text-sm font-semibold text-gray-600 mb-0.5">
                 <span className="mono text-teal-600">{round.serviceId?.serviceCode}</span>
                 <span className="text-gray-400 mx-1.5">·</span>

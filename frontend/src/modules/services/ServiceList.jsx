@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { servicesService } from '@/services/services.service';
 import { usePermission } from '@/context/PermissionContext';
 import { SERVICE_STATUS } from '@/utils/constants';
@@ -42,7 +43,7 @@ export default function ServiceList() {
       qc.invalidateQueries(['services']);
       setDeleteTarget(null);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const services   = data?.data || [];

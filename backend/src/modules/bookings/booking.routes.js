@@ -25,6 +25,10 @@ router.delete('/manual/:id', rbac('bookings'), audit('bookings'),      manualCtr
 // ── Import routes — BEFORE /:id to avoid shadowing ───────────────────────────
 // Sprint019: preview + save both require 'import' action on bookings
 // save in finalLoading mode additionally requires 'update' + 'delete'
+// Sprint 042 — template-columns/template are read-only, same 'import' guard,
+// no audit() (nothing is mutated by downloading a blank template).
+router.get('/import/template-columns', rbac('bookings', 'import'), importCtrl.templateColumns);
+router.get('/import/template',         rbac('bookings', 'import'), importCtrl.downloadTemplate);
 router.post('/import/preview', rbac('bookings', 'import'), importCtrl.preview);
 router.post('/import/save',    rbac('bookings', 'import'), audit('bookings'), async (req, res, next) => {
   // Final Loading reconciliation cancels other bookings — requires update + delete

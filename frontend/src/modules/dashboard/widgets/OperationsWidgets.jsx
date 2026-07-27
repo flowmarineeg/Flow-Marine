@@ -121,7 +121,7 @@ export function FleetUtilisationWidget() {
                     <div className={`h-full rounded-full transition-all ${colorClasses.bar}`} style={{ width: `${pct}%` }} />
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-gray-500">
-                    <span className="mono font-semibold">{item.roundNumber}</span>
+                    <span className="mono font-semibold">{item.roundNumber} <span className="font-normal text-gray-400">({item.roundName || 'unnamed'})</span></span>
                     <span>{item.serviceCode}</span>
                     <span>
                       {fmtNum(item.peakOnboardTEU)}

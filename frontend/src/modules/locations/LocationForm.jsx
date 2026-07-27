@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { locationsService } from '@/services/locations.service';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
@@ -63,7 +64,7 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
   const mutation = useMutation({
     mutationFn: (data) => isEdit ? UPDATE_FN[level](item._id, data) : CREATE_FN[level](data),
     onSuccess:  () => { toast.success(`${level.charAt(0).toUpperCase() + level.slice(1)} ${isEdit ? 'updated' : 'created'}`); onSuccess?.(); },
-    onError:    (e) => toast.error(e.response?.data?.message || 'Operation failed'),
+    onError:    (e) => showErrorToast(e, isEdit ? 'update' : 'save'),
   });
 
   const onSubmit = (data) => {
@@ -136,7 +137,7 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
 
       {level === 'port' && (
         <Input
-          id="code" label="UNLOCODE (optional)"
+          id="code" label="UNLOCODE"
           placeholder="e.g. SAJED"
           error={errors.code?.message}
           {...register('code')}

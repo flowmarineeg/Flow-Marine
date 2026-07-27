@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { containerTypesService } from '@/services/containerTypes.service';
 import { CONTAINER_SIZES, CONTAINER_TYPES_LIST } from '@/utils/constants';
 import Input from '@/components/ui/Input';
@@ -29,7 +30,7 @@ export default function ContainerTypeForm({ item = null, onSuccess, onCancel }) 
       toast.success(isEdit ? 'Container type updated' : 'Container type created');
       onSuccess?.();
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Operation failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   return (

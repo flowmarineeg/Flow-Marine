@@ -267,6 +267,7 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
     return {
       voyageId:     v._id,
       voyageNumber: v.voyageNumber,
+      voyageName:   v.voyageName || null,
       polName,
       podName,
       etd: v.etd, eta: v.eta, atd: v.atd, ata: v.ata,
@@ -312,6 +313,7 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
     round: {
       _id:         round._id,
       roundNumber: round.roundNumber,
+      roundName:   round.roundName || null,
       status:      round.status,
       startDate:   round.startDate,
       endDate:     round.endDate,
@@ -386,7 +388,7 @@ const getVoyagePerformance = async ({
   if (dr) match.etd = dr;
 
   const voyages = await Voyage.find(match)
-    .populate('roundId',   'roundNumber')
+    .populate('roundId',   'roundNumber roundName')
     .populate('serviceId', 'serviceCode serviceName')
     .populate('polId',     'name')
     .populate('podId',     'name')
@@ -422,9 +424,11 @@ const getVoyagePerformance = async ({
     return {
       _id: v._id,
       voyageNumber: v.voyageNumber, status: v.status, etd: v.etd, eta: v.eta, sequence: v.sequence,
+      voyageName:   v.voyageName || null,
       polName:      v.polId?.name || '',
       podName:      v.podId?.name || '',
       roundNumber:  v.roundId?.roundNumber || '',
+      roundName:    v.roundId?.roundName || null,
       serviceCode:  v.serviceId?.serviceCode || '',
       serviceName:  v.serviceId?.serviceName || '',
       bookingCount: l2.bookingCount + l1.bookingCount,
@@ -479,13 +483,13 @@ const getBookingReport = async ({ voyageId, agentId, status, dateFrom, dateTo, s
 
   const [l2Docs, l1Docs] = await Promise.all([
     Booking.find(l2Match)
-      .populate('voyageId',        'voyageNumber')
+      .populate('voyageId',        'voyageNumber voyageName')
       .populate('agentId',         'agentCode agentName')
       .populate('containerTypeId', 'code size type')
       .sort({ createdAt: -1 })
       .lean(),
     ManualBooking.find(l1Match)
-      .populate('voyageId', 'voyageNumber')
+      .populate('voyageId', 'voyageNumber voyageName')
       .populate('agentId',  'agentCode agentName')
       .sort({ createdAt: -1 })
       .lean(),
@@ -629,8 +633,8 @@ const getExpenseReport = async ({ category, expenseTypeId, roundId, voyageId, po
 
   const rows = await Expense.find(match)
     .populate('expenseTypeId', 'name category')
-    .populate('roundId',       'roundNumber')
-    .populate('voyageId',      'voyageNumber')
+    .populate('roundId',       'roundNumber roundName')
+    .populate('voyageId',      'voyageNumber voyageName')
     .populate('agentId',       'agentCode agentName')
     .populate('portId',        'name code')
     .sort({ expenseDate: -1 })

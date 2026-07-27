@@ -94,6 +94,7 @@ function RoundsStatement({ rounds, router }) {
                   <path strokeLinecap="round" d="M9 5l7 7-7 7" />
                 </svg>
                 <span className="mono text-sm font-bold text-gray-700">{r.roundNumber}</span>
+                <span className="text-[11px] text-gray-400">{r.roundName || '(unnamed)'}</span>
                 <span className="text-[11px] text-gray-400">{r.voyages.length} voyage{r.voyages.length !== 1 ? 's' : ''}</span>
               </div>
               <MoneyStrip freight={r.totalFreight} paid={r.totalPaid} remaining={r.remaining} />
@@ -114,6 +115,7 @@ function RoundsStatement({ rounds, router }) {
                             <path strokeLinecap="round" d="M9 5l7 7-7 7" />
                           </svg>
                           <span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span>
+                          <span className="text-[10px] text-gray-400">{v.voyageName || '(unnamed)'}</span>
                           <span className="text-[10px] text-gray-400">{v.bookings.length} booking{v.bookings.length !== 1 ? 's' : ''}</span>
                         </div>
                         <MoneyStrip freight={v.totalFreight} paid={v.totalPaid} remaining={v.remaining} />
@@ -146,7 +148,7 @@ function RoundsStatement({ rounds, router }) {
 
 // ── Flat ledger tabs (Voyages / Bookings) ──────────────────────────────────
 function VoyagesLedger({ rounds }) {
-  const rows = rounds.flatMap(r => r.voyages.map(v => ({ ...v, roundNumber: r.roundNumber })));
+  const rows = rounds.flatMap(r => r.voyages.map(v => ({ ...v, roundNumber: r.roundNumber, roundName: r.roundName })));
   if (!rows.length) return <p className="text-sm text-gray-400 italic py-8 text-center">No voyages yet.</p>;
   return (
     <div className="card overflow-hidden">
@@ -158,8 +160,8 @@ function VoyagesLedger({ rounds }) {
           <tbody>
             {rows.map(v => (
               <tr key={v.voyageId} className="table-row">
-                <td className="mono text-xs font-semibold text-gray-600">{v.roundNumber}</td>
-                <td className="mono text-xs font-bold text-teal-600">{v.voyageNumber}</td>
+                <td className="mono text-xs font-semibold text-gray-600">{v.roundNumber}<p className="font-normal text-gray-400">{v.roundName || '(unnamed)'}</p></td>
+                <td className="mono text-xs font-bold text-teal-600">{v.voyageNumber}<p className="font-normal text-gray-400">{v.voyageName || '(unnamed)'}</p></td>
                 <td className="text-xs text-gray-600">{v.bookings.length}</td>
                 <td className="text-xs text-gray-700">{fmtMoney(v.totalFreight)}</td>
                 <td className="text-xs text-green-700">{fmtMoney(v.totalPaid)}</td>
@@ -174,7 +176,7 @@ function VoyagesLedger({ rounds }) {
 }
 
 function BookingsLedger({ rounds, router }) {
-  const rows = rounds.flatMap(r => r.voyages.flatMap(v => v.bookings.map(b => ({ ...b, roundNumber: r.roundNumber, voyageNumber: v.voyageNumber }))));
+  const rows = rounds.flatMap(r => r.voyages.flatMap(v => v.bookings.map(b => ({ ...b, roundNumber: r.roundNumber, roundName: r.roundName, voyageNumber: v.voyageNumber, voyageName: v.voyageName }))));
   if (!rows.length) return <p className="text-sm text-gray-400 italic py-8 text-center">No Final Loading bookings yet.</p>;
   return (
     <div className="card overflow-hidden">
@@ -188,8 +190,8 @@ function BookingsLedger({ rounds, router }) {
               <tr key={b.bookingId} className="table-row">
                 <td><span className="mono text-xs font-semibold text-teal-600">{b.bookingNumber}</span></td>
                 <td className="mono text-xs text-gray-600">{b.containerNumber || '—'}</td>
-                <td className="mono text-xs text-gray-500">{b.roundNumber}</td>
-                <td className="mono text-xs text-gray-500">{b.voyageNumber}</td>
+                <td className="mono text-xs text-gray-500">{b.roundNumber}<p className="text-[11px] text-gray-400">{b.roundName || '(unnamed)'}</p></td>
+                <td className="mono text-xs text-gray-500">{b.voyageNumber}<p className="text-[11px] text-gray-400">{b.voyageName || '(unnamed)'}</p></td>
                 <td className="text-xs text-gray-700">{fmtMoney(b.totalFreight)}</td>
                 <td><Badge label={b.invoiceStatus} /></td>
                 <td className="text-xs text-green-700">{fmtMoney(b.paidAmount)}</td>

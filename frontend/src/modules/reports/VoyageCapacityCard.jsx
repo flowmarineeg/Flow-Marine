@@ -41,6 +41,7 @@ export default function VoyageCapacityCard({ voyage: v, vesselName, vesselCapaci
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-gray-100">
         <div className="flex items-center gap-3">
           <span className="mono text-sm font-bold text-teal-700">{v.voyageNumber}</span>
+          <span className="text-xs text-gray-400">{v.voyageName || '(unnamed)'}</span>
           {v.isManual && <span className="text-[10px] font-semibold text-amber-500 uppercase">Manual</span>}
           <span className="text-xs text-gray-500">
             {v.fromPort?.name || v.fromPort?.code || '—'}

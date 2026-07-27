@@ -32,10 +32,10 @@ const deleteFile = (url) => {
 const pop = (q) =>
   q.populate('expenseTypeId', 'name category')
    .populate('agentId',       'agentCode agentName')
-   .populate('roundId',       'roundNumber')
+   .populate('roundId',       'roundNumber roundName')
    // roundId included here (Sprint 036) so ExpenseForm.jsx can preselect
    // the Round → Voyage cascade on edit, same pattern as BookingForm.jsx.
-   .populate('voyageId',      'voyageNumber roundId')
+   .populate('voyageId',      'voyageNumber voyageName roundId')
    .populate('portId',        'name code');
 
 // ─── List ─────────────────────────────────────────────────────────────────────

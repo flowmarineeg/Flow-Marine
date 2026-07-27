@@ -100,6 +100,7 @@ const COLUMNS = {
   ],
   rounds: [
     { header: 'Round Number',  key: 'roundNumber',  width: 16 },
+    { header: 'Round Name',    key: 'roundName',    width: 22 },
     { header: 'Service Code',  key: 'serviceCode',  width: 15 },
     { header: 'Service Name',  key: 'serviceName',  width: 28 },
     { header: 'Vessel Code',   key: 'vesselCode',   width: 14 },
@@ -112,7 +113,9 @@ const COLUMNS = {
   ],
   voyages: [
     { header: 'Voyage Number', key: 'voyageNumber', width: 22 },
+    { header: 'Voyage Name',   key: 'voyageName',   width: 22 },
     { header: 'Round Number',  key: 'roundNumber',  width: 16 },
+    { header: 'Round Name',    key: 'roundName',    width: 22 },
     { header: 'Service Code',  key: 'serviceCode',  width: 15 },
     { header: 'POL',           key: 'polName',      width: 20 },
     { header: 'POD',           key: 'podName',      width: 20 },
@@ -130,6 +133,7 @@ const COLUMNS = {
     { header: 'Booking Number',    key: 'bookingNumber',    width: 18 },
     { header: 'Container Number',  key: 'containerNumber',  width: 20 },
     { header: 'Voyage Number',     key: 'voyageNumber',     width: 22 },
+    { header: 'Voyage Name',       key: 'voyageName',       width: 22 },
     { header: 'Agent Code',        key: 'agentCode',        width: 14 },
     { header: 'Agent Name',        key: 'agentName',        width: 22 },
     { header: 'Carrier Name',      key: 'carrierName',      width: 22 },
@@ -156,6 +160,7 @@ const COLUMNS = {
   manualBookings: [
     { header: 'Booking Number',  key: 'bookingNumber', width: 18 },
     { header: 'Voyage Number',   key: 'voyageNumber',  width: 22 },
+    { header: 'Voyage Name',     key: 'voyageName',    width: 22 },
     { header: 'Agent Code',      key: 'agentCode',     width: 14 },
     { header: 'Agent Name',      key: 'agentName',     width: 22 },
     { header: 'POL',             key: 'polName',       width: 18 },
@@ -173,7 +178,9 @@ const COLUMNS = {
     { header: 'Category',        key: 'category',        width: 20 },
     { header: 'Scope',           key: 'scope',           width: 12 },
     { header: 'Round Number',    key: 'roundNumber',     width: 16 },
+    { header: 'Round Name',      key: 'roundName',       width: 22 },
     { header: 'Voyage Number',   key: 'voyageNumber',    width: 22 },
+    { header: 'Voyage Name',     key: 'voyageName',      width: 22 },
     { header: 'Port',            key: 'portName',        width: 18 },
     { header: 'Agent',           key: 'agentName',       width: 20 },
     { header: 'Amount',          key: 'amount',          width: 14 },
@@ -201,7 +208,9 @@ const COLUMNS = {
   tracking: [
     { header: 'Last Update',    key: 'lastUpdate',   width: 20 },
     { header: 'Voyage Number',  key: 'voyageNumber', width: 22 },
+    { header: 'Voyage Name',    key: 'voyageName',   width: 22 },
     { header: 'Round Number',   key: 'roundNumber',  width: 16 },
+    { header: 'Round Name',     key: 'roundName',    width: 22 },
     { header: 'Vessel Code',    key: 'vesselCode',   width: 14 },
     { header: 'Vessel Name',    key: 'vesselName',   width: 22 },
     { header: 'Service Code',   key: 'serviceCode',  width: 15 },
@@ -424,6 +433,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
         .sort({ createdAt: -1 }).lean();
       return rows.map(r => ({
         roundNumber:  r.roundNumber,
+        roundName:    r.roundName || '',
         serviceCode:  r.serviceId?.serviceCode || '',
         serviceName:  r.serviceId?.serviceName || '',
         vesselCode:   r.vesselId?.vesselCode   || '',
@@ -442,14 +452,16 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       if (filters.status)    q.status    = filters.status;
       if (filters.serviceId) q.serviceId = filters.serviceId;
       const rows = await Voyage.find(q)
-        .populate('roundId',   'roundNumber')
+        .populate('roundId',   'roundNumber roundName')
         .populate('serviceId', 'serviceCode')
         .populate('polId',     'name code')
         .populate('podId',     'name code')
         .sort({ etd: 1 }).lean();
       return rows.map(r => ({
         voyageNumber: r.voyageNumber,
+        voyageName:   r.voyageName || '',
         roundNumber:  r.roundId?.roundNumber  || '',
+        roundName:    r.roundId?.roundName    || '',
         serviceCode:  r.serviceId?.serviceCode || '',
         polName:      r.polId?.name || '',
         podName:      r.podId?.name || '',
@@ -472,7 +484,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       if (filters.voyageId) q.voyageId = filters.voyageId;
       if (filters.agentId)  q.agentId  = filters.agentId;
       const rows = await Booking.find(q)
-        .populate('voyageId',        'voyageNumber')
+        .populate('voyageId',        'voyageNumber voyageName')
         .populate('agentId',         'agentCode agentName')
         .populate('polId',           'name')
         .populate('podId',           'name')
@@ -482,6 +494,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
         bookingNumber:    r.bookingNumber,
         containerNumber:  r.containerNumber           || '',
         voyageNumber:     r.voyageId?.voyageNumber    || '',
+        voyageName:       r.voyageId?.voyageName      || '',
         agentCode:        r.agentId?.agentCode        || '',
         agentName:        r.agentId?.agentName        || '',
         carrierName:      r.carrierName               || '',
@@ -512,7 +525,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       if (filters.voyageId) q.voyageId = filters.voyageId;
       if (filters.agentId)  q.agentId  = filters.agentId;
       const rows = await ManualBooking.find(q)
-        .populate('voyageId', 'voyageNumber')
+        .populate('voyageId', 'voyageNumber voyageName')
         .populate('agentId',  'agentCode agentName')
         .populate('polId',    'name')
         .populate('podId',    'name')
@@ -520,6 +533,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       return rows.map(r => ({
         bookingNumber: r.bookingNumber,
         voyageNumber:  r.voyageId?.voyageNumber || '',
+        voyageName:    r.voyageId?.voyageName   || '',
         agentCode:     r.agentId?.agentCode     || '',
         agentName:     r.agentId?.agentName     || '',
         polName:       r.polId?.name            || '',
@@ -543,8 +557,8 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       if (dr) q.expenseDate = dr;
       const rows = await Expense.find(q)
         .populate('expenseTypeId', 'name category')
-        .populate('roundId',       'roundNumber')
-        .populate('voyageId',      'voyageNumber')
+        .populate('roundId',       'roundNumber roundName')
+        .populate('voyageId',      'voyageNumber voyageName')
         .populate('agentId',       'agentCode agentName')
         .populate('portId',        'name code')
         .sort({ expenseDate: -1 }).lean();
@@ -554,7 +568,9 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
         category:        r.expenseTypeId?.category || '',
         scope:           deriveScope(r),
         roundNumber:     r.roundId?.roundNumber    || '',
+        roundName:       r.roundId?.roundName      || '',
         voyageNumber:    r.voyageId?.voyageNumber  || '',
+        voyageName:      r.voyageId?.voyageName    || '',
         portName:        r.portId?.name || r.port  || '',
         agentName:       r.agentId?.agentName      || '',
         amount:          r.amount,
@@ -600,8 +616,8 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       const q = { ...idFilter };
       if (filters.voyageId) q.voyageId = filters.voyageId;
       const rows = await TH.find(q)
-        .populate('voyageId',   'voyageNumber')
-        .populate('roundId',    'roundNumber')
+        .populate('voyageId',   'voyageNumber voyageName')
+        .populate('roundId',    'roundNumber roundName')
         .populate('vesselId',   'vesselCode vesselName')
         .populate('serviceId',  'serviceCode')
         .populate('portId',     'name')
@@ -611,7 +627,9 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       return rows.map(r => ({
         lastUpdate:   fmtD(r.lastUpdate),
         voyageNumber: r.voyageId?.voyageNumber   || '',
+        voyageName:   r.voyageId?.voyageName     || '',
         roundNumber:  r.roundId?.roundNumber     || '',
+        roundName:    r.roundId?.roundName       || '',
         vesselCode:   r.vesselId?.vesselCode     || '',
         vesselName:   r.vesselId?.vesselName     || '',
         serviceCode:  r.serviceId?.serviceCode   || '',

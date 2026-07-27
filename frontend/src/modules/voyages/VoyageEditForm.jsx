@@ -3,6 +3,7 @@
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { voyagesService } from '@/services/voyages.service';
 import { VOYAGE_STATUS } from '@/utils/constants';
 
@@ -35,13 +36,14 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
       ata:        toInputDate(voyage.ata),
       status:     voyage.status,
       voyageCode: voyage.voyageCode || '',
+      voyageName: voyage.voyageName || '',
     },
   });
 
   const mutation = useMutation({
     mutationFn: (data) => voyagesService.update(voyage._id, data),
     onSuccess:  () => { toast.success('Voyage updated'); onSuccess?.(); },
-    onError:    (e) => toast.error(e.response?.data?.message || 'Update failed'),
+    onError:    (e) => showErrorToast(e, 'update'),
   });
 
   return (
@@ -52,11 +54,11 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
         <div className="grid grid-cols-2 gap-3 text-sm mb-3">
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Voyage No</p>
-            <p className="mono font-bold text-gray-700">{voyage.voyageNumber}</p>
+            <p className="mono font-bold text-gray-700">{voyage.voyageNumber} <span className="font-normal text-gray-400">({voyage.voyageName || '(unnamed)'})</span></p>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Round</p>
-            <p className="mono font-semibold text-teal-600">{voyage.roundId?.roundNumber || '—'}</p>
+            <p className="mono font-semibold text-teal-600">{voyage.roundId?.roundNumber || '—'} <span className="font-normal text-teal-500">({voyage.roundId?.roundName || '(unnamed)'})</span></p>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Port of Loading</p>
@@ -99,17 +101,26 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
         )}
       </div>
 
-      {/* Voyage Code */}
-      <div>
-        <label className={lc}>
-          Voyage Code
-          <span className="ml-1.5 text-gray-300 font-normal normal-case text-[10px]">(optional)</span>
-        </label>
-        <input
-          {...register('voyageCode')}
-          placeholder="e.g. V2025-001"
-          className={ic(false)}
-        />
+      {/* Voyage Name + Code */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={lc}>Voyage Name</label>
+          <input
+            {...register('voyageName')}
+            placeholder="e.g. Jeddah Coffee Leg"
+            className={ic(false)}
+          />
+        </div>
+        <div>
+          <label className={lc}>
+            Voyage Code
+          </label>
+          <input
+            {...register('voyageCode')}
+            placeholder="e.g. V2025-001"
+            className={ic(false)}
+          />
+        </div>
       </div>
 
       {/* ETD / ETA */}

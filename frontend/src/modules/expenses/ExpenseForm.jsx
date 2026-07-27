@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { expensesService }    from '@/services/expenses.service';
 import { expenseTypesService } from '@/services/expenseTypes.service';
 import { agentsService }       from '@/services/agents.service';
@@ -104,7 +105,7 @@ export default function ExpenseForm({ item }) {
       qc.invalidateQueries(['expenses']);
       router.push('/expenses');
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   const onSubmit = (data) => {
@@ -164,7 +165,7 @@ export default function ExpenseForm({ item }) {
             <label className={lc}>Round <span className="text-red-400">*</span></label>
             <select {...register('roundId', { required: linkType === 'round' ? 'Round is required' : false })} className={`${ic(errors.roundId)} cursor-pointer`}>
               <option value="">Select round…</option>
-              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
             </select>
             {errors.roundId && <p className={ec}>{errors.roundId.message}</p>}
           </div>
@@ -180,7 +181,7 @@ export default function ExpenseForm({ item }) {
                 className={`${ic(!cascadeRoundId)} cursor-pointer`}
               >
                 <option value="">Select round…</option>
-                {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+                {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
               </select>
               {!cascadeRoundId && <p className={ec}>Select a Round to narrow the Voyage list</p>}
             </div>
@@ -192,7 +193,7 @@ export default function ExpenseForm({ item }) {
                 className={`${ic(errors.voyageId)} cursor-pointer disabled:opacity-50`}
               >
                 <option value="">Select voyage…</option>
-                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
               </select>
               {errors.voyageId && <p className={ec}>{errors.voyageId.message}</p>}
             </div>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { usersService } from '@/services/users.service';
 import { usePermission } from '@/context/PermissionContext';
 import PageHeader from '@/components/ui/PageHeader';
@@ -37,13 +38,13 @@ export default function UserList() {
   const deleteMutation = useMutation({
     mutationFn: (id) => usersService.remove(id),
     onSuccess: () => { toast.success('User deleted'); qc.invalidateQueries(['users']); setDeleteTarget(null); },
-    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const resendMutation = useMutation({
     mutationFn: (id) => usersService.resendInvite(id),
     onSuccess: () => { toast.success('Invitation resent'); setResendTarget(null); },
-    onError: (e) => toast.error(e.response?.data?.message || 'Failed to resend'),
+    onError: (e) => showErrorToast(e, 'send'),
   });
 
   const users = data?.data || [];

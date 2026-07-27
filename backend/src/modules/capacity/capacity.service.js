@@ -284,6 +284,7 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
         message:      `Voyage ${v.voyageNumber} overbooked by ${Math.abs(remainingTEU)} TEU`,
         voyageId:     v._id,
         voyageNumber: v.voyageNumber,
+        voyageName:   v.voyageName || null,
         over:         Math.abs(remainingTEU),
       });
     }
@@ -291,6 +292,7 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     voyageRows.push({
       voyageId:      v._id,
       voyageNumber:  v.voyageNumber,
+      voyageName:    v.voyageName || null,
       sequence:      v.sequence,
       isManual:      v.isManual || false,
       fromPort: {
@@ -362,6 +364,7 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     round: {
       _id:         round._id,
       roundNumber: round.roundNumber,
+      roundName:   round.roundName || null,
       status:      round.status,
       startDate:   round.startDate,
       endDate:     round.endDate,
@@ -468,6 +471,7 @@ const computeVoyagePreview = async (roundId, voyageId, containerTypeId, podId = 
           voyage: {
             voyageId:        bottleneckVoyage.voyageId,
             voyageNumber:    bottleneckVoyage.voyageNumber,
+            voyageName:      bottleneckVoyage.voyageName || null,
             onboardBefore:   bottleneckVoyage.onboardTEU,
             onboardAfter,
             remainingAfter,
@@ -493,6 +497,7 @@ const computeVoyagePreview = async (roundId, voyageId, containerTypeId, podId = 
     voyage: {
       voyageId:        voyageRow.voyageId,
       voyageNumber:    voyageRow.voyageNumber,
+      voyageName:      voyageRow.voyageName || null,
       onboardBefore:   voyageRow.onboardTEU,
       onboardAfter,
       remainingAfter,

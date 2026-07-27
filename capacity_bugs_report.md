@@ -3,6 +3,22 @@
 **Date:** 2026-07-21
 **Status:** Post-verification — All items classified
 
+> **STATUS NOTE (current through Sprint 041):** this audit predates Sprints
+> 028-041. **BUG-004** (computeVoyagePreview only checking the load voyage)
+> is CONFIRMED FIXED — it is exactly the issue Sprint 028 ("Capacity Engine
+> Multi-Voyage Transit Fix, BUG-004 REVISION 3") resolved via the
+> forward-walking `resolveDischargeIdx()`, documented in claude.md's
+> "Capacity Engine — Multi-Voyage Transit Fix (Sprint 028)" section. The
+> Capacity Engine's round-voyage-set resolution (relevant to BUG-002/
+> BUG-006/BUG-010's neighborhood) was separately re-examined by Sprint 037,
+> which confirmed `round.voyageIds` is still trusted and currently correct
+> (not the same finding as this file's BUG items, but adjacent — see
+> claude.md's Sprint 037 section). **The remaining items (BUG-001,
+> BUG-002, BUG-003, BUG-005 through BUG-019) were NOT re-verified against
+> the current codebase as part of this documentation pass** — treat them
+> as unconfirmed-current-status until someone re-audits `capacity.service.js`
+> against this list specifically.
+
 ---
 
 ## Classification Legend

@@ -28,7 +28,7 @@ const validateTransition = (current, next) => {
 
 // ── Populate helper ───────────────────────────────────────────────────────────
 const populate = (q) =>
-  q.populate('voyageId', 'voyageNumber roundId polId podId etd eta status')
+  q.populate('voyageId', 'voyageNumber voyageName roundId polId podId etd eta status')
    .populate('agentId',  'agentCode agentName')
    .populate('polId',    'name code')
    .populate('podId',    'name code')

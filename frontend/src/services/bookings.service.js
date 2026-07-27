@@ -12,6 +12,9 @@ export const bookingsService = {
   // Import
   importPreview:   (data)        => api.post(`${BASE}/import/preview`, data),
   importSave:      (data)        => api.post(`${BASE}/import/save`, data),
+  // Sprint 042 — import template (backend-generated, ExcelJS, colored headers)
+  importTemplateColumns: ()      => api.get(`${BASE}/import/template-columns`),
+  downloadImportTemplate: ()     => api.get(`${BASE}/import/template`, { responseType: 'blob' }),
   // Layer 1 — Manual Bookings (Sprint 023)
   listManual:      (params)      => api.get(`${BASE}/manual`, { params }),
   getManualById:   (id)          => api.get(`${BASE}/manual/${id}`),

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
 import { voyagesService }   from '@/services/voyages.service';
 import { agentsService }    from '@/services/agents.service';
@@ -31,7 +32,7 @@ export default function BookingList() {
   const qc      = useQueryClient();
   const { can } = usePermission();
 
-  const [activeTab,    setActiveTab]    = useState('detail');
+  const [activeTab,    setActiveTab]    = useState('manual');
   const [page,         setPage]         = useState(1);
   const [search,       setSearch]       = useState('');
   const [status,       setStatus]       = useState('');
@@ -94,13 +95,13 @@ export default function BookingList() {
   const deleteMutation = useMutation({
     mutationFn: (id) => bookingsService.remove(id),
     onSuccess: () => { toast.success('Booking deleted'); qc.invalidateQueries(['bookings']); setDeleteTarget(null); setSelected([]); },
-    onError:   (e)  => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError:   (e)  => showErrorToast(e, 'delete'),
   });
 
   const manualDeleteMutation = useMutation({
     mutationFn: (id) => bookingsService.removeManual(id),
-    onSuccess: () => { toast.success('Manual booking deleted'); qc.invalidateQueries(['manual-bookings']); setManualDeleteTarget(null); },
-    onError:   (e)  => toast.error(e.response?.data?.message || 'Delete failed'),
+    onSuccess: () => { toast.success('Estimated booking deleted'); qc.invalidateQueries(['manual-bookings']); setManualDeleteTarget(null); },
+    onError:   (e)  => showErrorToast(e, 'delete'),
   });
 
   const bookings   = data?.data || [];
@@ -130,10 +131,10 @@ export default function BookingList() {
                 <Button
                   variant="secondary"
                   onClick={() => router.push('/bookings/new-manual')}
-                  title="New Manual Booking"
+                  title="New Estimated Booking"
                   className="ml-1"
                 >
-                  + Manual
+                  + Estimated
                 </Button>
               </div>
             </div>
@@ -144,8 +145,8 @@ export default function BookingList() {
       {/* ── Tab strip ──────────────────────────────────────────────── */}
       <div className="flex border-b border-gray-200 mb-4">
         {[
+          { key: 'manual', label: 'Estimated Bookings' },
           { key: 'detail', label: 'Operational Bookings' },
-          { key: 'manual', label: 'Manual Bookings' },
         ].map(t => (
           <button
             key={t.key}
@@ -169,11 +170,11 @@ export default function BookingList() {
           </div>
           <select value={roundId} onChange={e => { setRoundId(e.target.value); setVoyageId(''); setPage(1); }} className={sc}>
             <option value="">All Rounds</option>
-            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
           </select>
           <select value={voyageId} onChange={e => { setVoyageId(e.target.value); setPage(1); }} disabled={!roundId} className={`${sc} disabled:opacity-50`}>
             <option value="">{roundId ? 'All Voyages' : 'Select a round first'}</option>
-            {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+            {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
           </select>
           <select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} className={sc}>
             <option value="">All Agents</option>
@@ -227,7 +228,7 @@ export default function BookingList() {
                           {b.bookingNumber}
                         </button>
                       </td>
-                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{b.voyageId?.voyageNumber}</span></td>
+                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{b.voyageId?.voyageNumber}</span><p className="text-[11px] text-gray-400">{b.voyageId?.voyageName || '(unnamed)'}</p></td>
                       <td><span className="text-xs text-gray-600">{b.agentId?.agentName}</span></td>
                       <td>
                         <p className="text-xs font-medium text-gray-700 truncate max-w-[140px]">{b.shipper || '—'}</p>
@@ -281,11 +282,11 @@ export default function BookingList() {
           </div>
           <select value={manualRoundId} onChange={e => { setManualRoundId(e.target.value); setManualVoyageId(''); setManualPage(1); }} className={sc}>
             <option value="">All Rounds</option>
-            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
           </select>
           <select value={manualVoyageId} onChange={e => { setManualVoyageId(e.target.value); setManualPage(1); }} disabled={!manualRoundId} className={`${sc} disabled:opacity-50`}>
             <option value="">{manualRoundId ? 'All Voyages' : 'Select a round first'}</option>
-            {manualVoyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+            {manualVoyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
           </select>
           <select value={manualAgentId} onChange={e => { setManualAgentId(e.target.value); setManualPage(1); }} className={sc}>
             <option value="">All Agents</option>
@@ -302,7 +303,7 @@ export default function BookingList() {
           {manualLoading ? (
             <LoadingSpinner fullPage />
           ) : !manualData?.data?.length ? (
-            <EmptyState title="No manual bookings found" message="Create a manual booking to record commercial cargo reservations before container numbers are available." />
+            <EmptyState title="No estimated bookings found" message="Create an estimated booking to record commercial cargo reservations before container numbers are available." />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse" style={{ minWidth: 700 }}>
@@ -319,7 +320,7 @@ export default function BookingList() {
                           {m.bookingNumber}
                         </button>
                       </td>
-                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{m.voyageId?.voyageNumber}</span></td>
+                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{m.voyageId?.voyageNumber}</span><p className="text-[11px] text-gray-400">{m.voyageId?.voyageName || '(unnamed)'}</p></td>
                       <td><span className="text-xs text-gray-600">{m.agentId?.agentName}</span></td>
                       <td className="text-xs text-gray-600 whitespace-nowrap">
                         {m.polId?.code || m.polId?.name || '—'} → {m.podId?.code || m.podId?.name || '—'}
@@ -346,7 +347,7 @@ export default function BookingList() {
 
         {manualData?.pagination?.total > 0 && (
           <div className="flex items-center justify-between mt-4">
-            <p className="text-xs text-gray-400">{manualData.pagination.total} manual booking{manualData.pagination.total !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-400">{manualData.pagination.total} estimated booking{manualData.pagination.total !== 1 ? 's' : ''}</p>
             <Pagination page={manualData.pagination.page} totalPages={manualData.pagination.totalPages} onPageChange={setManualPage} />
           </div>
         )}
@@ -379,8 +380,8 @@ export default function BookingList() {
         onClose={() => setManualDeleteTarget(null)}
         onConfirm={() => manualDeleteMutation.mutate(manualDeleteTarget._id)}
         loading={manualDeleteMutation.isPending}
-        title="Delete Manual Booking"
-        message={`Delete manual booking "${manualDeleteTarget?.bookingNumber}"? This is permanent.`}
+        title="Delete Estimated Booking"
+        message={`Delete estimated booking "${manualDeleteTarget?.bookingNumber}"? This is permanent.`}
       />
 
       {/* Sprint 027 — Discharge List export modal */}

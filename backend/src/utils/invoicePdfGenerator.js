@@ -135,8 +135,10 @@ const generateInvoicePdf = (invoice) => {
   // summarizes the scope (one voyage/round, N bookings).
   const polName  = first.polName  || '--';
   const podName  = first.podName  || '--';
-  const voyNum   = invType === 'Voyage' ? first.voyageNumber : (lineItems.length === 1 ? first.voyageNumber : '--');
-  const roundNum = invType === 'Round'  ? first.roundNumber  : (lineItems.length === 1 ? first.roundNumber  : '--');
+  const voyNumRaw   = invType === 'Voyage' ? first.voyageNumber : (lineItems.length === 1 ? first.voyageNumber : null);
+  const roundNumRaw = invType === 'Round'  ? first.roundNumber  : (lineItems.length === 1 ? first.roundNumber  : null);
+  const voyNum   = voyNumRaw   ? `${voyNumRaw} — ${first.voyageName || '(unnamed)'}`   : '--';
+  const roundNum = roundNumRaw ? `${roundNumRaw} — ${first.roundName || '(unnamed)'}` : '--';
   const bkNum    = lineItems.length === 1 ? first.bookingNumber : `${lineItems.length} bookings`;
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -266,8 +268,10 @@ const generateInvoicePdf = (invoice) => {
     t(doc, li.bookingNumber || '--',   TC[1].x + TP, y + 5,  { font: 'Helvetica-Bold', size: 8, color: C.black, width: TC[1].w - TP*2 });
     t(doc, li.containerNumber || '--', TC[1].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[1].w - TP*2 });
 
-    t(doc, li.voyageNumber || '--', TC[2].x + TP, y + 5,  { size: 8, color: C.dark, width: TC[2].w - TP*2 });
-    t(doc, li.roundNumber  || '--', TC[2].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[2].w - TP*2 });
+    const liVoyage = li.voyageNumber ? `${li.voyageNumber} (${li.voyageName || '(unnamed)'})` : '--';
+    const liRound  = li.roundNumber  ? `${li.roundNumber} (${li.roundName || '(unnamed)'})`  : '--';
+    t(doc, liVoyage, TC[2].x + TP, y + 5,  { size: 8, color: C.dark, width: TC[2].w - TP*2 });
+    t(doc, liRound,  TC[2].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[2].w - TP*2 });
 
     t(doc, li.shipper || '--',            TC[3].x + TP, y + 5,  { size: 8, color: C.dark,  width: TC[3].w - TP*2 });
     t(doc, `> ${li.consignee || '--'}`,   TC[3].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[3].w - TP*2 });

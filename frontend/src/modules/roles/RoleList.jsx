@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { rolesService } from '@/services/roles.service';
 import { usePermission } from '@/context/PermissionContext';
 import PageHeader from '@/components/ui/PageHeader';
@@ -33,13 +34,13 @@ export default function RoleList() {
   const saveMutation = useMutation({
     mutationFn: (d) => modal?.edit ? rolesService.update(modal.edit._id, d) : rolesService.create(d),
     onSuccess:  () => { toast.success(modal?.edit ? 'Role updated' : 'Role created'); qc.invalidateQueries(['roles']); setModal(null); },
-    onError:    (e) => toast.error(e.response?.data?.message || 'Operation failed'),
+    onError:    (e) => showErrorToast(e, modal?.edit ? 'update' : 'save'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => rolesService.remove(id),
     onSuccess:  () => { toast.success('Role deleted'); qc.invalidateQueries(['roles']); setDeleteTarget(null); },
-    onError:    (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError:    (e) => showErrorToast(e, 'delete'),
   });
 
   const openCreate = () => { reset({ name: '', description: '' }); setModal('create'); };

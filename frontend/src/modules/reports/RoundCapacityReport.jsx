@@ -60,7 +60,7 @@ export default function RoundCapacityReport() {
               <option value="">Select a round...</option>
               {rounds.map(r => (
                 <option key={r._id} value={r._id}>
-                  {r.roundNumber} — {r.serviceId?.serviceCode || 'No service'} ({r.status})
+                  {r.roundNumber} ({r.roundName || 'unnamed'}) — {r.serviceId?.serviceCode || 'No service'} ({r.status})
                 </option>
               ))}
             </select>
@@ -87,7 +87,10 @@ export default function RoundCapacityReport() {
             <ReportStatCard
               label="Peak Onboard"
               value={`${fmt(raw.totals?.peakOnboardTEU)} TEU`}
-              sub={`Voyage ${raw.voyages?.find(v => String(v.voyageId) === String(raw.totals?.peakVoyageId))?.voyageNumber ?? '—'}`}
+              sub={(() => {
+                const pv = raw.voyages?.find(v => String(v.voyageId) === String(raw.totals?.peakVoyageId));
+                return pv ? `Voyage ${pv.voyageNumber} (${pv.voyageName || 'unnamed'})` : 'Voyage —';
+              })()}
               accent
             />
             <ReportStatCard
@@ -130,7 +133,7 @@ export default function RoundCapacityReport() {
           {/* Round + vessel metadata */}
           <div className="card p-5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-[12px]">
             {[
-              { label: 'Round',    val: raw.round?.roundNumber },
+              { label: 'Round',    val: raw.round?.roundNumber ? `${raw.round.roundNumber} (${raw.round.roundName || 'unnamed'})` : '—' },
               { label: 'Service',  val: raw.service?.serviceCode + (raw.service?.serviceName ? ` — ${raw.service.serviceName}` : '') },
               { label: 'Vessel',   val: raw.vessel?.vesselCode + (raw.vessel?.vesselName ? ` / ${raw.vessel.vesselName}` : '') },
               { label: 'Status',   val: raw.round?.status },

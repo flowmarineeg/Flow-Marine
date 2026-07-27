@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { usePermission } from '@/context/PermissionContext';
 import SearchBar from '@/components/ui/SearchBar';
 import Select from '@/components/ui/Select';
@@ -36,7 +37,7 @@ export default function LocationLevelTable({
   const deleteMutation = useMutation({
     mutationFn: (id) => removeFn(id),
     onSuccess:  () => { toast.success('Deleted successfully'); qc.invalidateQueries([queryKey]); setDeleteTarget(null); },
-    onError:    (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError:    (e) => showErrorToast(e, 'delete'),
   });
 
   const items = data || [];

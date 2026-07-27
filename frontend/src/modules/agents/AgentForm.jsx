@@ -5,6 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { agentsService } from '@/services/agents.service';
 import { AGENT_STATUS } from '@/utils/constants';
 import Button from '@/components/ui/Button';
@@ -65,7 +66,7 @@ export default function AgentForm({ id = null }) {
       return isEdit ? agentsService.update(id, payload) : agentsService.create(payload);
     },
     onSuccess: () => { toast.success(isEdit ? 'Agent updated' : 'Agent created'); router.push('/agents'); },
-    onError:   (e) => toast.error(e.response?.data?.message || 'Operation failed'),
+    onError:   (e) => showErrorToast(e, isEdit ? 'update' : 'save'),
   });
 
   if (isEdit && isLoading) return <LoadingSpinner fullPage />;
@@ -86,7 +87,6 @@ export default function AgentForm({ id = null }) {
             <div>
               <label className={lc}>
                 Agent Code
-                <span className="ml-1.5 text-gray-300 font-normal normal-case text-[10px]">(optional)</span>
               </label>
               <input
                 {...register('agentCode')}

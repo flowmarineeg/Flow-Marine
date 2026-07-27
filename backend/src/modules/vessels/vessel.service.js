@@ -231,7 +231,7 @@ const getVesselStats = async (id) => {
   const recentTracking = await TrackingHistory.find({ vesselId: id })
     .populate('portId',    'name code')
     .populate('terminalId','name')
-    .populate('voyageId',  'voyageNumber')
+    .populate('voyageId',  'voyageNumber voyageName')
     .populate('serviceId', 'serviceCode')
     .sort({ lastUpdate: -1 })
     .limit(10)

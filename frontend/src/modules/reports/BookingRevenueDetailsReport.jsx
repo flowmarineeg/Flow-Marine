@@ -68,14 +68,14 @@ export default function BookingRevenueDetailsReport() {
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Round</p>
             <select value={roundId} onChange={e => { setRoundId(e.target.value); setVoyageId(''); }} className={rsc}>
               <option value="">All Rounds</option>
-              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
             </select>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Voyage</p>
             <select value={voyageId} onChange={e => setVoyageId(e.target.value)} disabled={!roundId} className={`${rsc} disabled:opacity-50`}>
               <option value="">All Voyages</option>
-              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
             </select>
           </div>
           <div>

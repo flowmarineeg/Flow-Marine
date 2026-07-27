@@ -53,7 +53,7 @@ export default function BookingReport() {
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Voyage</p>
             <select value={filters.voyageId} onChange={e => set('voyageId', e.target.value)} className={rsc}>
               <option value="">All Voyages</option>
-              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
             </select>
           </div>
           <div>
@@ -120,7 +120,7 @@ export default function BookingReport() {
                         {b.bookingNumber}
                       </span>
                     </td>
-                    <td><span className="mono text-xs text-gray-500">{b.voyageId?.voyageNumber}</span></td>
+                    <td><span className="mono text-xs text-gray-500">{b.voyageId?.voyageNumber}</span><p className="text-[11px] text-gray-400">{b.voyageId?.voyageName || '(unnamed)'}</p></td>
                     <td className="text-xs text-gray-500">{b.agentId?.agentName}</td>
                     <td className="text-xs text-gray-700 max-w-[120px] truncate">{b.shipper || '—'}</td>
                     <td className="text-xs text-gray-500 max-w-[120px] truncate">{b.consignee || '—'}</td>

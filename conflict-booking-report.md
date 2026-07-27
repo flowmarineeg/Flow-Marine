@@ -3,6 +3,19 @@
 Status: **ANALYSIS ONLY — no code changed.** Awaiting approval before any
 solution is proposed or implemented.
 
+> **STATUS NOTE (current through Sprint 041): the direction this analysis
+> pointed to was implemented.** Sprint 030 ("Booking POL/POD Server-Derived
+> + Round→Voyage Cascading Filters") made POL/POD always server-derived
+> from the selected Voyage (never client-editable), and Sprint 031
+> ("Layer 2 Import Redesign: Round-Scoped Multi-Voyage Resolution") moved
+> Import specifically from a single file-wide Voyage selector to
+> Round-scoped, per-row voyage resolution — closing the exact "Voyage
+> selector functions as a Round selector while validated as a segment
+> selector" gap this document's Summary describes. See claude.md's Sprint
+> 030/031 sections for the shipped design (which differs in some
+> specifics from this document's §5-§6 sketch, since those were
+> explicitly non-binding per this file's own "no solution proposed" scope).
+
 Scope: Layer 2 (Operational Booking), Layer 1 (Manual Booking), Booking
 Import, Final Loading Import. Booking selection workflow only — capacity
 engine internals are referenced only where they consume `voyageId`/`polId`/

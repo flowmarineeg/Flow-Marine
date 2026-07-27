@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { expensesService }    from '@/services/expenses.service';
 import { expenseTypesService } from '@/services/expenseTypes.service';
 import { usePermission }       from '@/context/PermissionContext';
@@ -52,7 +53,7 @@ export default function ExpenseList() {
       qc.invalidateQueries(['expenses']);
       setDeleteTarget(null);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const expenses   = data?.data || [];
@@ -125,8 +126,8 @@ export default function ExpenseList() {
                       </span>
                     </td>
                     <td>
-                      {exp.roundId  && <span className="mono text-xs text-teal-600 font-semibold">{exp.roundId.roundNumber}</span>}
-                      {exp.voyageId && <span className="mono text-xs text-purple-600 font-semibold">{exp.voyageId.voyageNumber}</span>}
+                      {exp.roundId  && <div><span className="mono text-xs text-teal-600 font-semibold">{exp.roundId.roundNumber}</span><p className="text-[11px] text-gray-400">{exp.roundId.roundName || '(unnamed)'}</p></div>}
+                      {exp.voyageId && <div><span className="mono text-xs text-purple-600 font-semibold">{exp.voyageId.voyageNumber}</span><p className="text-[11px] text-gray-400">{exp.voyageId.voyageName || '(unnamed)'}</p></div>}
                     </td>
                     <td className="text-xs text-gray-500">{exp.agentId?.agentName || '—'}</td>
                     <td>

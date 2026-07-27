@@ -24,13 +24,13 @@ export function CapacityWarningsWidget() {
   const items = useMemo(() => data?.items || [], [data]);
 
   const allWarnings = useMemo(() => (
-    items.flatMap(item => (item.warnings || []).map(w => ({ ...w, roundId: item.roundId, roundNumber: item.roundNumber })))
+    items.flatMap(item => (item.warnings || []).map(w => ({ ...w, roundId: item.roundId, roundNumber: item.roundNumber, roundName: item.roundName })))
   ), [items]);
 
   const nearCapacity = useMemo(() => (
     items.flatMap(item => (item.voyages || [])
       .filter(v => v.utilisationPct != null && v.utilisationPct >= NEAR_CAPACITY_THRESHOLD && v.utilisationPct < 100)
-      .map(v => ({ ...v, roundId: item.roundId, roundNumber: item.roundNumber })))
+      .map(v => ({ ...v, roundId: item.roundId, roundNumber: item.roundNumber, roundName: item.roundName })))
   ), [items]);
 
   return (
@@ -56,7 +56,7 @@ export function CapacityWarningsWidget() {
               className="flex items-start gap-2 text-xs text-amber-700 cursor-pointer hover:bg-amber-50/50 -mx-2 px-2 py-1 rounded-lg transition"
             >
               <span className="flex-shrink-0">🟡</span>
-              <span>Voyage {v.voyageNumber} ({v.roundNumber}) is at {v.utilisationPct}% utilisation — near capacity</span>
+              <span>Voyage {v.voyageNumber} ({v.voyageName || 'unnamed'}) — Round {v.roundNumber} ({v.roundName || 'unnamed'}) — is at {v.utilisationPct}% utilisation — near capacity</span>
             </div>
           ))}
         </div>

@@ -57,7 +57,7 @@ const getVoyagePortIds = async (voyageId) => {
 
 // ─── Populate helper ──────────────────────────────────────────────────────────
 const populate = (q) =>
-  q.populate('voyageId', 'voyageNumber roundId polId podId etd eta status')
+  q.populate('voyageId', 'voyageNumber voyageName roundId polId podId etd eta status')
    .populate({ path: 'voyageId', populate: [{ path: 'polId', select: 'name code' }, { path: 'podId', select: 'name code' }] })
    .populate('agentId',         'agentCode agentName')
    .populate('polId',           'name code')

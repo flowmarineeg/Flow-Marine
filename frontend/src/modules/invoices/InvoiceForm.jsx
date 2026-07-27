@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { invoicesService } from '@/services/invoices.service';
 import { bookingsService } from '@/services/bookings.service';
 import { agentsService }   from '@/services/agents.service';
@@ -51,7 +52,7 @@ function EditInvoiceForm({ item }) {
       qc.invalidateQueries(['invoice', item._id]);
       router.push('/invoices');
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   return (
@@ -80,8 +81,8 @@ function EditInvoiceForm({ item }) {
                 <tr key={li._id} className="table-row">
                   <td className="mono text-xs font-semibold text-teal-600">{li.bookingNumber}{li.orphaned && <span className="ml-1 text-red-500" title={li.orphanedReason}>⚠</span>}</td>
                   <td className="mono text-xs text-gray-600">{li.containerNumber || '—'}</td>
-                  <td className="mono text-xs text-gray-500">{li.voyageNumber || '—'}</td>
-                  <td className="mono text-xs text-gray-500">{li.roundNumber || '—'}</td>
+                  <td className="mono text-xs text-gray-500">{li.voyageNumber ? `${li.voyageNumber} (${li.voyageName || 'unnamed'})` : '—'}</td>
+                  <td className="mono text-xs text-gray-500">{li.roundNumber ? `${li.roundNumber} (${li.roundName || 'unnamed'})` : '—'}</td>
                   <td className="text-xs text-gray-700">{fmtMoney(li.freightAmount)}</td>
                 </tr>
               ))}
@@ -198,7 +199,7 @@ function CreateInvoiceForm() {
       qc.invalidateQueries(['invoices']);
       router.push('/invoices');
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   const handleSubmit = (e) => {
@@ -258,7 +259,7 @@ function CreateInvoiceForm() {
               <label className={lc}>Round <span className="text-red-400">*</span></label>
               <select value={roundId} onChange={e => setRoundId(e.target.value)} className={`${ic(false)} cursor-pointer`}>
                 <option value="">Select round…</option>
-                {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+                {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
               </select>
             </div>
           )}
@@ -267,7 +268,7 @@ function CreateInvoiceForm() {
               <label className={lc}>Voyage <span className="text-red-400">*</span></label>
               <select value={voyageId} onChange={e => setVoyageId(e.target.value)} disabled={!roundId} className={`${ic(false)} cursor-pointer`}>
                 <option value="">Select voyage…</option>
-                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber}</option>)}
+                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
               </select>
             </div>
           )}

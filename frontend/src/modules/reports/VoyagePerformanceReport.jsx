@@ -25,7 +25,7 @@ function VoyageFreightChart({ rows = [] }) {
     if (chartRef.current) chartRef.current.destroy();
 
     const top    = [...rows].sort((a, b) => b.totalFreight - a.totalFreight).slice(0, 10);
-    const labels = top.map(r => r.voyageNumber);
+    const labels = top.map(r => r.voyageName ? `${r.voyageNumber} (${r.voyageName})` : r.voyageNumber);
     const data   = top.map(r => r.totalFreight);
 
     chartRef.current = new Chart(canvasRef.current, {
@@ -129,7 +129,7 @@ export default function VoyagePerformanceReport() {
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Round</p>
             <select value={roundId} onChange={e => setRoundId(e.target.value)} className={rsc}>
               <option value="">All Rounds</option>
-              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber}</option>)}
+              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
             </select>
           </div>
           <div>
@@ -226,9 +226,9 @@ export default function VoyagePerformanceReport() {
                 <tbody>
                   {rows.map(r => (
                     <tr key={r._id} className={`table-row ${r.bookingCount === 0 ? 'opacity-50' : ''}`}>
-                      <td><span className="mono text-xs font-bold text-teal-600">{r.voyageNumber}</span></td>
+                      <td><span className="mono text-xs font-bold text-teal-600">{r.voyageNumber}</span><p className="text-[11px] text-gray-400">{r.voyageName || '(unnamed)'}</p></td>
                       <td><span className="mono text-xs text-gray-500">{r.serviceCode}</span></td>
-                      <td><span className="mono text-xs text-gray-500">{r.roundNumber}</span></td>
+                      <td><span className="mono text-xs text-gray-500">{r.roundNumber}</span><p className="text-[11px] text-gray-400">{r.roundName || '(unnamed)'}</p></td>
                       <td className="text-xs text-gray-700">{r.polName || '—'}</td>
                       <td className="text-xs text-gray-700">{r.podName || '—'}</td>
                       <td className="text-xs text-gray-500">{fmt(r.etd)}</td>

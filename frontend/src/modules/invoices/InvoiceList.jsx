@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { invoicesService } from '@/services/invoices.service';
 import { agentsService }   from '@/services/agents.service';
 import { bookingsService } from '@/services/bookings.service';
@@ -53,7 +54,7 @@ export default function InvoiceList() {
       const res  = await invoicesService.downloadPdf(inv._id);
       downloadBlob(res.data, `invoice-${inv.invoiceNumber}.pdf`);
     } catch (e) {
-      toast.error('Failed to generate PDF');
+      showErrorToast(e, 'download');
     } finally {
       setPdfLoading(null);
     }
@@ -77,7 +78,7 @@ export default function InvoiceList() {
       qc.invalidateQueries(['invoices']);
       setDeleteTarget(null);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const invoices   = data?.data || [];

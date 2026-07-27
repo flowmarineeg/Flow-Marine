@@ -86,6 +86,7 @@ export default function CapacitySegmentTable({ voyages = [], vesselCapacity = nu
                   {/* Voyage */}
                   <td className="py-2.5 px-3 align-top">
                     <p className="mono text-xs font-bold text-gray-700 whitespace-nowrap">{v.voyageNumber}</p>
+                    <p className="text-[11px] text-gray-400">{v.voyageName || '(unnamed)'}</p>
                     {v.isManual && <span className="text-[9px] text-amber-500">manual</span>}
                   </td>
 

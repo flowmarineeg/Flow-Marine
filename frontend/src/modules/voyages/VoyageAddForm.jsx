@@ -3,6 +3,7 @@
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { voyagesService } from '@/services/voyages.service';
 import { VOYAGE_STATUS } from '@/utils/constants';
 
@@ -15,7 +16,7 @@ const ec  = 'mt-1 text-[11px] text-red-500';
 export default function VoyageAddForm({ round, onSuccess, onCancel }) {
   const { register, handleSubmit, watch, formState: { errors } } = useForm({
     defaultValues: {
-      polId: '', podId: '', voyageCode: '', status: 'Scheduled',
+      polId: '', podId: '', voyageCode: '', voyageName: '', status: 'Scheduled',
       etd: '', eta: '', etp: '', atd: '', ata: '',
     },
   });
@@ -39,6 +40,7 @@ export default function VoyageAddForm({ round, onSuccess, onCancel }) {
         polId:       data.polId,
         podId:       data.podId,
         voyageCode:  data.voyageCode || null,
+        voyageName:  data.voyageName,
         status:      data.status,
         etd:         data.etd  || null,
         eta:         data.eta  || null,
@@ -52,7 +54,7 @@ export default function VoyageAddForm({ round, onSuccess, onCancel }) {
       toast.success('Voyage added');
       onSuccess?.();
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Failed to add voyage'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   const sc = `${ic(false)} cursor-pointer`;
@@ -65,7 +67,7 @@ export default function VoyageAddForm({ round, onSuccess, onCancel }) {
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Round</p>
-            <p className="mono font-bold text-teal-700">{round.roundNumber}</p>
+            <p className="mono font-bold text-teal-700">{round.roundNumber} <span className="font-normal text-teal-600">({round.roundName || '(unnamed)'})</span></p>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Service</p>
@@ -122,12 +124,20 @@ export default function VoyageAddForm({ round, onSuccess, onCancel }) {
         </div>
       </div>
 
-      {/* Voyage Code + Status */}
+      {/* Voyage Name + Code */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className={lc}>Voyage Name <span className="text-red-400">*</span></label>
+          <input
+            {...register('voyageName', { required: 'Voyage Name is required' })}
+            placeholder="e.g. Jeddah Coffee Leg"
+            className={ic(errors.voyageName)}
+          />
+          {errors.voyageName && <p className={ec}>{errors.voyageName.message}</p>}
+        </div>
         <div>
           <label className={lc}>
             Voyage Code
-            <span className="ml-1.5 text-gray-300 font-normal normal-case text-[10px]">(optional)</span>
           </label>
           <input
             {...register('voyageCode')}
@@ -135,12 +145,14 @@ export default function VoyageAddForm({ round, onSuccess, onCancel }) {
             className={ic(false)}
           />
         </div>
-        <div>
-          <label className={lc}>Status</label>
-          <select {...register('status')} className={sc}>
-            {VOYAGE_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
+      </div>
+
+      {/* Status */}
+      <div>
+        <label className={lc}>Status</label>
+        <select {...register('status')} className={sc}>
+          {VOYAGE_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* ETD / ETA */}

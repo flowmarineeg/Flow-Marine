@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { trackingService }  from '@/services/tracking.service';
 import { servicesService }  from '@/services/services.service';
 import { roundsService }    from '@/services/rounds.service';
@@ -95,7 +96,7 @@ export default function TrackingForm({ onEntryAdded }) {
       reset({ status: 'At Port', lastUpdate: nowLocal(), remarks: '' });
       setLocation({ countryId: '', cityId: '', portId: '', terminalId: '' });
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   const onSubmit = (data) => {
@@ -158,7 +159,7 @@ export default function TrackingForm({ onEntryAdded }) {
             <option value="">Select round…</option>
             {rounds.map(r => (
               <option key={r._id} value={r._id}>
-                {r.roundNumber} — {r.status}
+                {r.roundNumber} ({r.roundName || 'unnamed'}) — {r.status}
               </option>
             ))}
           </select>
@@ -176,7 +177,7 @@ export default function TrackingForm({ onEntryAdded }) {
             <option value="">Select voyage…</option>
             {voyages.map(v => (
               <option key={v._id} value={v._id}>
-                {v.voyageNumber} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
+                {v.voyageNumber} ({v.voyageName || 'unnamed'}) — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
               </option>
             ))}
           </select>
@@ -186,12 +187,12 @@ export default function TrackingForm({ onEntryAdded }) {
         {selectedVoyage && (
           <div className="grid grid-cols-2 gap-2 pt-1">
             {[
-              { label: 'Voyage',  val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber}</span> },
+              { label: 'Voyage',  val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber} <span className="font-normal text-teal-500">({selectedVoyage.voyageName || 'unnamed'})</span></span> },
               { label: 'Status',  val: selectedVoyage.status },
               { label: 'Vessel',  val: vesselId
                   ? <span className="mono text-xs font-semibold text-gray-600">{selectedRound?.vesselId?.vesselCode || 'Assigned'}</span>
                   : <span className="text-amber-500 text-xs">Not resolved</span> },
-              { label: 'Round',   val: <span className="mono text-xs text-gray-600">{selectedRound?.roundNumber}</span> },
+              { label: 'Round',   val: <span className="mono text-xs text-gray-600">{selectedRound?.roundNumber} ({selectedRound?.roundName || 'unnamed'})</span> },
             ].map(({ label, val }) => (
               <div key={label} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>

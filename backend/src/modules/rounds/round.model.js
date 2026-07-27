@@ -6,6 +6,7 @@ const { ROUND_STATUS } = require('../../config/constants');
 const roundSchema = new mongoose.Schema(
   {
     roundNumber:  { type: String, required: true, unique: true, trim: true },
+    roundName:    { type: String, trim: true, default: null },
     serviceId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: true },
     vesselId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Vessel',  required: true },
     startDate:    { type: Date, required: true },

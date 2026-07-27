@@ -29,8 +29,8 @@ const validateManualTransition = (current, next) => {
 // ─── Populate ─────────────────────────────────────────────────────────────────
 const pop = (q) =>
   q.populate('agentId', 'agentCode agentName contacts')
-   .populate('voyageId', 'voyageNumber')
-   .populate('roundId', 'roundNumber')
+   .populate('voyageId', 'voyageNumber voyageName')
+   .populate('roundId', 'roundNumber roundName')
    .populate('lineItems.bookingId', 'bookingNumber status containerNumber');
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -71,8 +71,8 @@ const getByIdForPdf = async (id) => {
   // populated, purely for the header labels.
   const inv = await Invoice.findOne({ _id: id, isDeleted: false })
     .populate('agentId', 'agentCode agentName contacts')
-    .populate('voyageId', 'voyageNumber')
-    .populate('roundId', 'roundNumber')
+    .populate('voyageId', 'voyageNumber voyageName')
+    .populate('roundId', 'roundNumber roundName')
     .lean({ virtuals: true });
   if (!inv) throw { status: 404, message: 'Invoice not found' };
   return inv;
@@ -107,7 +107,7 @@ const getEligibleBookings = async ({ agentId, voyageId = '', roundId = '' }) => 
   }
 
   const bookings = await Booking.find(scopeQuery)
-    .populate({ path: 'voyageId', select: 'voyageNumber roundId', populate: { path: 'roundId', select: 'roundNumber' } })
+    .populate({ path: 'voyageId', select: 'voyageNumber voyageName roundId', populate: { path: 'roundId', select: 'roundNumber roundName' } })
     .sort({ containerNumber: 1 })
     .lean();
 
@@ -123,8 +123,10 @@ const getEligibleBookings = async ({ agentId, voyageId = '', roundId = '' }) => 
       containerNumber: b.containerNumber,
       voyageId:        b.voyageId?._id || null,
       voyageNumber:    b.voyageId?.voyageNumber || null,
+      voyageName:      b.voyageId?.voyageName || null,
       roundId:         b.voyageId?.roundId?._id || null,
       roundNumber:     b.voyageId?.roundId?.roundNumber || null,
+      roundName:       b.voyageId?.roundId?.roundName || null,
       freightAmount:   b.totalFreight,
     }));
 };
@@ -135,7 +137,7 @@ const buildLineItemSnapshot = async (booking) => {
     .populate('polId', 'name')
     .populate('podId', 'name')
     .lean();
-  const round = voyage?.roundId ? await Round.findById(voyage.roundId).select('roundNumber').lean() : null;
+  const round = voyage?.roundId ? await Round.findById(voyage.roundId).select('roundNumber roundName').lean() : null;
 
   return {
     bookingId:       booking._id,
@@ -143,8 +145,10 @@ const buildLineItemSnapshot = async (booking) => {
     containerNumber: booking.containerNumber,
     voyageId:        voyage?._id || null,
     voyageNumber:    voyage?.voyageNumber || null,
+    voyageName:      voyage?.voyageName || null,
     roundId:         round?._id || null,
     roundNumber:     round?.roundNumber || null,
+    roundName:       round?.roundName || null,
     polName:         voyage?.polId?.name || null,
     podName:         voyage?.podId?.name || null,
     shipper:         booking.shipper || null,

@@ -8,6 +8,9 @@ import toast from 'react-hot-toast';
 import { bookingsService } from '@/services/bookings.service';
 import { agentsService } from '@/services/agents.service';
 import { voyagesService } from '@/services/voyages.service';
+import { exportService } from '@/services/export.service';
+import { downloadFile } from '@/utils/exportHelper';
+import { showErrorToast } from '@/utils/errorToast';
 import { useRounds } from '@/hooks/useRounds';
 import PageHeader from '@/components/ui/PageHeader';
 
@@ -65,6 +68,15 @@ const EXCEL_COLUMN_MAP = {
   'cntr status': 'containerStatus',
   // bare 'status' NOT mapped — conflicts with booking status field
 };
+
+// ─── Column guide / template — Sprint 042: the backend is now the single
+// source of truth for BOTH the "Expected Excel Columns" reference card below
+// AND the downloadable blank template (colored required/optional headers),
+// via GET /bookings/import/template-columns and GET /bookings/import/template
+// — no local hardcoded copy here anymore, so the two can never drift apart.
+// Deliberately NOT copied from export.service.js#COLUMNS.bookings — that
+// column set is for record export, not import (see bookingImport.service.js
+// TEMPLATE_FIELDS comment for the full list of mismatches).
 
 // ─── Parse Excel ─────────────────────────────────────────────────────────────
 const parseExcel = (buffer) => {
@@ -136,6 +148,25 @@ export default function BookingImport() {
   // Rounds
   const { rounds } = useRounds();
 
+  // Sprint 042 — the backend is the single source of truth for the import's
+  // recognized column list (name + required/optional), used by both the
+  // guide card below and the colored downloadable template.
+  const { data: templateColumns } = useQuery({
+    queryKey: ['booking-import-template-columns'],
+    queryFn: () => bookingsService.importTemplateColumns().then(r => r.data.data),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await bookingsService.downloadImportTemplate();
+      downloadFile(res.data, 'booking-import-template.xlsx');
+    } catch (e) {
+      const msg = await exportService.readBlobError(e);
+      toast.error(msg || 'Failed to download template');
+    }
+  };
+
   // Sprint 031: this Round's active voyages — no longer a file-wide selector.
   // Used only to populate the per-row manual Voyage fallback for
   // 'unresolved'/'ambiguous' rows; every row auto-resolves its own voyage
@@ -185,7 +216,7 @@ export default function BookingImport() {
       const res = await bookingsService.importPreview({ rows: rawRows, agentId, roundId, importType });
       setPreview(res.data.data);
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Preview failed');
+      showErrorToast(e, 'preview');
     } finally {
       setIsPreviewing(false);
     }
@@ -223,7 +254,7 @@ export default function BookingImport() {
       setPreview(res.data.data);
       toast.success('Re-validated');
     } catch (e) {
-      toast.error('Re-validation failed');
+      showErrorToast(e, 'preview');
     } finally {
       setIsPreviewing(false);
     }
@@ -243,7 +274,7 @@ export default function BookingImport() {
       toast.success(`Import complete — ${parts.join(' · ')}`);
       setConfirmed(true);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Import failed'),
+    onError: (e) => showErrorToast(e, 'import'),
   });
 
   const counts = preview ? {
@@ -313,7 +344,7 @@ export default function BookingImport() {
             >
               <option value="">Select round…</option>
               {rounds.map(r => (
-                <option key={r._id} value={r._id}>{r.roundNumber}</option>
+                <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>
               ))}
             </select>
           </div>
@@ -395,28 +426,21 @@ export default function BookingImport() {
       {/* ── Column guide ──────────────────────────────────────────────── */}
       {!preview && (
         <div className="card p-5 mb-5">
-          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Expected Excel Columns</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Expected Excel Columns</p>
+            <button type="button" onClick={handleDownloadTemplate}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-800 transition">
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />
+              </svg>
+              Download Template
+            </button>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-            {[
-              { col: 'Container Number', note: 'Primary match key e.g. MSCU1234567', req: true },
-              { col: 'Container Type', note: 'e.g. 40HC, 20DRY — code or size', req: true },
-              { col: 'Container Size', note: 'e.g. 40ft, 20ft. Also accepts: Size, Length' },
-              { col: 'Container Status', note: 'Full or Empty only', req: true },
-              { col: 'POL', note: 'Port of Loading — used to auto-resolve this row’s Voyage', req: true },
-              { col: 'POD', note: 'Port of Discharge — used to auto-resolve this row’s Voyage', req: true },
-              { col: 'Rate', note: 'Freight rate per container (one row = one container)', req: true },
-              { col: 'Booking Number', note: 'Optional — auto-generated if blank' },
-              { col: 'Shipper', note: 'Optional — shipper company name' },
-              { col: 'Consignee', note: 'Optional — consignee company name' },
-              { col: 'Carrier Name', note: 'Optional — e.g. MSC, Maersk. Also accepts: Carrier' },
-              { col: 'Commodity', note: 'Optional — cargo description' },
-              { col: 'VGM', note: 'Optional — Verified Gross Mass in kg' },
-              { col: 'Hazardous', note: 'Optional — Yes/No. Also accepts: DG, Dangerous Goods' },
-              { col: 'IMDG Code', note: 'Required if Hazardous=Yes — free text e.g. 3.1, UN1203' },
-            ].map(({ col, note, req }) => (
-              <div key={col} className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+            {(templateColumns || []).map(({ header, note, required }) => (
+              <div key={header} className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
                 <p className="text-[12px] font-semibold text-gray-700">
-                  {col}{req && <span className="text-red-400 ml-0.5">*</span>}
+                  {header}{required && <span className="text-red-400 ml-0.5">*</span>}
                 </p>
                 <p className="text-[11px] text-gray-400 leading-snug">{note}</p>
               </div>
@@ -504,12 +528,14 @@ export default function BookingImport() {
             </div>
           )}
 
-          {/* prview Table — overflow-x-auto clips the table, min-w-0 on the card prevents page blowout */}
+          {/* prview Table — overflow-x-auto clips the table, min-w-0 on the card prevents page
+              blowout. Sprint 042: overflow-y-auto + max-h caps vertical growth for large imports
+              (hundreds of rows), with a sticky header so columns stay visible while scrolling. */}
           <div className="card overflow-hidden max-w-full min-w-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
               <table className="w-full border-collapse text-[12px]" style={{ minWidth: 1600 }}>
-                <thead>
-                  <tr className="table-header text-[11px]">
+                <thead className="sticky top-0 z-10">
+                  <tr className="table-header text-[11px] bg-white">
                     {['#', 'Status', 'Booking No', 'Cntr No *', 'Type', 'Size', 'Cntr Status *', 'POL', 'POD', 'Voyage', 'Rate', 'Carrier', 'Commodity', 'VGM', 'Hazardous', 'IMDG Code', 'Shipper', 'Consignee', 'Issues'].map(h => (
                       <th key={h} className="!py-2 whitespace-nowrap">{h}</th>
                     ))}
@@ -547,13 +573,13 @@ export default function BookingImport() {
                               <option value="">{voyagesLoading ? 'Loading…' : 'Select voyage…'}</option>
                               {voyageOptions.map(v => (
                                 <option key={v._id} value={v._id}>
-                                  {v.voyageNumber} ({v.polId?.name || v.polId?.code || '?'} → {v.podId?.name || v.podId?.code || '?'})
+                                  {v.voyageNumber} — {v.voyageName || 'unnamed'} ({v.polId?.name || v.polId?.code || '?'} → {v.podId?.name || v.podId?.code || '?'})
                                 </option>
                               ))}
                             </select>
                           ) : row._resolvedVoyage ? (
                             <span className="text-[11px] text-gray-600">
-                              <span className="font-semibold text-gray-700">{row._resolvedVoyage.voyageNumber}</span>
+                              <span className="font-semibold text-gray-700">{row._resolvedVoyage.voyageNumber} ({row._resolvedVoyage.voyageName || 'unnamed'})</span>
                               <br />
                               <span className="text-gray-400">{row._resolvedVoyage.polId?.name} → {row._resolvedVoyage.podId?.name}</span>
                             </span>

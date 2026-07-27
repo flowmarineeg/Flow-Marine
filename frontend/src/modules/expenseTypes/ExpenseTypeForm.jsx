@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { expenseTypesService } from '@/services/expenseTypes.service';
+import { showErrorToast } from '@/utils/errorToast';
 import Button from '@/components/ui/Button';
 
 const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
@@ -68,7 +69,7 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
       setNewCatValue('');
       setNewCatClass('Other Voyage Cost');
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Failed to add category'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   // ── Sprint 035: toggle an existing category's cost classification ──────────
@@ -77,7 +78,7 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
     onSuccess:  () => {
       qc.invalidateQueries(['expense-type-categories']);
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Failed to update category'),
+    onError: (e) => showErrorToast(e, 'update'),
   });
 
   // ── Delete category ─────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
         setValue('category', '', { shouldValidate: false });
       }
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Cannot delete category'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const handleSaveNewCat = () => {
@@ -115,7 +116,7 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
       toast.success(isEdit ? 'Expense type updated' : 'Expense type created');
       onSuccess?.();
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Operation failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   return (

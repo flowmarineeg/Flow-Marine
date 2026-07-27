@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
 import { usePermission }   from '@/context/PermissionContext';
 import Badge         from '@/components/ui/Badge';
@@ -46,7 +47,7 @@ export default function BookingDetailCard({ booking, onMutated }) {
       qc.invalidateQueries(['bookings']);
       router.push('/bookings');
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const cancelMutation = useMutation({
@@ -57,7 +58,7 @@ export default function BookingDetailCard({ booking, onMutated }) {
       qc.invalidateQueries(['booking', booking._id]);
       onMutated?.();
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Cancel failed'),
+    onError: (e) => showErrorToast(e, 'cancel'),
   });
 
   return (
@@ -124,7 +125,7 @@ export default function BookingDetailCard({ booking, onMutated }) {
 
         {/* ── Info grid ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
-          <InfoRow label="Voyage"         value={booking.voyageId?.voyageNumber} mono />
+          <InfoRow label="Voyage"         value={booking.voyageId?.voyageNumber ? `${booking.voyageId.voyageNumber} (${booking.voyageId?.voyageName || 'unnamed'})` : null} mono />
           <InfoRow label="Agent"          value={[booking.agentId?.agentCode, booking.agentId?.agentName].filter(Boolean).join(' — ')} />
           <InfoRow label="Container Type" value={booking.containerTypeId ? `${booking.containerTypeId.code} (${booking.containerTypeId.size} ${booking.containerTypeId.type})` : null} />
           <InfoRow label="Container No"   value={booking.containerNumber} mono />

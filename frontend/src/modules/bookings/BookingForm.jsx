@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService }       from '@/services/bookings.service';
 import { voyagesService }        from '@/services/voyages.service';
 import { agentsService }         from '@/services/agents.service';
@@ -21,12 +22,14 @@ const ic = (err) =>
 const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
 const ec = 'mt-1 text-[11px] text-red-500';
 
-function FieldLabel({ children, required, optional }) {
+// Sprint 042 — standardized on a single required-only convention: red
+// asterisk for required, nothing at all for optional (the `optional` prop
+// is intentionally no longer rendered).
+function FieldLabel({ children, required }) {
   return (
     <label className={lc}>
       {children}
       {required && <span className="text-red-400 ml-0.5">*</span>}
-      {optional && <span className="ml-1.5 text-gray-300 font-normal normal-case text-[10px]">(optional)</span>}
     </label>
   );
 }
@@ -129,7 +132,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
         onSuccess?.(res.data.data);
       }
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   const onSubmit = (data) => {
@@ -167,7 +170,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
             <div className="flex-1">
               <p className="text-[12px] font-bold text-amber-700 mb-1">Capacity Warning</p>
               <p className="text-[12px] text-amber-700">
-                Booking was saved but it exceeds vessel capacity on voyage <strong>{capacityWarning.voyage?.voyageNumber}</strong>.
+                Booking was saved but it exceeds vessel capacity on voyage <strong>{capacityWarning.voyage?.voyageNumber} ({capacityWarning.voyage?.voyageName || 'unnamed'})</strong>.
                 Added <strong>{capacityWarning.addedTEU} TEU</strong>; remaining after this booking:{' '}
                 <strong className="text-red-600">{capacityWarning.voyage?.remainingAfter} TEU</strong>.
               </p>
@@ -198,7 +201,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
             >
               <option value="">Select round…</option>
               {rounds.map(r => (
-                <option key={r._id} value={r._id}>{r.roundNumber}</option>
+                <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>
               ))}
             </select>
             {errors.roundId && <p className={ec}>{errors.roundId.message}</p>}
@@ -214,7 +217,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
               <option value="">{watchedRoundId ? 'Select voyage…' : 'Select a round first…'}</option>
               {voyages.map(v => (
                 <option key={v._id} value={v._id}>
-                  {v.voyageNumber} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
+                  {v.voyageNumber} ({v.voyageName || 'unnamed'}) — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
                 </option>
               ))}
             </select>
@@ -227,7 +230,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
         {selectedVoyage && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
-              { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber}</span> },
+              { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber} <span className="font-normal text-teal-500">({selectedVoyage.voyageName || 'unnamed'})</span></span> },
               { label: 'Status',    val: selectedVoyage.status },
               { label: 'ETD',       val: fmt(selectedVoyage.etd) },
               { label: 'ETA',       val: fmt(selectedVoyage.eta) },

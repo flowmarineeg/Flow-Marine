@@ -49,11 +49,16 @@ const list = async ({
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     Voyage.find(query)
-      .populate('roundId',   'roundNumber')
+      .populate('roundId',   'roundNumber roundName')
       .populate('serviceId', 'serviceCode serviceName')
       .populate('polId',     'name code')
       .populate('podId',     'name code')
-      .sort({ sequence: 1, etd: 1 })
+      // Sprint 042 — sorted by roundId first so a round's voyages always
+      // arrive contiguous, needed for VoyageList.jsx's grouped-by-round
+      // display. No effect on any caller that already scopes by roundId
+      // (ManualBookingForm/BookingForm dropdowns etc.) since roundId is
+      // constant within those queries.
+      .sort({ roundId: 1, sequence: 1 })
       .skip(skip)
       .limit(Number(limit))
       .lean(),
@@ -66,7 +71,7 @@ const list = async ({
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 const getById = async (id) => {
   const voyage = await Voyage.findById(id)
-    .populate('roundId',   'roundNumber startDate endDate')
+    .populate('roundId',   'roundNumber roundName startDate endDate')
     .populate('serviceId', 'serviceCode serviceName')
     .populate('polId',     'name code')
     .populate('podId',     'name code')
@@ -144,6 +149,7 @@ const createManualVoyage = async (roundId, data, createdBy) => {
   const voyage = await Voyage.create({
     voyageNumber:   numExists ? `${voyageNumber}-M` : voyageNumber,
     voyageCode:     data.voyageCode  || null,
+    voyageName:     data.voyageName  || null,
     roundId,
     serviceId:      round.serviceId,
     polId,
@@ -179,7 +185,7 @@ const update = async (id, data, updatedBy) => {
   }
 
   // Extended allowed fields: now includes etp and voyageCode
-  const allowed = ['etd', 'eta', 'etp', 'atd', 'ata', 'status', 'voyageCode'];
+  const allowed = ['etd', 'eta', 'etp', 'atd', 'ata', 'status', 'voyageCode', 'voyageName'];
   allowed.forEach(field => {
     if (data[field] !== undefined) voyage[field] = data[field] || null;
   });
@@ -190,7 +196,7 @@ const update = async (id, data, updatedBy) => {
   invalidateRoundCache(voyage.roundId);
 
   return Voyage.findById(id)
-    .populate('roundId',   'roundNumber')
+    .populate('roundId',   'roundNumber roundName')
     .populate('serviceId', 'serviceCode serviceName')
     .populate('polId',     'name code')
     .populate('podId',     'name code')

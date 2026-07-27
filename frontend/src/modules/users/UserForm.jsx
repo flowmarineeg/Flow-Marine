@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { usersService } from '@/services/users.service';
 import { rolesService } from '@/services/roles.service';
 import Input from '@/components/ui/Input';
@@ -46,7 +47,7 @@ export default function UserForm({ user = null, mode = 'create', onSuccess, onCa
       toast.success(isEdit ? 'User updated' : isInvite ? 'Invitation sent!' : 'User created');
       onSuccess?.();
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Operation failed'),
+    onError: (e) => showErrorToast(e, isEdit ? 'update' : 'save'),
   });
 
   return (

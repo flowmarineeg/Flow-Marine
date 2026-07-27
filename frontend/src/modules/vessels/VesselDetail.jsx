@@ -146,7 +146,7 @@ function ActiveRoundCapacity({ activeRound, vessel }) {
           <div>
             <h3 className="text-sm font-semibold text-gray-700">Current Active Round</h3>
             <p className="text-[11px] text-gray-400 mt-0.5">
-              <span className="mono font-semibold text-gray-600">{round.roundNumber}</span>
+              <span className="mono font-semibold text-gray-600">{round.roundNumber} ({round.roundName || 'unnamed'})</span>
               {service?.serviceCode && (
                 <span> &middot; {service.serviceCode} &mdash; {service.serviceName}</span>
               )}
@@ -476,7 +476,7 @@ export default function VesselDetail({ id }) {
               <tbody>
                 {rounds.map(r => (
                   <tr key={r._id} className="table-row">
-                    <td><span className="mono text-xs font-bold text-gray-700">{r.roundNumber}</span></td>
+                    <td><span className="mono text-xs font-bold text-gray-700">{r.roundNumber}</span><p className="text-[11px] text-gray-400">{r.roundName || '(unnamed)'}</p></td>
                     <td><span className="mono text-xs text-teal-600">{r.serviceId?.serviceCode}</span></td>
                     <td className="text-xs text-gray-600">{fmt(r.startDate)}</td>
                     <td className="text-xs text-gray-600">{fmt(r.endDate)}</td>
@@ -505,7 +505,7 @@ export default function VesselDetail({ id }) {
               <tbody>
                 {voyages.map(v => (
                   <tr key={v._id} className="table-row">
-                    <td><span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span></td>
+                    <td><span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span><p className="text-[11px] text-gray-400">{v.voyageName || '(unnamed)'}</p></td>
                     <td className="text-xs text-gray-700">{v.polId?.name || '—'}</td>
                     <td className="text-xs text-gray-700">{v.podId?.name || '—'}</td>
                     <td className="text-xs text-gray-500">{fmt(v.etd)}</td>
@@ -545,7 +545,7 @@ export default function VesselDetail({ id }) {
                 {recentTracking.map(t => (
                   <tr key={t._id} className="table-row">
                     <td className="text-xs text-gray-600 whitespace-nowrap">{fmtDT(t.lastUpdate)}</td>
-                    <td><span className="mono text-xs font-semibold text-teal-600">{t.voyageId?.voyageNumber || '—'}</span></td>
+                    <td><span className="mono text-xs font-semibold text-teal-600">{t.voyageId?.voyageNumber || '—'}</span><p className="text-[11px] text-gray-400">{t.voyageId?.voyageName || '(unnamed)'}</p></td>
                     <td className="text-xs text-gray-700">{t.portId?.name || '—'}</td>
                     <td className="text-xs text-gray-500">{t.terminalId?.name || '—'}</td>
                     <td>

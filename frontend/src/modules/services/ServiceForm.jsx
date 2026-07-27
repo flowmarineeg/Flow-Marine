@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { servicesService } from '@/services/services.service';
 import { vesselsService } from '@/services/vessels.service';
 import { SERVICE_STATUS } from '@/utils/constants';
@@ -38,7 +39,7 @@ export default function ServiceForm({ item, onSuccess, onCancel }) {
       qc.invalidateQueries(['services']);
       onSuccess?.();
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Save failed'),
+    onError: (e) => showErrorToast(e, 'save'),
   });
 
   return (
@@ -47,7 +48,7 @@ export default function ServiceForm({ item, onSuccess, onCancel }) {
       {/* Service Code */}
       <div>
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-          Service Code <span className="text-red-500">*</span>
+          Service Code <span className="text-red-400">*</span>
         </label>
         <input
           {...register('serviceCode', {
@@ -65,7 +66,7 @@ export default function ServiceForm({ item, onSuccess, onCancel }) {
       {/* Service Name */}
       <div>
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-          Service Name <span className="text-red-500">*</span>
+          Service Name <span className="text-red-400">*</span>
         </label>
         <input
           {...register('serviceName', {

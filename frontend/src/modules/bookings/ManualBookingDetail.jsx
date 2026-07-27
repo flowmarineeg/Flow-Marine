@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
 import { usePermission }   from '@/context/PermissionContext';
 import Badge         from '@/components/ui/Badge';
@@ -43,22 +44,22 @@ export default function ManualBookingDetail({ booking, onMutated }) {
   const deleteMutation = useMutation({
     mutationFn: () => bookingsService.removeManual(booking._id),
     onSuccess: () => {
-      toast.success('Manual booking deleted');
+      toast.success('Estimated booking deleted');
       qc.invalidateQueries(['manual-bookings']);
       router.push('/bookings?tab=manual');
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+    onError: (e) => showErrorToast(e, 'delete'),
   });
 
   const cancelMutation = useMutation({
     mutationFn: () => bookingsService.updateManual(booking._id, { status: 'Cancelled' }),
     onSuccess: () => {
-      toast.success('Manual booking cancelled');
+      toast.success('Estimated booking cancelled');
       qc.invalidateQueries(['manual-bookings']);
       qc.invalidateQueries(['manual-booking', booking._id]);
       onMutated?.();
     },
-    onError: (e) => toast.error(e.response?.data?.message || 'Cancel failed'),
+    onError: (e) => showErrorToast(e, 'cancel'),
   });
 
   return (
@@ -71,7 +72,7 @@ export default function ManualBookingDetail({ booking, onMutated }) {
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="mono text-lg font-bold text-gray-800">{booking.bookingNumber}</span>
               <Badge label={booking.status} />
-              <span className="text-[10px] font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">Manual</span>
+              <span className="text-[10px] font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">Estimated</span>
             </div>
             <p className="text-sm text-gray-400">Created {fmt(booking.createdAt)}</p>
           </div>
@@ -117,7 +118,7 @@ export default function ManualBookingDetail({ booking, onMutated }) {
 
         {/* Header info */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-          <InfoRow label="Voyage"    value={booking.voyageId?.voyageNumber} mono />
+          <InfoRow label="Voyage"    value={booking.voyageId?.voyageNumber ? `${booking.voyageId.voyageNumber} (${booking.voyageId?.voyageName || 'unnamed'})` : null} mono />
           <InfoRow label="Agent"     value={[booking.agentId?.agentCode, booking.agentId?.agentName].filter(Boolean).join(' — ')} />
           <InfoRow label="POL"       value={booking.polId ? `${booking.polId.name}${booking.polId.code ? ` (${booking.polId.code})` : ''}` : null} />
           <InfoRow label="POD"       value={booking.podId ? `${booking.podId.name}${booking.podId.code ? ` (${booking.podId.code})` : ''}` : null} />
@@ -176,7 +177,7 @@ export default function ManualBookingDetail({ booking, onMutated }) {
       </div>
 
       {/* Edit modal */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Edit Manual Booking — ${booking.bookingNumber}`} size="xl">
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Edit Estimated Booking — ${booking.bookingNumber}`} size="xl">
         {editOpen && (
           <ManualBookingForm
             item={booking}
@@ -196,8 +197,8 @@ export default function ManualBookingDetail({ booking, onMutated }) {
         onClose={() => setDelOpen(false)}
         onConfirm={() => deleteMutation.mutate()}
         loading={deleteMutation.isPending}
-        title="Delete Manual Booking"
-        message={`Delete manual booking "${booking.bookingNumber}"? This cannot be undone.`}
+        title="Delete Estimated Booking"
+        message={`Delete estimated booking "${booking.bookingNumber}"? This cannot be undone.`}
       />
     </>
   );

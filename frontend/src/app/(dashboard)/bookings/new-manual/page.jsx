@@ -12,7 +12,7 @@ export default function NewManualBookingPage() {
     <PageGuard module="bookings">
       <div className="animate-fadeIn">
         <PageHeader
-          title="New Manual Booking"
+          title="New Estimated Booking"
           subtitle="Commercial reservation before operational container details are available"
           action={<Button variant="secondary" onClick={() => router.push('/bookings?tab=manual')}>&larr; Back</Button>}
         />

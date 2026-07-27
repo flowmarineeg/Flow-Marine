@@ -136,7 +136,7 @@ export default function TrackingList() {
             <select value={voyageId} onChange={e => { setVoyageId(e.target.value); resetPage(); }} className={sc}>
               <option value="">All Voyages</option>
               {voyages.map(v => (
-                <option key={v._id} value={v._id}>{v.voyageNumber}</option>
+                <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>
               ))}
             </select>
           </div>
@@ -223,6 +223,7 @@ export default function TrackingList() {
                     </td>
                     <td>
                       <span className="mono text-xs font-semibold text-teal-600">{entry.voyageId?.voyageNumber || '—'}</span>
+                      <p className="text-[11px] text-gray-400">{entry.voyageId?.voyageName || '(unnamed)'}</p>
                     </td>
                     <td>
                       <span className="mono text-xs text-gray-500">{entry.serviceId?.serviceCode || '—'}</span>

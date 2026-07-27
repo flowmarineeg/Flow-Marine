@@ -43,8 +43,8 @@ export default function EligibleBookingsTable({ bookings, selected, onToggle }) 
                   </td>
                   <td><span className="mono text-xs font-semibold text-teal-600">{b.bookingNumber}</span></td>
                   <td className="mono text-xs text-gray-600">{b.containerNumber || '—'}</td>
-                  <td className="mono text-xs text-gray-500">{b.voyageNumber || '—'}</td>
-                  <td className="mono text-xs text-gray-500">{b.roundNumber || '—'}</td>
+                  <td className="mono text-xs text-gray-500">{b.voyageNumber ? `${b.voyageNumber} (${b.voyageName || 'unnamed'})` : '—'}</td>
+                  <td className="mono text-xs text-gray-500">{b.roundNumber ? `${b.roundNumber} (${b.roundName || 'unnamed'})` : '—'}</td>
                   <td className="text-xs text-gray-700 font-medium">{fmtMoney(b.freightAmount)}</td>
                   <td><span className="text-[11px] text-gray-400">Not Invoiced</span></td>
                   <td className="text-xs text-gray-300">$0.00</td>

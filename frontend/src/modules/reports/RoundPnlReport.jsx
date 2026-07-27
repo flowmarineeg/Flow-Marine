@@ -121,7 +121,7 @@ export default function RoundPnlReport() {
               <option value="">Choose a round…</option>
               {rounds.map(r => (
                 <option key={r._id} value={r._id}>
-                  {r.roundNumber}
+                  {r.roundNumber} ({r.roundName || 'unnamed'})
                   {r.serviceId?.serviceCode ? ` — ${r.serviceId.serviceCode}` : ''}
                   {r.status ? ` (${r.status})` : ''}
                 </option>
@@ -139,7 +139,7 @@ export default function RoundPnlReport() {
             >
               <option value="">All Voyages (Round)</option>
               {voyages.map(v => (
-                <option key={v._id} value={v._id}>{v.voyageNumber}</option>
+                <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>
               ))}
             </select>
           </div>
@@ -184,7 +184,7 @@ export default function RoundPnlReport() {
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4">Round Details</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: 'Round',   val: <span className="mono font-bold text-teal-600">{data.round.roundNumber}</span> },
+                { label: 'Round',   val: <span className="mono font-bold text-teal-600">{data.round.roundNumber} <span className="font-normal text-teal-500">({data.round.roundName || 'unnamed'})</span></span> },
                 { label: 'Service', val: `${data.round.service?.serviceCode ?? '—'} — ${data.round.service?.serviceName ?? ''}` },
                 { label: 'Vessel',  val: `${data.round.vessel?.vesselCode ?? '—'} ${data.round.vessel?.vesselName ?? ''}` },
                 { label: 'Status',  val: data.round.status },
@@ -218,7 +218,7 @@ export default function RoundPnlReport() {
                   <tbody>
                     {data.voyages.map(v => (
                       <tr key={v.voyageId} className="table-row">
-                        <td className="mono text-xs font-semibold text-teal-700">{v.voyageNumber}</td>
+                        <td className="mono text-xs font-semibold text-teal-700">{v.voyageNumber}<p className="font-normal text-gray-400 normal-case">{v.voyageName || '(unnamed)'}</p></td>
                         <td className="text-xs text-gray-500">{v.revenue.polName || v.polName || '—'}</td>
                         <td className="text-xs text-gray-500">{v.revenue.podName || v.podName || '—'}</td>
                         <td className="text-xs text-gray-600">{fmtNum(v.revenue.bookingCount)}</td>
@@ -261,7 +261,7 @@ export default function RoundPnlReport() {
                       v.voyageCost.byPort.length > 0
                         ? v.voyageCost.byPort.map((p, i) => (
                           <tr key={`${v.voyageId}-${p.portId || p.portName}`} className="table-row">
-                            {i === 0 && <td rowSpan={v.voyageCost.byPort.length} className="mono text-xs font-semibold text-teal-700 align-top">{v.voyageNumber}</td>}
+                            {i === 0 && <td rowSpan={v.voyageCost.byPort.length} className="mono text-xs font-semibold text-teal-700 align-top">{v.voyageNumber}<p className="font-normal text-gray-400 normal-case">{v.voyageName || '(unnamed)'}</p></td>}
                             <td className="text-xs text-gray-500">{p.portName}</td>
                             <td className="mono text-xs font-semibold text-red-600">{fmtMoney(p.total)}</td>
                           </tr>
