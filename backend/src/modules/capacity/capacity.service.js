@@ -11,11 +11,12 @@ const { resolveTEU } = require('../../utils/teuResolver');
 const CACHE_TTL = 60_000; // 60 seconds
 
 // ── Layer 2 statuses counted toward capacity (Sprint 025: Pending now included)
-// ── Cancelled and isDeleted=true are the only exclusions.
+// ── Cancelled is the only exclusion (Sprint 047: hard delete means a
+// ── deleted booking's row is simply gone, not a status to filter on).
 const L2_STATUSES = ['Pending', 'Confirmed', 'Final Loading'];
 
 // ── Layer 1 statuses counted toward capacity (planning indicator):
-// ── Pending counts — only Cancelled and Deleted are excluded.
+// ── Pending counts — only Cancelled is excluded.
 const L1_STATUSES = ['Pending', 'Confirmed', 'Final Loading'];
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -91,20 +92,18 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     // Layer 2 — operational bookings (Sprint 025: quantity removed; TEU from container size only)
     Booking.find({
       voyageId:  { $in: voyageIds },
-      isDeleted: false,
       status:    { $in: l2Statuses },
     })
       // Sprint 045 — dischargeStatus read-only here, only to decide whether
       // this booking's TEU actually left the vessel at its planned discharge
       // voyage (see Step C/E below) — never written by this function.
       .select('voyageId polId podId containerTypeId containerNumber status dischargeStatus')
-      .populate('containerTypeId', 'code size isDeleted')
+      .populate('containerTypeId', 'code size')
       .lean(),
 
     // Layer 1 — manual bookings (including Pending — planning indicator)
     ManualBooking.find({
       voyageId:  { $in: voyageIds },
-      isDeleted: false,
       status:    { $in: L1_STATUSES },
     })
       .select('totalTEU totalFreight totalUnits voyageId polId podId status bookingNumber')
@@ -149,9 +148,6 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     if (!b.containerTypeId) {
       warnings.push({ code: 'MISSING_CONTAINER_TYPE', message: `Booking ${b._id} has no container type — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
       continue;
-    }
-    if (b.containerTypeId.isDeleted) {
-      warnings.push({ code: 'DELETED_CONTAINER_TYPE', message: `Booking ${b._id} uses soft-deleted container type ${b.containerTypeId.code} — proceeding`, bookingId: b._id, containerNumber: b.containerNumber });
     }
     const { teu, matched } = resolveTEU(b.containerTypeId.size);
     if (!matched) {
@@ -452,7 +448,7 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
 
 // ─── computeVesselActiveCapacity ─────────────────────────────────────────────
 const computeVesselActiveCapacity = async (vesselId) => {
-  const vessel = await Vessel.findOne({ _id: vesselId, isDeleted: false })
+  const vessel = await Vessel.findOne({ _id: vesselId })
     .select('vesselCode vesselName capacity')
     .lean();
   if (!vessel) throw { status: 404, message: 'Vessel not found' };
@@ -460,7 +456,6 @@ const computeVesselActiveCapacity = async (vesselId) => {
   const activeRound = await Round.findOne({
     vesselId:  vesselId,
     status:    'Active',
-    isDeleted: false,
   }).lean();
 
   if (!activeRound) return { vessel, activeRound: null };

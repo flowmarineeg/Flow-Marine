@@ -17,7 +17,7 @@ const syncCategory = async (name, userId) => {
 
 // ─── List expense types ───────────────────────────────────────────────────────
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', category = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (category) query.category = { $regex: `^${category}$`, $options: 'i' };
   if (search) query.name = { $regex: search, $options: 'i' };
   const skip = (Number(page) - 1) * Number(limit);
@@ -29,7 +29,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', c
 };
 
 const getById = async (id) => {
-  const et = await ExpenseType.findOne({ _id: id, isDeleted: false }).lean();
+  const et = await ExpenseType.findOne({ _id: id }).lean();
   if (!et) throw { status: 404, message: 'Expense type not found' };
   return et;
 };
@@ -91,7 +91,7 @@ const deleteCategory = async (id) => {
   if (!cat) throw { status: 404, message: 'Category not found' };
 
   // Block if any expense type uses this category
-  const inUse = await ExpenseType.findOne({ category: { $regex: `^${cat.name}$`, $options: 'i' }, isDeleted: false });
+  const inUse = await ExpenseType.findOne({ category: { $regex: `^${cat.name}$`, $options: 'i' } });
   if (inUse) throw { status: 400, message: `Cannot delete — category is used by expense type "${inUse.name}"` };
 
   await ExpenseCategory.findByIdAndDelete(id);
@@ -113,7 +113,7 @@ const create = async (data, createdBy) => {
 
 // ─── Update expense type ──────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
-  const et = await ExpenseType.findOne({ _id: id, isDeleted: false });
+  const et = await ExpenseType.findOne({ _id: id });
   if (!et) throw { status: 404, message: 'Expense type not found' };
 
   if (data.name && data.name.toLowerCase() !== et.name.toLowerCase()) {
@@ -131,24 +131,21 @@ const update = async (id, data, updatedBy) => {
   return et.toObject();
 };
 
-// ─── Soft delete expense type ─────────────────────────────────────────────────
-const softDelete = async (id, deletedBy) => {
-  const et = await ExpenseType.findOne({ _id: id, isDeleted: false });
+// ─── Hard delete expense type ──────────────────────────────────────────────────
+const hardDelete = async (id) => {
+  const et = await ExpenseType.findOne({ _id: id });
   if (!et) throw { status: 404, message: 'Expense type not found' };
 
   const Expense = require('../expenses/expense.model');
   const inUse = await Expense.findOne({ expenseTypeId: id });
   if (inUse) throw { status: 400, message: 'Cannot delete — expense type is used in existing expenses' };
 
-  et.isDeleted = true;
-  et.deletedAt = new Date();
-  et.updatedBy = deletedBy;
-  await et.save();
+  await ExpenseType.findByIdAndDelete(id);
 };
 
 // ─── Get all for export ───────────────────────────────────────────────────────
 const getAll = async (filters = {}, selectedIds = []) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (filters.category) query.category = { $regex: `^${filters.category}$`, $options: 'i' };
   if (filters.search) query.name = { $regex: filters.search, $options: 'i' };
   if (selectedIds?.length > 0) query._id = { $in: selectedIds };
@@ -159,5 +156,5 @@ module.exports = {
   list, getById,
   getCategories, createCategory, updateCategoryClassification, deleteCategory,
   getCostClassificationMap,
-  create, update, softDelete, getAll,
+  create, update, hardDelete, getAll,
 };

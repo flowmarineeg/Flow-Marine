@@ -49,7 +49,7 @@ const cascadeFirstVoyageToDeparted = async (roundId, updatedBy) => {
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '', serviceId = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (status)    query.status    = status;
   if (serviceId) query.serviceId = serviceId;
   if (search) {
@@ -89,7 +89,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 const getById = async (id) => {
-  const round = await Round.findOne({ _id: id, isDeleted: false })
+  const round = await Round.findOne({ _id: id })
     .populate('serviceId', 'serviceCode serviceName')
     .populate('vesselId',  'vesselCode vesselName')
     .lean();
@@ -99,7 +99,7 @@ const getById = async (id) => {
 
 // ─── Get voyages for a round ──────────────────────────────────────────────────
 const getRoundVoyages = async (roundId) => {
-  const round = await Round.findOne({ _id: roundId, isDeleted: false }).lean();
+  const round = await Round.findOne({ _id: roundId }).lean();
   if (!round) throw { status: 404, message: 'Round not found' };
 
   return Voyage.find({ roundId })
@@ -112,10 +112,10 @@ const getRoundVoyages = async (roundId) => {
 // ─── Create (triggers voyage generation) ─────────────────────────────────────
 const create = async (data, createdBy) => {
   // 1. Validate service exists and has a route with >= 2 legs
-  const service = await Service.findOne({ _id: data.serviceId, isDeleted: false });
+  const service = await Service.findOne({ _id: data.serviceId });
   if (!service) throw { status: 400, message: 'Service not found' };
 
-  const route = await Route.findOne({ serviceId: data.serviceId, isDeleted: false });
+  const route = await Route.findOne({ serviceId: data.serviceId });
   if (!route) throw { status: 400, message: 'Service has no route defined. Add at least 2 route legs first.' };
 
   const routeLegs = await RouteLeg.find({ routeId: route._id })
@@ -131,7 +131,6 @@ const create = async (data, createdBy) => {
   const conflictRound = await Round.findOne({
     vesselId: data.vesselId,
     status:   'Active',
-    isDeleted: false,
   });
   if (conflictRound) {
     throw {
@@ -186,7 +185,7 @@ const create = async (data, createdBy) => {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
-  const round = await Round.findOne({ _id: id, isDeleted: false });
+  const round = await Round.findOne({ _id: id });
   if (!round) throw { status: 404, message: 'Round not found' };
 
   // Do NOT allow service change
@@ -214,7 +213,6 @@ const update = async (id, data, updatedBy) => {
     const conflict = await Round.findOne({
       vesselId:  data.vesselId,
       status:    'Active',
-      isDeleted: false,
       _id:       { $ne: id },
     });
     if (conflict) {
@@ -242,24 +240,30 @@ const update = async (id, data, updatedBy) => {
     .lean();
 };
 
-// ─── Soft Delete ──────────────────────────────────────────────────────────────
-const softDelete = async (id, deletedBy) => {
-  const round = await Round.findOne({ _id: id, isDeleted: false });
+// ─── Hard Delete ──────────────────────────────────────────────────────────────
+// A Round's Voyages have no independent existence outside their Round (they
+// are auto-generated from it and exclusively owned by it, per
+// utils/voyageGenerator.js) — so deleting a Round also removes its own
+// Voyage documents, once the same guard below confirms none of them have
+// any bookings. This does NOT reach any further down the graph (Booking/
+// Invoice/Expense etc. are untouched, they simply block the whole delete
+// if present) — narrow, exclusive-ownership cleanup, not a generic cascade.
+const hardDelete = async (id) => {
+  const round = await Round.findOne({ _id: id });
   if (!round) throw { status: 404, message: 'Round not found' };
+
+  const voyageIds = round.voyageIds || [];
 
   // Block if any voyage under this round has bookings
   let Booking;
   try { Booking = require('../bookings/booking.model'); } catch { Booking = null; }
   if (Booking) {
-    const voyageIds  = round.voyageIds || [];
-    const hasBooking = await Booking.exists({ voyageId: { $in: voyageIds }, isDeleted: false });
+    const hasBooking = await Booking.exists({ voyageId: { $in: voyageIds } });
     if (hasBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have bookings' };
   }
 
-  round.isDeleted = true;
-  round.deletedAt = new Date();
-  round.updatedBy = deletedBy;
-  await round.save();
+  if (voyageIds.length) await Voyage.deleteMany({ _id: { $in: voyageIds } });
+  await Round.findByIdAndDelete(id);
 };
 
-module.exports = { list, getById, getRoundVoyages, create, update, softDelete };
+module.exports = { list, getById, getRoundVoyages, create, update, hardDelete };

@@ -33,7 +33,7 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await vesselService.softDelete(req.params.id, req.user._id);
+    await vesselService.hardDelete(req.params.id);
     return success(res, null, 'Vessel deleted successfully');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };

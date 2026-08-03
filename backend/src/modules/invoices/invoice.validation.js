@@ -41,4 +41,18 @@ const validateUpdate = [
   handle,
 ];
 
-module.exports = { validateCreate, validateUpdate };
+// Sprint 047 — Bill To (PDF contact details). All optional free text; this
+// is presentational data for the PDF, not financial, so it carries none of
+// validateUpdate's business-rule constraints.
+const validateBillTo = [
+  body('phone').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 50 }),
+  body('mobile').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 50 }),
+  body('email').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 150 }),
+  body('jobCode').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 100 }),
+  body('taxId').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 100 }),
+  body('address').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 300 }),
+  body('office').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 150 }),
+  handle,
+];
+
+module.exports = { validateCreate, validateUpdate, validateBillTo };

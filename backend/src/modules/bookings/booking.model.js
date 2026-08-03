@@ -31,8 +31,6 @@ const bookingSchema = new mongoose.Schema(
     // booking's voyage yet) — distinct from both real outcomes below.
     dischargeStatus: { type: String, enum: ['Discharged', 'Remaining'], default: null },
     dischargedAt:    { type: Date, default: null },
-    isDeleted:       { type: Boolean, default: false },
-    deletedAt:       { type: Date,    default: null },
     createdBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -45,8 +43,7 @@ const bookingSchema = new mongoose.Schema(
 
 // ── Compound indexes — Sprint020 DB-001 ───────────────────────────────────────
 bookingSchema.index({ createdAt: -1 });
-bookingSchema.index({ voyageId: 1, status: 1, isDeleted: 1 });
-bookingSchema.index({ agentId:  1, status: 1, isDeleted: 1 });
-bookingSchema.index({ isDeleted: 1, createdAt: -1 });
+bookingSchema.index({ voyageId: 1, status: 1 });
+bookingSchema.index({ agentId:  1, status: 1 });
 
 module.exports = mongoose.model('Booking', bookingSchema);

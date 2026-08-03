@@ -9,8 +9,6 @@ const containerTypeSchema = new mongoose.Schema(
     description: { type: String, trim: true, default: null },
     size:        { type: String, enum: CONTAINER_SIZES, required: true },
     type:        { type: String, enum: CONTAINER_TYPES, required: true },
-    isDeleted:   { type: Boolean, default: false },
-    deletedAt:   { type: Date, default: null },
     createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -18,6 +16,5 @@ const containerTypeSchema = new mongoose.Schema(
 );
 
 // code uniqueness enforced inline
-containerTypeSchema.index({ isDeleted: 1 });
 
 module.exports = mongoose.model('ContainerType', containerTypeSchema);

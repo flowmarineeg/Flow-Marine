@@ -6,8 +6,6 @@ const countrySchema = new mongoose.Schema(
   {
     name:      { type: String, required: true, trim: true, maxlength: 100 },
     code:      { type: String, required: true, trim: true, uppercase: true, minlength: 2, maxlength: 2 },
-    isDeleted: { type: Boolean, default: false },
-    deletedAt: { type: Date, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -16,6 +14,5 @@ const countrySchema = new mongoose.Schema(
 
 countrySchema.index({ name: 1 }, { unique: true });
 countrySchema.index({ code: 1 }, { unique: true });
-countrySchema.index({ isDeleted: 1 });
 
 module.exports = mongoose.model('Country', countrySchema);

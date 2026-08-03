@@ -32,7 +32,7 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await agentService.softDelete(req.params.id, req.user._id);
+    await agentService.hardDelete(req.params.id);
     return success(res, null, 'Agent deleted successfully');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };

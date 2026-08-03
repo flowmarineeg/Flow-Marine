@@ -67,6 +67,7 @@ function EditInvoiceForm({ item }) {
   });
 
   return (
+    <div className="flex flex-col gap-5">
     <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="flex flex-col gap-5">
       {locked && (
         <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -88,32 +89,25 @@ function EditInvoiceForm({ item }) {
 
       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4">
         <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-          Line Items — {item.invoiceType} Invoice
+          {item.invoiceType} Invoice — Overview
         </p>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[13px]">
-            <thead>
-              <tr className="table-header">
-                {['Booking', 'Container', 'Voyage', 'Round', 'Freight'].map(h => <th key={h}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {(item.lineItems || []).map(li => (
-                <tr key={li._id} className="table-row">
-                  <td className="mono text-xs font-semibold text-teal-600">{li.bookingNumber}{li.orphaned && <span className="ml-1 text-red-500" title={li.orphanedReason}>⚠</span>}</td>
-                  <td className="mono text-xs text-gray-600">{li.containerNumber || '—'}</td>
-                  <td className="mono text-xs text-gray-500">{li.voyageNumber ? `${li.voyageNumber} (${li.voyageName || 'unnamed'})` : '—'}</td>
-                  <td className="mono text-xs text-gray-500">{li.roundNumber ? `${li.roundNumber} (${li.roundName || 'unnamed'})` : '—'}</td>
-                  <td className="text-xs text-gray-700">{fmtMoney(li.freightAmount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex justify-end gap-4 text-xs">
-          <span className="text-gray-500">Total <b className="text-gray-800 ml-1">{fmtMoney(item.totalAmount)}</b></span>
-          <span className="text-gray-500">Paid <b className="text-green-700 ml-1">{fmtMoney(item.paidAmount)}</b></span>
-          <span className="text-gray-500">Balance <b className="text-amber-700 ml-1">{fmtMoney(item.balanceAmount)}</b></span>
+        {/* Sprint 047 — no booking list/breakdown at all, just the three
+            headline figures. Per-booking detail lives only in the app's
+            drill-down (Agent Financial Account / individual Booking pages),
+            never on the invoice's own overview. */}
+        <div className="flex flex-wrap gap-6">
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Total Amount</p>
+            <p className="text-lg font-bold text-gray-800">{fmtMoney(item.totalAmount)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Total Paid</p>
+            <p className="text-lg font-bold text-green-700">{fmtMoney(item.paidAmount)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Remaining</p>
+            <p className="text-lg font-bold text-amber-700">{fmtMoney(item.balanceAmount)}</p>
+          </div>
         </div>
       </div>
 
@@ -151,6 +145,73 @@ function EditInvoiceForm({ item }) {
         <button type="button" onClick={() => router.push('/invoices')} className="btn btn-secondary btn-md">Cancel</button>
         <button type="submit" disabled={mutation.isPending || locked} className="btn btn-primary btn-md">
           {mutation.isPending ? 'Saving…' : 'Save Changes'}
+        </button>
+      </div>
+    </form>
+
+    <BillToSection item={item} />
+    </div>
+  );
+}
+
+// ── Bill To (PDF contact details) — Sprint 047. Always editable regardless
+// of the invoice's lock status (not financial data), own separate form/
+// mutation via PUT /invoices/:id/bill-to.
+function BillToSection({ item }) {
+  const qc = useQueryClient();
+  const [billTo, setBillTo] = useState({
+    phone:   item.billTo?.phone   || '',
+    mobile:  item.billTo?.mobile  || '',
+    email:   item.billTo?.email   || '',
+    jobCode: item.billTo?.jobCode || '',
+    taxId:   item.billTo?.taxId   || '',
+    address: item.billTo?.address || '',
+    office:  item.billTo?.office  || '',
+  });
+
+  const mutation = useMutation({
+    mutationFn: (data) => invoicesService.updateBillTo(item._id, data),
+    onSuccess: () => {
+      toast.success('Bill To details saved');
+      qc.invalidateQueries(['invoice', item._id]);
+    },
+    onError: (e) => showErrorToast(e, 'save'),
+  });
+
+  const field = (key, label) => (
+    <div>
+      <label className={lc}>{label}</label>
+      <input
+        value={billTo[key]}
+        onChange={e => setBillTo(prev => ({ ...prev, [key]: e.target.value }))}
+        className={ic(false)}
+      />
+    </div>
+  );
+
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); mutation.mutate(billTo); }}
+      className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-4"
+    >
+      <div>
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Bill To (PDF)</p>
+        <p className="text-[11px] text-gray-400 mt-1">
+          Shown on the generated invoice PDF only — always editable, independent of the invoice&apos;s lock status.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {field('phone', 'Phone')}
+        {field('mobile', 'Mobile')}
+        {field('email', 'Email')}
+        {field('jobCode', 'Job Code')}
+        {field('taxId', 'Tax ID')}
+        {field('office', 'Office')}
+      </div>
+      {field('address', 'Address')}
+      <div className="flex justify-end">
+        <button type="submit" disabled={mutation.isPending} className="btn btn-primary btn-md">
+          {mutation.isPending ? 'Saving…' : 'Save Bill To'}
         </button>
       </div>
     </form>

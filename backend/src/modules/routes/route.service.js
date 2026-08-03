@@ -5,10 +5,10 @@ const RouteLeg = require('./routeLeg.model');
 const Service  = require('../services/service.model');
 
 const getByServiceId = async (serviceId) => {
-  const service = await Service.findOne({ _id: serviceId, isDeleted: false }).lean();
+  const service = await Service.findOne({ _id: serviceId }).lean();
   if (!service) throw { status: 404, message: 'Service not found' };
 
-  const route = await Route.findOne({ serviceId, isDeleted: false }).lean();
+  const route = await Route.findOne({ serviceId }).lean();
   if (!route) return { route: null, legs: [] };
 
   const legs = await RouteLeg.find({ routeId: route._id })
@@ -41,7 +41,6 @@ const saveLegs = async (serviceId, legs, userId) => {
     const lockedRound = await Round.findOne({
       serviceId,
       status: { $in: ['Active', 'Completed'] },
-      isDeleted: false,
     });
     if (lockedRound) {
       throw {
@@ -53,7 +52,7 @@ const saveLegs = async (serviceId, legs, userId) => {
 
   const route = await Route.findOneAndUpdate(
     { serviceId },
-    { serviceId, isDeleted: false, updatedBy: userId },
+    { serviceId, updatedBy: userId },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
   if (!route.createdBy) {

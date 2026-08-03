@@ -4,7 +4,7 @@ const ContainerType = require('./containerType.model');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', size = '', type = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (size) query.size = size;
   if (type) query.type = type;
   if (search) {
@@ -22,7 +22,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
 };
 
 const getById = async (id) => {
-  const ct = await ContainerType.findOne({ _id: id, isDeleted: false }).lean();
+  const ct = await ContainerType.findOne({ _id: id }).lean();
   if (!ct) throw { status: 404, message: 'Container type not found' };
   return ct;
 };
@@ -35,7 +35,7 @@ const create = async (data, createdBy) => {
 };
 
 const update = async (id, data, updatedBy) => {
-  const ct = await ContainerType.findOne({ _id: id, isDeleted: false });
+  const ct = await ContainerType.findOne({ _id: id });
   if (!ct) throw { status: 404, message: 'Container type not found' };
   if (data.code && data.code.toUpperCase() !== ct.code) {
     const exists = await ContainerType.findOne({ code: data.code.toUpperCase(), _id: { $ne: id } });
@@ -46,22 +46,19 @@ const update = async (id, data, updatedBy) => {
   return ct.toObject();
 };
 
-const softDelete = async (id, deletedBy) => {
-  const ct = await ContainerType.findOne({ _id: id, isDeleted: false });
+const hardDelete = async (id) => {
+  const ct = await ContainerType.findOne({ _id: id });
   if (!ct) throw { status: 404, message: 'Container type not found' };
 
   const Booking = require('../bookings/booking.model');
-  const inUse = await Booking.findOne({ containerTypeId: id, isDeleted: false });
+  const inUse = await Booking.findOne({ containerTypeId: id });
   if (inUse) throw { status: 400, message: 'Cannot delete — container type is used in existing bookings' };
 
-  ct.isDeleted = true;
-  ct.deletedAt = new Date();
-  ct.updatedBy = deletedBy;
-  await ct.save();
+  await ContainerType.findByIdAndDelete(id);
 };
 
 const getAll = async (filters = {}, selectedIds = []) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (filters.size) query.size = filters.size;
   if (filters.type) query.type = filters.type;
   if (filters.search) query.$or = [{ code: { $regex: filters.search, $options: 'i' } }, { description: { $regex: filters.search, $options: 'i' } }];
@@ -69,4 +66,4 @@ const getAll = async (filters = {}, selectedIds = []) => {
   return ContainerType.find(query).sort({ createdAt: -1 }).lean();
 };
 
-module.exports = { list, getById, create, update, softDelete, getAll };
+module.exports = { list, getById, create, update, hardDelete, getAll };

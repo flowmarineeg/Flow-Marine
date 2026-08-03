@@ -20,8 +20,6 @@ const agentSchema = new mongoose.Schema(
     address:   { type: String, trim: true, default: null },
     contacts:  { type: [contactSchema], default: [] },
     status:    { type: String, enum: AGENT_STATUS, default: 'Active' },
-    isDeleted: { type: Boolean, default: false },
-    deletedAt: { type: Date, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -30,6 +28,5 @@ const agentSchema = new mongoose.Schema(
 
 // agentCode uniqueness enforced inline (sparse — allows multiple nulls)
 agentSchema.index({ status: 1 });
-agentSchema.index({ isDeleted: 1 });
 
 module.exports = mongoose.model('Agent', agentSchema);

@@ -41,8 +41,6 @@ const manualBookingSchema = new mongoose.Schema(
     // ── Other ─────────────────────────────────────────────────────────────────
     remarks:   { type: String, trim: true, default: null },
     status:    { type: String, enum: BOOKING_STATUS, default: 'Pending' },
-    isDeleted: { type: Boolean, default: false },
-    deletedAt: { type: Date, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -50,8 +48,7 @@ const manualBookingSchema = new mongoose.Schema(
 );
 
 // ── Indexes ───────────────────────────────────────────────────────────────────
-manualBookingSchema.index({ voyageId: 1, status: 1, isDeleted: 1 });
-manualBookingSchema.index({ agentId:  1, status: 1, isDeleted: 1 });
-manualBookingSchema.index({ isDeleted: 1, createdAt: -1 });
+manualBookingSchema.index({ voyageId: 1, status: 1 });
+manualBookingSchema.index({ agentId:  1, status: 1 });
 
 module.exports = mongoose.model('ManualBooking', manualBookingSchema);

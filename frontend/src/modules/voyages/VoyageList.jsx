@@ -17,6 +17,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ExportButton from '@/components/ui/ExportButton';
+import Button from '@/components/ui/Button';
 import VoyageEditForm from '@/modules/voyages/VoyageEditForm';
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -51,6 +52,8 @@ export default function VoyageList() {
   const [serviceId, setServiceId] = useState('');
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [selected, setSelected] = useState([]); // Sprint 047 — flat, page-wide
+  const [bulkConfirm, setBulkConfirm] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['voyages', page, status, serviceId],
@@ -76,9 +79,44 @@ export default function VoyageList() {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids) => {
+      const failed = [];
+      let deletedCount = 0;
+      for (const id of ids) {
+        try {
+          await voyagesService.remove(id);
+          deletedCount++;
+        } catch (e) {
+          failed.push({ id, reason: e?.response?.data?.message || e?.message || 'Delete failed' });
+        }
+      }
+      return { deletedCount, failed };
+    },
+    onSuccess: ({ deletedCount, failed }) => {
+      qc.invalidateQueries(['voyages']);
+      setSelected([]);
+      setBulkConfirm(false);
+      if (failed.length === 0) {
+        toast.success(`${deletedCount} voyage${deletedCount !== 1 ? 's' : ''} deleted`);
+      } else {
+        toast.error(
+          <div>
+            <p className="font-semibold text-[13px]">{deletedCount} deleted, {failed.length} failed</p>
+            <ul className="mt-1 text-[11px] list-disc list-inside space-y-0.5">
+              {failed.map((f, i) => <li key={i}>{f.reason}</li>)}
+            </ul>
+          </div>
+        );
+      }
+    },
+  });
+
   const voyages = data?.data || [];
   const pagination = data?.pagination;
   const groups = useMemo(() => groupByRound(voyages), [voyages]);
+  const toggleSelect = (id) => setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const toggleSelectAll = () => setSelected(p => p.length === voyages.length ? [] : voyages.map(v => v._id));
 
   // Sprint 043 — display order by physical vessel flow, not raw `sequence`.
   // Fetch each visible Round's own route legs (same endpoint VoyageAddForm
@@ -121,6 +159,17 @@ export default function VoyageList() {
           {VOYAGE_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <ExportButton module="voyages" filters={{ serviceId, status }} selectedIds={[]} onClear={() => { }} />
+        {/* Sprint 047 — bulk select + delete */}
+        {voyages.length > 0 && (
+          <Button variant="secondary" size="sm" onClick={toggleSelectAll}>
+            {selected.length === voyages.length ? 'Clear Selection' : 'Select All'}
+          </Button>
+        )}
+        {selected.length > 0 && can('voyages', 'delete') && (
+          <Button variant="danger" size="sm" onClick={() => setBulkConfirm(true)}>
+            Delete Selected ({selected.length})
+          </Button>
+        )}
       </div>
 
       {/* Grouped-by-Round sections */}
@@ -149,6 +198,18 @@ export default function VoyageList() {
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="table-header">
+                        <th className="w-10 px-4 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={g.voyages.every(v => selected.includes(v._id))}
+                            onChange={() => {
+                              const groupIds = g.voyages.map(v => v._id);
+                              const allSelected = groupIds.every(id => selected.includes(id));
+                              setSelected(p => allSelected ? p.filter(id => !groupIds.includes(id)) : [...new Set([...p, ...groupIds])]);
+                            }}
+                            className="w-3.5 h-3.5 cursor-pointer accent-teal-600"
+                          />
+                        </th>
                         {['Voyage No', 'Service', 'POL', 'POD', 'ETD', 'ETA', 'ATD', 'ATA', 'Status', 'Actions'].map(h => (
                           <th key={h}>{h}</th>
                         ))}
@@ -157,6 +218,9 @@ export default function VoyageList() {
                     <tbody>
                       {displayVoyages.map(v => (
                         <tr key={v._id} className="table-row">
+                          <td className="px-4">
+                            <input type="checkbox" checked={selected.includes(v._id)} onChange={() => toggleSelect(v._id)} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
+                          </td>
                           <td>
                             <span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span>
                             <p className="text-[11px] text-gray-400">{v.voyageName || '(unnamed)'}</p>
@@ -210,7 +274,10 @@ export default function VoyageList() {
       {/* Pagination */}
       {pagination && pagination.total > 0 && (
         <div className="flex items-center justify-between mt-4">
-          <p className="text-xs text-gray-400">{pagination.total} voyage{pagination.total !== 1 ? 's' : ''} total</p>
+          <p className="text-xs text-gray-400">
+            {pagination.total} voyage{pagination.total !== 1 ? 's' : ''} total
+            {selected.length > 0 && <span className="text-teal-600 font-medium"> · {selected.length} selected</span>}
+          </p>
           <Pagination page={pagination.page} totalPages={pagination.totalPages} onPageChange={setPage} />
         </div>
       )}
@@ -242,6 +309,17 @@ export default function VoyageList() {
         loading={deleteMutation.isPending}
         title="Delete Voyage"
         message={`Delete voyage "${deleteTarget?.voyageNumber}" (${deleteTarget?.voyageName || 'unnamed'})? This cannot be undone. Voyages with active bookings cannot be deleted.`}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkConfirm}
+        onClose={() => setBulkConfirm(false)}
+        onConfirm={() => bulkDeleteMutation.mutate(selected)}
+        loading={bulkDeleteMutation.isPending}
+        title="Delete Selected Voyages"
+        message={`Delete ${selected.length} selected voyage${selected.length !== 1 ? 's' : ''}? This cannot be undone. Any voyage that can't be deleted (e.g. it has active bookings) will be reported and skipped.`}
+        confirmLabel="Delete Selected"
       />
     </div>
   );

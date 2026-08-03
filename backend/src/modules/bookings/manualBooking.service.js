@@ -68,7 +68,7 @@ const list = async ({
   page = DEFAULT_PAGE, limit = DEFAULT_LIMIT,
   search = '', voyageId = '', agentId = '', status = '',
 } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (voyageId) query.voyageId = voyageId;
   if (agentId)  query.agentId  = agentId;
   if (status) {
@@ -91,7 +91,7 @@ const list = async ({
 
 // ── Get by ID ─────────────────────────────────────────────────────────────────
 const getById = async (id) => {
-  const doc = await populate(ManualBooking.findOne({ _id: id, isDeleted: false })).lean();
+  const doc = await populate(ManualBooking.findOne({ _id: id })).lean();
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
   return doc;
 };
@@ -139,7 +139,7 @@ const create = async (data, createdBy) => {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
-  const doc = await ManualBooking.findOne({ _id: id, isDeleted: false });
+  const doc = await ManualBooking.findOne({ _id: id });
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
 
   if (['Cancelled', 'Final Loading'].includes(doc.status)) {
@@ -176,18 +176,18 @@ const update = async (id, data, updatedBy) => {
   return getById(doc._id);
 };
 
-// ── Soft Delete ───────────────────────────────────────────────────────────────
-const softDelete = async (id, deletedBy) => {
-  const doc = await ManualBooking.findOne({ _id: id, isDeleted: false });
+// ── Hard Delete ───────────────────────────────────────────────────────────────
+// No guard — matches the existing rule (ManualBooking had no delete guard
+// before this sprint either; not adding one now, per "do not redesign
+// business rules unless required for referential integrity").
+const hardDelete = async (id) => {
+  const doc = await ManualBooking.findOne({ _id: id });
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
 
   const voyage = await Voyage.findById(doc.voyageId).select('roundId').lean();
-  doc.isDeleted = true;
-  doc.deletedAt = new Date();
-  doc.updatedBy = deletedBy;
-  await doc.save();
+  await ManualBooking.findByIdAndDelete(id);
 
   if (voyage) invalidateRoundCache(voyage.roundId);
 };
 
-module.exports = { list, getById, create, update, softDelete };
+module.exports = { list, getById, create, update, hardDelete };

@@ -219,7 +219,7 @@ function PaymentsTab({ agentId }) {
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[13px]">
           <thead>
-            <tr className="table-header">{['Date', 'Invoice', 'Amount', 'Method', 'Reference', 'Applied To'].map(h => <th key={h}>{h}</th>)}</tr>
+            <tr className="table-header">{['Date', 'Invoice', 'Amount', 'Method', 'Reference'].map(h => <th key={h}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {rows.map(p => (
@@ -229,9 +229,9 @@ function PaymentsTab({ agentId }) {
                 <td className="text-xs text-gray-700 font-medium">{fmtMoney(p.amount)}</td>
                 <td className="text-xs text-gray-600">{p.method}</td>
                 <td className="text-xs text-gray-400">{p.reference || '—'}</td>
-                <td className="text-xs text-gray-500">
+                {/* <td className="text-xs text-gray-500">
                   {(p.allocations || []).map(a => a.bookingId?.bookingNumber).filter(Boolean).join(', ') || '—'}
-                </td>
+                </td> */}
               </tr>
             ))}
           </tbody>

@@ -1,94 +1,78 @@
-Before writing Sprint 045, I need you to first verify that you fully understand the intended business flow. Do NOT assume anything.
+Rewrite Sprint 047 from scratch.
 
-This sprint is about the Booking module (Layer 1 + Layer 2), the Capacity Engine, and a new Discharge workflow.
+Discard the current Part B design completely.
 
-The current system already has:
+Do NOT continue from the current proposal.
 
-- Layer 1 = Estimated Booking.
-- Layer 2 = Operational Booking.
-- Final Loading Import.
-- Capacity Engine based on Estimated + Final Loading.
+The current design is over-engineered and does not match the product goal.
 
-The new business flow is as follows:
+The goal of this sprint is very simple:
 
-1. The current Final Loading import remains exactly as it is.
-It still creates/updates the actual operational booking and confirms the final container details.
+## Goal
 
-2. A new Import Type called "Discharge" will be added.
+Convert the system from soft delete to hard delete while keeping the existing business rules as simple as possible.
 
-This import uses almost the SAME Excel template as the Final Loading import.
+## Requirements
 
-The user must select:
+- Remove soft delete from the system (User is the only exception and should keep its current behavior).
+- Convert delete operations to hard delete.
+- Do NOT introduce cascade delete.
+- Do NOT introduce recursive delete helpers.
+- Do NOT introduce delete engines.
+- Do NOT introduce shared delete architecture.
+- Do NOT introduce generic delete services.
+- Do NOT introduce new infrastructure.
+- Do NOT redesign the project.
 
-- Agent
-- Round
-- Voyage (required)
-- Import Type = Discharge
-- Excel file
+The delete flow must remain extremely simple.
 
-3. During Preview validation, verify that every row in the uploaded discharge sheet belongs to the selected voyage.
+For every entity:
 
-The matching must be based on the voyage's actual POL/POD together with the booking matching logic already used in the system.
+1. When Delete is requested,
+2. Check whether the entity is still referenced by related business data.
+3. If related data exists:
+   - Reject the delete.
+   - Return a clear message explaining what still depends on it.
+4. If nothing references it:
+   - Permanently hard delete the record.
 
-If rows belong to another voyage, they must be reported before import.
+Nothing more.
 
-4. The Discharge import does NOT create bookings.
+The administrator is responsible for deleting dependent records manually.
 
-It only matches existing Final Loading bookings using the existing matching logic (Container Number, BOL, POD, etc.).
+Example:
 
-5. The import determines the ACTUAL operational result of those bookings.
+Service
+→ cannot delete while Rounds exist.
 
-After processing:
+Round
+→ cannot delete while Voyages exist.
 
-- Containers found in the discharge list become Discharged.
-- Containers that were expected to discharge on that voyage but are NOT found in the discharge list become Remaining.
+Voyage
+→ cannot delete while Bookings exist.
 
-6. The Booking UI will gain two additional operational tabs:
+Booking
+→ cannot delete while Invoices exist.
 
-- Discharged
-- Remaining
+Invoice
+→ existing financial rules remain exactly as they are.
 
-These are additional operational views with filtering exactly like the existing Operational Booking tab (Round, Voyage, Status, etc.).
+The system should never automatically delete child records.
 
-7. Capacity Engine must now use the discharge result.
+No automatic cascade.
 
-Today it depends on Estimated + Final Loading.
+No recursive delete.
 
-After this sprint it must also consider the Discharge result.
+No transaction-based delete engine.
 
-Business rule:
+Simply preserve the existing guard philosophy and replace soft delete with hard delete.
 
-- Discharged containers are removed from onboard capacity because they actually left the vessel.
-- Remaining containers stay onboard and continue consuming capacity.
-- Remaining containers should be visually highlighted (for example in red) inside Capacity Engine tables as an operational warning.
+Reuse as much of the existing codebase as possible.
 
-The capacity calculation itself should NOT be rewritten.
-Only the source of the actual discharge event changes.
+Only update the delete implementations and remove soft delete logic.
 
-8. Existing Final Loading workflow must remain unchanged.
-This sprint extends the operational lifecycle after Final Loading.
+Do not redesign business rules unless absolutely required to preserve referential integrity.
 
----------------------------------------
+Rewrite Sprint 047 completely based on these requirements.
 
-YOUR TASK
-
-First, analyze the existing codebase and verify whether the business flow above matches the current architecture.
-
-Do not write implementation yet.
-
-Write Sprint 045 exactly like previous sprints:
-
-- Architecture-first
-- Read the actual source code
-- Identify affected modules
-- Explain impact
-- Reuse existing architecture whenever possible
-- Avoid unnecessary redesign
-
-If anything is ambiguous or conflicts with the current implementation, ask open questions exactly like previous sprints.
-
-After every question is answered, rewrite the complete Sprint 045 document from scratch with all decisions locked.
-
-Do NOT implement any code.
-
-Wait for my explicit approval before implementation.
+Wait for my approval before writing any implementation.

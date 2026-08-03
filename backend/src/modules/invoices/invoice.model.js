@@ -29,6 +29,22 @@ const lineItemSchema = new mongoose.Schema({
   orphanedReason:  { type: String, trim: true, default: null },
 }, { _id: true });
 
+// Sprint 047 — PDF "Bill To" contact details, entered per-invoice (not
+// pulled from Agent — a given invoice may need its own job-specific
+// contact/billing details). Purely presentational data for the generated
+// PDF; not financial, so it stays editable regardless of the invoice's
+// paid/locked state (see invoice.service.js#updateBillTo — a separate,
+// always-open code path from the main update()'s lock).
+const billToSchema = new mongoose.Schema({
+  phone:   { type: String, trim: true, default: null },
+  mobile:  { type: String, trim: true, default: null },
+  email:   { type: String, trim: true, default: null },
+  jobCode: { type: String, trim: true, default: null },
+  taxId:   { type: String, trim: true, default: null },
+  address: { type: String, trim: true, default: null },
+  office:  { type: String, trim: true, default: null },
+}, { _id: false });
+
 const invoiceSchema = new mongoose.Schema(
   {
     invoiceNumber: { type: String, required: true, unique: true, trim: true },
@@ -44,8 +60,7 @@ const invoiceSchema = new mongoose.Schema(
     paidAmount:    { type: Number, default: 0, min: 0 },      // denormalized sum of non-voided Payments
     status:        { type: String, enum: INVOICE_STATUS, default: 'Draft' },
     notes:         { type: String, trim: true, default: null },
-    isDeleted:     { type: Boolean, default: false },
-    deletedAt:     { type: Date,    default: null },
+    billTo:        { type: billToSchema, default: () => ({}) },
     createdBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -59,10 +74,10 @@ invoiceSchema.set('toJSON',   { virtuals: true });
 invoiceSchema.set('toObject', { virtuals: true });
 
 // ── Compound indexes ───────────────────────────────────────────────────────────
-invoiceSchema.index({ agentId: 1, status: 1, isDeleted: 1 });
-invoiceSchema.index({ isDeleted: 1, invoiceDate: -1 });
-invoiceSchema.index({ voyageId: 1, isDeleted: 1 });
-invoiceSchema.index({ roundId: 1, isDeleted: 1 });
+invoiceSchema.index({ agentId: 1, status: 1 });
+invoiceSchema.index({ invoiceDate: -1 });
+invoiceSchema.index({ voyageId: 1 });
+invoiceSchema.index({ roundId: 1 });
 // Sprint 033 — THE booking↔invoice ownership index. This is the single
 // source of truth for "is this booking already invoiced" (queried as
 // { 'lineItems.bookingId': id, status: { $ne: 'Cancelled' } }) — there is
