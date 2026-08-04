@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const User   = require('./user.model');
 const cache  = require('../../utils/cache');
 const { sendInvitationEmail } = require('../../utils/mailer');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // Invalidate the auth middleware's cached user entry
@@ -14,10 +15,13 @@ const invalidateUser = (id) => cache.del(`user:${String(id)}`);
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
   const query = { isDeleted: false };
   if (status) query.status = status;
-  if (search) query.$or = [
-    { name:  { $regex: search, $options: 'i' } },
-    { email: { $regex: search, $options: 'i' } },
-  ];
+  if (search) {
+    const rx = escapeRegex(search);
+    query.$or = [
+      { name:  { $regex: rx, $options: 'i' } },
+      { email: { $regex: rx, $options: 'i' } },
+    ];
+  }
 
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([

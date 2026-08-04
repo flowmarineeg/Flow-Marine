@@ -5,6 +5,7 @@ const Booking   = require('./booking.model');
 const Voyage    = require('../voyages/voyage.model');
 const Port      = require('../locations/port.model');
 const { nextNumber } = require('../../utils/autoNumber');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 const { invalidateRoundCache, computeVoyagePreview } = require('../capacity/capacity.service');
 const { capacityEnforcement } = require('../../config/env');
@@ -87,10 +88,11 @@ const list = async ({
     if (dateTo)   query.createdAt.$lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
   }
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { bookingNumber: { $regex: search, $options: 'i' } },
-      { shipper:       { $regex: search, $options: 'i' } },
-      { consignee:     { $regex: search, $options: 'i' } },
+      { bookingNumber: { $regex: rx, $options: 'i' } },
+      { shipper:       { $regex: rx, $options: 'i' } },
+      { consignee:     { $regex: rx, $options: 'i' } },
     ];
   }
 

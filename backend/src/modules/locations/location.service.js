@@ -4,6 +4,7 @@ const Country  = require('./country.model');
 const City     = require('./city.model');
 const Port     = require('./port.model');
 const Terminal = require('./terminal.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 
 // RouteLeg module (Sprint 6) may not exist yet — guard against it safely
 const countRouteLegsReferencing = async (query) => {
@@ -23,9 +24,10 @@ const countRouteLegsReferencing = async (query) => {
 const listCountries = async ({ search = '' } = {}) => {
   const query = {};
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { code: { $regex: search, $options: 'i' } },
+      { name: { $regex: rx, $options: 'i' } },
+      { code: { $regex: rx, $options: 'i' } },
     ];
   }
   return Country.find(query).sort({ name: 1 }).lean();
@@ -76,7 +78,7 @@ const deleteCountry = async (id) => {
 const listCities = async ({ countryId = '', search = '' } = {}) => {
   const query = {};
   if (countryId) query.countryId = countryId;
-  if (search) query.name = { $regex: search, $options: 'i' };
+  if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
   return City.find(query).populate('countryId', 'name code').sort({ name: 1 }).lean();
 };
 
@@ -135,9 +137,10 @@ const listPorts = async ({ cityId = '', countryId = '', search = '' } = {}) => {
   if (cityId) query.cityId = cityId;
   if (countryId) query.countryId = countryId;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { code: { $regex: search, $options: 'i' } },
+      { name: { $regex: rx, $options: 'i' } },
+      { code: { $regex: rx, $options: 'i' } },
     ];
   }
   return Port.find(query)
@@ -214,7 +217,7 @@ const deletePort = async (id) => {
 const listTerminals = async ({ portId = '', search = '' } = {}) => {
   const query = {};
   if (portId) query.portId = portId;
-  if (search) query.name = { $regex: search, $options: 'i' };
+  if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
   return Terminal.find(query).populate('portId', 'name code').sort({ name: 1 }).lean();
 };
 

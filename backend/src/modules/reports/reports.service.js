@@ -701,7 +701,20 @@ const getBookingRevenueDetails = async ({ agentId, voyageId, roundId, dateFrom, 
   const dr = dateRange(dateFrom, dateTo);
   if (dr) match.createdAt = dr;
 
+  // Post-audit fix (system-audit-2026-8-3.md §3.6): this query is
+  // intentionally NOT `.limit()`-ed — the pricing-group totals below are
+  // computed by grouping ALL matching bookings in JS; truncating the raw
+  // set before grouping would silently corrupt every group's count/teus/
+  // revenue (the Booking Revenue Details report's core business rule).
+  // `.select()` is safe, correctness-preserving cost reduction instead —
+  // every field actually read below is `agentId/polId/podId/
+  // containerTypeId/commodity/freightRate/vgm` (createdAt is used only in
+  // the `match` filter above, not read after fetch); the many other
+  // fields on Booking (shipper, consignee, containerNumber, remarks,
+  // etc.) were being fetched and held in memory for every matched row
+  // without ever being used.
   const bookings = await Booking.find(match)
+    .select('agentId polId podId containerTypeId commodity freightRate vgm')
     .populate('agentId', 'agentCode agentName')
     .populate('polId', 'name')
     .populate('podId', 'name')

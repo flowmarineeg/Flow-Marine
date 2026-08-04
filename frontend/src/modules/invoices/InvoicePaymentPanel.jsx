@@ -20,9 +20,18 @@ import { PAYMENT_METHODS } from '@/utils/constants';
 // amount is auto-distributed into the required per-booking allocations[]
 // via a deterministic waterfall: fill the first booking's own remaining
 // balance, then the next, and so on, in the order the bookings already
-// appear on the invoice — never a proportional/percentage split. The
-// payment HISTORY table below still shows each payment's real "Applied To"
-// breakdown per booking — that audit detail is unchanged.
+// appear on the invoice — never a proportional/percentage split.
+//
+// Post-audit correction (system-audit-2026-8-3.md §3.3): an earlier
+// version of this comment claimed the payment HISTORY table's per-booking
+// "Applied To" breakdown was left unchanged by this redesign — that was
+// wrong. It was explicitly removed, by the same explicit instruction that
+// asked for "each payment record in one row" here — the table below is
+// deliberately record-level only (date/amount/method/reference/status),
+// no per-booking breakdown. `Payment.allocations[]` itself still exists
+// and is still fully validated server-side (Agent Financial Account's
+// per-booking paid/remaining still reads it) — only this table's display
+// of it was removed, on purpose.
 
 const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
 const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';

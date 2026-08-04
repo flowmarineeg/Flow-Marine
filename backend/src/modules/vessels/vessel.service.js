@@ -1,16 +1,18 @@
 'use strict';
 
 const Vessel = require('./vessel.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
   const query = {};
   if (status) query.status = status;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { vesselCode: { $regex: search, $options: 'i' } },
-      { vesselName: { $regex: search, $options: 'i' } },
-      { imoNumber:  { $regex: search, $options: 'i' } },
+      { vesselCode: { $regex: rx, $options: 'i' } },
+      { vesselName: { $regex: rx, $options: 'i' } },
+      { imoNumber:  { $regex: rx, $options: 'i' } },
     ];
   }
   const skip = (Number(page) - 1) * Number(limit);
@@ -87,9 +89,10 @@ const getAll = async (filters = {}, selectedIds = []) => {
   const query = {};
   if (filters.status) query.status = filters.status;
   if (filters.search) {
+    const rx = escapeRegex(filters.search);
     query.$or = [
-      { vesselCode: { $regex: filters.search, $options: 'i' } },
-      { vesselName: { $regex: filters.search, $options: 'i' } },
+      { vesselCode: { $regex: rx, $options: 'i' } },
+      { vesselName: { $regex: rx, $options: 'i' } },
     ];
   }
   if (selectedIds && selectedIds.length > 0) query._id = { $in: selectedIds };

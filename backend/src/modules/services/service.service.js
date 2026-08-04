@@ -1,6 +1,7 @@
 'use strict';
 
 const Service = require('./service.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -8,9 +9,10 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
   const query = {};
   if (status) query.status = status;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { serviceCode: { $regex: search, $options: 'i' } },
-      { serviceName: { $regex: search, $options: 'i' } },
+      { serviceCode: { $regex: rx, $options: 'i' } },
+      { serviceName: { $regex: rx, $options: 'i' } },
     ];
   }
   const skip = (Number(page) - 1) * Number(limit);

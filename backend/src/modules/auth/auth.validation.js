@@ -43,7 +43,12 @@ const validateForgotPassword = [
 ];
 
 const validateResetPassword = [
-  body('token').notEmpty().withMessage('Reset token is required'),
+  // .isString() is load-bearing, not cosmetic: without it, a JSON body of
+  // {"token":{"$ne":null}} sails through notEmpty() and turns
+  // auth.service.js#resetPassword's `resetToken: token` into a live Mongo
+  // operator, matching any user with a pending reset token — NoSQL
+  // injection -> account takeover. Never remove this check.
+  body('token').isString().notEmpty().withMessage('Reset token is required'),
   body('newPassword')
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
     .matches(/[A-Z]/).withMessage('Password must contain at least one uppercase letter')

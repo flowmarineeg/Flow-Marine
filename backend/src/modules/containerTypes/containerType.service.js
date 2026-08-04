@@ -1,6 +1,7 @@
 'use strict';
 
 const ContainerType = require('./containerType.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', size = '', type = '' } = {}) => {
@@ -8,9 +9,10 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
   if (size) query.size = size;
   if (type) query.type = type;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { code:        { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } },
+      { code:        { $regex: rx, $options: 'i' } },
+      { description: { $regex: rx, $options: 'i' } },
     ];
   }
   const skip = (Number(page) - 1) * Number(limit);
@@ -61,7 +63,7 @@ const getAll = async (filters = {}, selectedIds = []) => {
   const query = {};
   if (filters.size) query.size = filters.size;
   if (filters.type) query.type = filters.type;
-  if (filters.search) query.$or = [{ code: { $regex: filters.search, $options: 'i' } }, { description: { $regex: filters.search, $options: 'i' } }];
+  if (filters.search) { const rx = escapeRegex(filters.search); query.$or = [{ code: { $regex: rx, $options: 'i' } }, { description: { $regex: rx, $options: 'i' } }]; }
   if (selectedIds?.length > 0) query._id = { $in: selectedIds };
   return ContainerType.find(query).sort({ createdAt: -1 }).lean();
 };

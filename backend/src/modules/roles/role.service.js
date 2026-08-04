@@ -1,11 +1,12 @@
 'use strict';
 
 const Role = require('./role.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ search = '' } = {}) => {
   const query = {};
-  if (search) query.name = { $regex: search, $options: 'i' };
+  if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
   return Role.find(query).sort({ createdAt: -1 }).lean();
 };
 

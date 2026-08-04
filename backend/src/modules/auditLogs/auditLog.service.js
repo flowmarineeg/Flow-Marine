@@ -1,13 +1,14 @@
 'use strict';
 
 const AuditLog = require('./auditLog.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, module = '', action = '', search = '', dateFrom = '', dateTo = '' } = {}) => {
   const query = {};
   if (module) query.module = module;
   if (action) query.action = action;
-  if (search) query.$or = [{ userEmail: { $regex: search, $options: 'i' } }, { recordNumber: { $regex: search, $options: 'i' } }];
+  if (search) { const rx = escapeRegex(search); query.$or = [{ userEmail: { $regex: rx, $options: 'i' } }, { recordNumber: { $regex: rx, $options: 'i' } }]; }
   if (dateFrom || dateTo) {
     query.timestamp = {};
     if (dateFrom) query.timestamp.$gte = new Date(dateFrom);

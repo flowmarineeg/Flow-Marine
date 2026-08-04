@@ -5,7 +5,9 @@ const Voyage        = require('../voyages/voyage.model');
 const ContainerType = require('../containerTypes/containerType.model');
 const { nextNumber }         = require('../../utils/autoNumber');
 const { resolveTEU }         = require('../../utils/teuResolver');
+const { escapeRegex }        = require('../../utils/escapeRegex');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
+const logger = require('../../utils/logger');
 const { DEFAULT_PAGE, DEFAULT_LIMIT, BOOKING_STATUS } = require('../../config/constants');
 
 // ── Status machine (identical to Layer 2) ────────────────────────────────────
@@ -36,22 +38,46 @@ const populate = (q) =>
 
 // ── Compute totals from cargoRows ─────────────────────────────────────────────
 // Requires rows to already have containerTypeId.size populated or fetched.
+// Post-audit fix (system-audit-2026-8-3.md §3.2): a lookup miss here (the
+// row's containerTypeId no longer resolves to a ContainerType — possible
+// since Sprint 047 made ContainerType.hardDelete a real delete) used to
+// silently fall through resolveTEU('') -> {teu:1, matched:false} with no
+// signal anywhere, unlike capacity.service.js's explicit
+// MISSING_CONTAINER_TYPE/MISSING_TEU_MAPPING warnings for the identical
+// case. `warnings` now surfaces the same signal — the 1-TEU default itself
+// is UNCHANGED (still the fail-safe), only its visibility is fixed.
 const computeTotals = (rows, sizeMap) => {
   let totalFreight = 0;
   let totalTEU     = 0;
   let totalUnits   = 0;
+  const warnings   = [];
 
-  const computed = rows.map(row => {
-    const rowTotal = Number(row.quantity) * Number(row.rate);
-    const size     = sizeMap[String(row.containerTypeId)] || '';
-    const { teu }  = resolveTEU(size);
+  const computed = rows.map((row, idx) => {
+    const rowTotal   = Number(row.quantity) * Number(row.rate);
+    const ctId       = String(row.containerTypeId);
+    const ctExists   = Object.prototype.hasOwnProperty.call(sizeMap, ctId);
+    const size       = sizeMap[ctId] || '';
+    const { teu, matched } = resolveTEU(size);
+
+    if (!ctExists) {
+      warnings.push({
+        code: 'MISSING_CONTAINER_TYPE', rowIndex: idx, containerTypeId: ctId,
+        message: `Cargo row ${idx + 1} references a container type that no longer exists — defaulting to 1 TEU`,
+      });
+    } else if (!matched) {
+      warnings.push({
+        code: 'MISSING_TEU_MAPPING', rowIndex: idx, size,
+        message: `Unrecognised container size "${size}" in cargo row ${idx + 1} — defaulting to 1 TEU`,
+      });
+    }
+
     totalFreight   += rowTotal;
     totalTEU       += Number(row.quantity) * teu;
     totalUnits     += Number(row.quantity);
     return { ...row, rowTotal };
   });
 
-  return { computed, totalFreight, totalTEU, totalUnits };
+  return { computed, totalFreight, totalTEU, totalUnits, warnings };
 };
 
 // ── Fetch size map for a set of containerTypeIds ──────────────────────────────
@@ -77,7 +103,7 @@ const list = async ({
       : status;
   }
   if (search) {
-    query.$or = [{ bookingNumber: { $regex: search, $options: 'i' } }];
+    query.$or = [{ bookingNumber: { $regex: escapeRegex(search), $options: 'i' } }];
   }
 
   const skip = (Number(page) - 1) * Number(limit);
@@ -109,7 +135,8 @@ const create = async (data, createdBy) => {
 
   // Compute totals (resolve TEU from container type sizes)
   const sizeMap = await fetchSizeMap(rows.map(r => r.containerTypeId));
-  const { computed, totalFreight, totalTEU, totalUnits } = computeTotals(rows, sizeMap);
+  const { computed, totalFreight, totalTEU, totalUnits, warnings } = computeTotals(rows, sizeMap);
+  warnings.forEach(w => logger.warn(`[ManualBooking.create] ${w.message}`));
 
   const bookingNumber = await nextNumber('manualBooking');
 
@@ -134,7 +161,9 @@ const create = async (data, createdBy) => {
   // Capacity: Pending manual bookings count immediately (planning indicator)
   invalidateRoundCache(voyage.roundId);
 
-  return getById(doc._id);
+  const saved = await getById(doc._id);
+  if (warnings.length) saved._teuWarnings = warnings;
+  return saved;
 };
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -151,11 +180,14 @@ const update = async (id, data, updatedBy) => {
   }
 
   // If cargoRows provided, recompute all totals
+  let updateWarnings = [];
   if (data.cargoRows !== undefined) {
     const rows = data.cargoRows;
     if (!rows.length) throw { status: 400, message: 'At least one cargo row is required' };
     const sizeMap = await fetchSizeMap(rows.map(r => r.containerTypeId));
-    const { computed, totalFreight, totalTEU, totalUnits } = computeTotals(rows, sizeMap);
+    const { computed, totalFreight, totalTEU, totalUnits, warnings } = computeTotals(rows, sizeMap);
+    updateWarnings = warnings;
+    warnings.forEach(w => logger.warn(`[ManualBooking.update] ${w.message}`));
     doc.cargoRows    = computed;
     doc.totalFreight = totalFreight;
     doc.totalTEU     = totalTEU;
@@ -173,7 +205,9 @@ const update = async (id, data, updatedBy) => {
   const voyage = await Voyage.findById(doc.voyageId).select('roundId').lean();
   if (voyage) invalidateRoundCache(voyage.roundId);
 
-  return getById(doc._id);
+  const saved = await getById(doc._id);
+  if (updateWarnings.length) saved._teuWarnings = updateWarnings;
+  return saved;
 };
 
 // ── Hard Delete ───────────────────────────────────────────────────────────────

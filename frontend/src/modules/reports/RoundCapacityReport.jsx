@@ -36,7 +36,7 @@ export default function RoundCapacityReport() {
   // Round picker list — all rounds, sorted by startDate desc
   const { data: roundsData } = useQuery({
     queryKey: ['rounds-list-for-cap'],
-    queryFn:  () => roundsService.list({ limit: 200 }).then(r => r.data.data?.data || []),
+    queryFn:  () => roundsService.list({ limit: 200 }).then(r => r.data.data || []),
   });
 
   // Capacity report — fires when roundId is selected

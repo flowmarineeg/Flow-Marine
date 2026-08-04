@@ -1,18 +1,20 @@
 'use strict';
 
 const Agent = require('./agent.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
   const query = {};
   if (status) query.status = status;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { agentCode: { $regex: search, $options: 'i' } },
-      { agentName: { $regex: search, $options: 'i' } },
-      { country:   { $regex: search, $options: 'i' } },
-      { 'contacts.email':         { $regex: search, $options: 'i' } },
-      { 'contacts.contactPerson': { $regex: search, $options: 'i' } },
+      { agentCode: { $regex: rx, $options: 'i' } },
+      { agentName: { $regex: rx, $options: 'i' } },
+      { country:   { $regex: rx, $options: 'i' } },
+      { 'contacts.email':         { $regex: rx, $options: 'i' } },
+      { 'contacts.contactPerson': { $regex: rx, $options: 'i' } },
     ];
   }
   const skip = (Number(page) - 1) * Number(limit);
@@ -91,9 +93,10 @@ const getAll = async (filters = {}, selectedIds = []) => {
   const query = {};
   if (filters.status) query.status = filters.status;
   if (filters.search) {
+    const rx = escapeRegex(filters.search);
     query.$or = [
-      { agentCode: { $regex: filters.search, $options: 'i' } },
-      { agentName: { $regex: filters.search, $options: 'i' } },
+      { agentCode: { $regex: rx, $options: 'i' } },
+      { agentName: { $regex: rx, $options: 'i' } },
     ];
   }
   if (selectedIds && selectedIds.length > 0) query._id = { $in: selectedIds };

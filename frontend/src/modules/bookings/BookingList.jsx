@@ -48,6 +48,23 @@ export default function BookingList() {
   const [manualSelected,    setManualSelected]    = useState([]); // Sprint 047
   const [manualBulkConfirm, setManualBulkConfirm] = useState(false); // Sprint 047
 
+  // Post-audit fix (system-audit-2026-8-3.md §3.4) — `selected` was shared
+  // across the detail/discharged/remaining tabs (same table/state, scoped
+  // only by dischargeStatus) with nothing clearing it on tab switch, so a
+  // "Delete Selected" click after switching tabs could fire against ids
+  // from a table the user could no longer see. Reset both selections on
+  // every tab change, same as the existing reset-on-search-change pattern
+  // already used below. Adjusted during render (React's own recommended
+  // pattern for "reset state when a value changes") rather than in a
+  // useEffect, which would cost an extra render-after-commit and trip the
+  // react-hooks/set-state-in-effect lint rule.
+  const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
+  if (activeTab !== prevActiveTab) {
+    setPrevActiveTab(activeTab);
+    setSelected([]);
+    setManualSelected([]);
+  }
+
   // Layer 2 — 'detail' (Operational), 'discharged' and 'remaining' (Sprint 045) all
   // share this same query/table, just scoped by dischargeStatus.
   const dischargeStatusParam = activeTab === 'discharged' ? 'Discharged' : activeTab === 'remaining' ? 'Remaining' : '';

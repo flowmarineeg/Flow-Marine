@@ -23,6 +23,33 @@ const fileFilter = (_req, file, cb) => {
   else cb(new Error('Only JPEG, PNG, and PDF files are allowed'), false);
 };
 
+// ─── Magic-byte validation ────────────────────────────────────────────────────
+// fileFilter above only checks the client-supplied `Content-Type` header, which
+// is trivially spoofable — a request can label arbitrary content (HTML/SVG,
+// executables, etc.) as image/png or application/pdf and have it pass straight
+// through to disk. multer's fileFilter runs before the file is written (no
+// bytes available yet with diskStorage), so the actual signature can only be
+// checked once multerBase has finished writing the file — done in
+// compressUpload below, before compressImage/next() run.
+const MAGIC_BYTES = {
+  'image/jpeg':      [0xFF, 0xD8, 0xFF],
+  'image/png':       [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+  'application/pdf': [0x25, 0x50, 0x44, 0x46], // "%PDF"
+};
+
+const matchesDeclaredType = (file) => {
+  const signature = MAGIC_BYTES[file.mimetype];
+  if (!signature) return false;
+  const fd = fs.openSync(file.path, 'r');
+  try {
+    const buf = Buffer.alloc(signature.length);
+    fs.readSync(fd, buf, 0, signature.length, 0);
+    return signature.every((byte, i) => buf[i] === byte);
+  } finally {
+    fs.closeSync(fd);
+  }
+};
+
 const maxSizeMB  = Number(process.env.UPLOAD_MAX_SIZE_MB || 10);
 const multerBase = multer({
   storage,
@@ -83,6 +110,10 @@ const compressUpload = (req, res, next) => {
       return res.status(400).json({ success: false, message: err.message });
     }
     try {
+      if (req.file && !matchesDeclaredType(req.file)) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ success: false, message: 'File content does not match its declared type' });
+      }
       await compressImage(req.file);
       next();
     } catch (compressErr) {
