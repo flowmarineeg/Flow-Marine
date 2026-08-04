@@ -348,7 +348,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
   switch (moduleName) {
     case 'vessels': {
       const Vessel = require('../vessels/vessel.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       if (filters.status) q.status = filters.status;
       const rows = await Vessel.find(q).sort({ createdAt: -1 }).lean();
       return rows.map(r => ({
@@ -361,7 +361,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
 
     case 'agents': {
       const Agent = require('../agents/agent.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       if (filters.status) q.status = filters.status;
       const rows = await Agent.find(q).sort({ createdAt: -1 }).lean();
       return rows.map(r => ({
@@ -382,7 +382,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
 
     case 'containerTypes': {
       const CT = require('../containerTypes/containerType.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       const rows = await CT.find(q).sort({ createdAt: -1 }).lean();
       return rows.map(r => ({ ...r, createdAt: fmtD(r.createdAt) }));
     }
@@ -390,7 +390,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
     case 'expenseTypes': {
       const ET = require('../expenseTypes/expenseType.model');
       const expenseTypeService = require('../expenseTypes/expenseType.service');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       const [rows, classificationMap] = await Promise.all([
         ET.find(q).sort({ createdAt: -1 }).lean(),
         expenseTypeService.getCostClassificationMap(),
@@ -404,7 +404,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
 
     case 'services': {
       const Service = require('../services/service.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       if (filters.status) q.status = filters.status;
       const rows = await Service.find(q)
         .populate('defaultVesselId', 'vesselCode vesselName')
@@ -423,7 +423,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
 
     case 'rounds': {
       const Round = require('../rounds/round.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       if (filters.status) q.status = filters.status;
       const dr = dateRange(filters.dateFrom, filters.dateTo);
       if (dr) q.startDate = dr;
@@ -479,7 +479,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
     // Layer 2 — Operational Bookings (Booking model)
     case 'bookings': {
       const Booking = require('../bookings/booking.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       if (filters.status)   q.status   = filters.status;
       if (filters.voyageId) q.voyageId = filters.voyageId;
       if (filters.agentId)  q.agentId  = filters.agentId;
@@ -520,7 +520,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
     // independently of Layer 2 (Sprint 040 refinement — never merged).
     case 'manualBookings': {
       const ManualBooking = require('../bookings/manualBooking.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       if (filters.status)   q.status   = filters.status;
       if (filters.voyageId) q.voyageId = filters.voyageId;
       if (filters.agentId)  q.agentId  = filters.agentId;
@@ -584,7 +584,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       // Sprint 033: Invoice is now header + lineItems (Booking/Voyage/Round),
       // with paidAmount/balanceAmount instead of a single flat `amount`.
       const Invoice = require('../invoices/invoice.model');
-      const q = { isDeleted: false, ...idFilter };
+      const q = { ...idFilter };
       if (filters.status)  q.status  = filters.status;
       if (filters.agentId) q.agentId = filters.agentId;
       const dr = dateRange(filters.dateFrom, filters.dateTo);

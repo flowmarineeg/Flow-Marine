@@ -5,6 +5,7 @@ const Booking   = require('./booking.model');
 const Voyage    = require('../voyages/voyage.model');
 const Port      = require('../locations/port.model');
 const { nextNumber } = require('../../utils/autoNumber');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 const { invalidateRoundCache, computeVoyagePreview } = require('../capacity/capacity.service');
 const { capacityEnforcement } = require('../../config/env');
@@ -71,7 +72,7 @@ const list = async ({
   status = '', dateFrom = '', dateTo = '',
   dischargeStatus = '', // Sprint 045 — additive: 'Discharged' | 'Remaining'
 } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (voyageId) query.voyageId = voyageId;
   if (agentId)  query.agentId  = agentId;
   if (dischargeStatus) query.dischargeStatus = dischargeStatus;
@@ -87,10 +88,11 @@ const list = async ({
     if (dateTo)   query.createdAt.$lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
   }
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { bookingNumber: { $regex: search, $options: 'i' } },
-      { shipper:       { $regex: search, $options: 'i' } },
-      { consignee:     { $regex: search, $options: 'i' } },
+      { bookingNumber: { $regex: rx, $options: 'i' } },
+      { shipper:       { $regex: rx, $options: 'i' } },
+      { consignee:     { $regex: rx, $options: 'i' } },
     ];
   }
 
@@ -105,7 +107,7 @@ const list = async ({
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 const getById = async (id) => {
-  const booking = await populate(Booking.findOne({ _id: id, isDeleted: false })).lean();
+  const booking = await populate(Booking.findOne({ _id: id })).lean();
   if (!booking) throw { status: 404, message: 'Booking not found' };
   return booking;
 };
@@ -172,7 +174,7 @@ const create = async (data, createdBy) => {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
-  const booking = await Booking.findOne({ _id: id, isDeleted: false });
+  const booking = await Booking.findOne({ _id: id });
   if (!booking) throw { status: 404, message: 'Booking not found' };
 
   if (['Cancelled', 'Final Loading'].includes(booking.status)) {
@@ -201,24 +203,21 @@ const update = async (id, data, updatedBy) => {
   return getById(booking._id);
 };
 
-// ─── Soft Delete ──────────────────────────────────────────────────────────────
-const softDelete = async (id, deletedBy) => {
-  const booking = await Booking.findOne({ _id: id, isDeleted: false });
+// ─── Hard Delete ──────────────────────────────────────────────────────────────
+const hardDelete = async (id) => {
+  const booking = await Booking.findOne({ _id: id });
   if (!booking) throw { status: 404, message: 'Booking not found' };
 
   // Sprint 033: ownership of the booking↔invoice relationship lives entirely
   // in Invoice.lineItems (no field on Booking) — query from the Invoice side.
   const Invoice = require('../invoices/invoice.model');
   const hasInvoice = await Invoice.exists({
-    'lineItems.bookingId': id, isDeleted: false, status: { $ne: 'Cancelled' },
+    'lineItems.bookingId': id, status: { $ne: 'Cancelled' },
   });
   if (hasInvoice) throw { status: 400, message: 'Cannot delete — a non-cancelled invoice references this booking' };
 
   const deletedVoyage = await Voyage.findById(booking.voyageId).select('roundId').lean();
-  booking.isDeleted = true;
-  booking.deletedAt = new Date();
-  booking.updatedBy = deletedBy;
-  await booking.save();
+  await Booking.findByIdAndDelete(id);
 
   // Invalidate capacity cache — a booking was removed from the round
   if (deletedVoyage) invalidateRoundCache(deletedVoyage.roundId);
@@ -228,7 +227,7 @@ const softDelete = async (id, deletedBy) => {
 const getVoyagePorts = async (voyageId) => {
   const portIds = await getVoyagePortIds(voyageId);
   if (portIds.length === 0) return [];
-  return Port.find({ _id: { $in: portIds }, isDeleted: false }).select('name code').lean();
+  return Port.find({ _id: { $in: portIds } }).select('name code').lean();
 };
 
 // ─── Sprint 027: Export Discharge List ───────────────────────────────────────
@@ -269,7 +268,6 @@ const exportDischargeList = async (voyageId, agentId) => {
     voyageId,
     agentId,
     status:    'Final Loading',
-    isDeleted: false,
   })
     .populate('polId',           'name')
     .populate('podId',           'name')
@@ -340,4 +338,4 @@ const exportDischargeList = async (voyageId, agentId) => {
   return { buffer, filename, count: rows.length };
 };
 
-module.exports = { list, getById, create, update, softDelete, getVoyagePorts, getVoyagePortIds, exportDischargeList };
+module.exports = { list, getById, create, update, hardDelete, getVoyagePorts, getVoyagePortIds, exportDischargeList };

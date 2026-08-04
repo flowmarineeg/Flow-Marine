@@ -3,6 +3,7 @@
 const TrackingHistory = require('./trackingHistory.model');
 const Voyage          = require('../voyages/voyage.model');
 const Round           = require('../rounds/round.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── Populate helper ──────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ const listEntries = async ({
   if (voyageId)  query.voyageId  = voyageId;
   if (serviceId) query.serviceId = serviceId;
   if (status)    query.status    = status;
-  if (search)    query.remarks   = { $regex: search, $options: 'i' };
+  if (search)    query.remarks   = { $regex: escapeRegex(search), $options: 'i' };
   if (dateFrom || dateTo) {
     query.lastUpdate = {};
     if (dateFrom) query.lastUpdate.$gte = new Date(dateFrom);

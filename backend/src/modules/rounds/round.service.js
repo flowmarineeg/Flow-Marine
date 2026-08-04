@@ -8,6 +8,7 @@ const Service  = require('../services/service.model');
 const { nextNumber } = require('../../utils/autoNumber');
 const { generateVoyages } = require('../../utils/voyageGenerator');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT, ROUND_STATUS } = require('../../config/constants');
 
 // Valid status transitions
@@ -49,14 +50,15 @@ const cascadeFirstVoyageToDeparted = async (roundId, updatedBy) => {
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '', serviceId = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (status)    query.status    = status;
   if (serviceId) query.serviceId = serviceId;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { roundNumber: { $regex: search, $options: 'i' } },
-      { roundName:   { $regex: search, $options: 'i' } },
-      { notes:       { $regex: search, $options: 'i' } },
+      { roundNumber: { $regex: rx, $options: 'i' } },
+      { roundName:   { $regex: rx, $options: 'i' } },
+      { notes:       { $regex: rx, $options: 'i' } },
     ];
   }
 
@@ -89,7 +91,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 const getById = async (id) => {
-  const round = await Round.findOne({ _id: id, isDeleted: false })
+  const round = await Round.findOne({ _id: id })
     .populate('serviceId', 'serviceCode serviceName')
     .populate('vesselId',  'vesselCode vesselName')
     .lean();
@@ -99,7 +101,7 @@ const getById = async (id) => {
 
 // ─── Get voyages for a round ──────────────────────────────────────────────────
 const getRoundVoyages = async (roundId) => {
-  const round = await Round.findOne({ _id: roundId, isDeleted: false }).lean();
+  const round = await Round.findOne({ _id: roundId }).lean();
   if (!round) throw { status: 404, message: 'Round not found' };
 
   return Voyage.find({ roundId })
@@ -112,10 +114,10 @@ const getRoundVoyages = async (roundId) => {
 // ─── Create (triggers voyage generation) ─────────────────────────────────────
 const create = async (data, createdBy) => {
   // 1. Validate service exists and has a route with >= 2 legs
-  const service = await Service.findOne({ _id: data.serviceId, isDeleted: false });
+  const service = await Service.findOne({ _id: data.serviceId });
   if (!service) throw { status: 400, message: 'Service not found' };
 
-  const route = await Route.findOne({ serviceId: data.serviceId, isDeleted: false });
+  const route = await Route.findOne({ serviceId: data.serviceId });
   if (!route) throw { status: 400, message: 'Service has no route defined. Add at least 2 route legs first.' };
 
   const routeLegs = await RouteLeg.find({ routeId: route._id })
@@ -131,7 +133,6 @@ const create = async (data, createdBy) => {
   const conflictRound = await Round.findOne({
     vesselId: data.vesselId,
     status:   'Active',
-    isDeleted: false,
   });
   if (conflictRound) {
     throw {
@@ -186,7 +187,7 @@ const create = async (data, createdBy) => {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
-  const round = await Round.findOne({ _id: id, isDeleted: false });
+  const round = await Round.findOne({ _id: id });
   if (!round) throw { status: 404, message: 'Round not found' };
 
   // Do NOT allow service change
@@ -214,7 +215,6 @@ const update = async (id, data, updatedBy) => {
     const conflict = await Round.findOne({
       vesselId:  data.vesselId,
       status:    'Active',
-      isDeleted: false,
       _id:       { $ne: id },
     });
     if (conflict) {
@@ -242,24 +242,53 @@ const update = async (id, data, updatedBy) => {
     .lean();
 };
 
-// ─── Soft Delete ──────────────────────────────────────────────────────────────
-const softDelete = async (id, deletedBy) => {
-  const round = await Round.findOne({ _id: id, isDeleted: false });
+// ─── Hard Delete ──────────────────────────────────────────────────────────────
+// A Round's Voyages have no independent existence outside their Round (they
+// are auto-generated from it and exclusively owned by it, per
+// utils/voyageGenerator.js) — so deleting a Round also removes its own
+// Voyage documents, once the guards below confirm none of them are
+// referenced by Layer 2 Bookings, Layer 1 ManualBookings, or Expenses
+// (Round- or Voyage-scoped) — every entity that would otherwise be
+// silently orphaned by the Voyage cascade. This does NOT reach any further
+// down the graph (Invoice etc. are untouched — Booking's own guard already
+// blocks its own delete if a non-cancelled Invoice references it, so an
+// invoiced Booking blocks this Round delete transitively) — narrow,
+// exclusive-ownership cleanup, not a generic cascade.
+const hardDelete = async (id) => {
+  const round = await Round.findOne({ _id: id });
   if (!round) throw { status: 404, message: 'Round not found' };
 
-  // Block if any voyage under this round has bookings
+  const voyageIds = round.voyageIds || [];
+
+  // Block if any voyage under this round has Layer 2 (Operational) bookings
   let Booking;
   try { Booking = require('../bookings/booking.model'); } catch { Booking = null; }
   if (Booking) {
-    const voyageIds  = round.voyageIds || [];
-    const hasBooking = await Booking.exists({ voyageId: { $in: voyageIds }, isDeleted: false });
+    const hasBooking = await Booking.exists({ voyageId: { $in: voyageIds } });
     if (hasBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have bookings' };
   }
 
-  round.isDeleted = true;
-  round.deletedAt = new Date();
-  round.updatedBy = deletedBy;
-  await round.save();
+  // Same check, Layer 1 (Estimated/ManualBooking) — the Voyage cascade below
+  // would otherwise silently orphan a live commercial reservation that has
+  // no independent existence once its voyage is gone.
+  let ManualBooking;
+  try { ManualBooking = require('../bookings/manualBooking.model'); } catch { ManualBooking = null; }
+  if (ManualBooking) {
+    const hasManualBooking = await ManualBooking.exists({ voyageId: { $in: voyageIds } });
+    if (hasManualBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have estimated bookings' };
+  }
+
+  // Expenses can be scoped to the Round itself (roundId) or to one of its
+  // Voyages (voyageId) — either would otherwise be orphaned by the cascade.
+  let Expense;
+  try { Expense = require('../expenses/expense.model'); } catch { Expense = null; }
+  if (Expense) {
+    const hasExpense = await Expense.exists({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }] });
+    if (hasExpense) throw { status: 400, message: 'Cannot delete — expenses are recorded against this round or its voyages' };
+  }
+
+  if (voyageIds.length) await Voyage.deleteMany({ _id: { $in: voyageIds } });
+  await Round.findByIdAndDelete(id);
 };
 
-module.exports = { list, getById, getRoundVoyages, create, update, softDelete };
+module.exports = { list, getById, getRoundVoyages, create, update, hardDelete };

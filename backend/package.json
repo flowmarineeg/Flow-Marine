@@ -10,7 +10,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/config/seed.js",
-    "migrate:invoice-v2": "node src/config/migrations/migrate-invoice-v2.js"
+    "migrate:invoice-v2": "node src/config/migrations/migrate-invoice-v2.js",
+    "migrate:hard-delete-cleanup": "node src/config/migrations/migrate-hard-delete-cleanup.js"
   },
   "dependencies": {
     "archiver": "^7.0.1",

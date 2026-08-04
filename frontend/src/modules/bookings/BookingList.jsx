@@ -44,6 +44,26 @@ export default function BookingList() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [manualDeleteTarget, setManualDeleteTarget] = useState(null);
   const [dischargeOpen, setDischargeOpen] = useState(false); // Sprint 027
+  const [bulkConfirm,   setBulkConfirm]   = useState(false); // Sprint 047 — Delete Selected
+  const [manualSelected,    setManualSelected]    = useState([]); // Sprint 047
+  const [manualBulkConfirm, setManualBulkConfirm] = useState(false); // Sprint 047
+
+  // Post-audit fix (system-audit-2026-8-3.md §3.4) — `selected` was shared
+  // across the detail/discharged/remaining tabs (same table/state, scoped
+  // only by dischargeStatus) with nothing clearing it on tab switch, so a
+  // "Delete Selected" click after switching tabs could fire against ids
+  // from a table the user could no longer see. Reset both selections on
+  // every tab change, same as the existing reset-on-search-change pattern
+  // already used below. Adjusted during render (React's own recommended
+  // pattern for "reset state when a value changes") rather than in a
+  // useEffect, which would cost an extra render-after-commit and trip the
+  // react-hooks/set-state-in-effect lint rule.
+  const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
+  if (activeTab !== prevActiveTab) {
+    setPrevActiveTab(activeTab);
+    setSelected([]);
+    setManualSelected([]);
+  }
 
   // Layer 2 — 'detail' (Operational), 'discharged' and 'remaining' (Sprint 045) all
   // share this same query/table, just scoped by dischargeStatus.
@@ -106,11 +126,76 @@ export default function BookingList() {
     onError:   (e)  => showErrorToast(e, 'delete'),
   });
 
+  // Sprint 047 — bulk "Delete Selected": loop the existing single-delete
+  // call per id, sequentially, so one failure doesn't stop the rest.
+  const bulkDeleteSummary = (deletedCount, failed) => {
+    if (failed.length === 0) {
+      toast.success(`${deletedCount} booking${deletedCount !== 1 ? 's' : ''} deleted`);
+    } else {
+      toast.error(
+        <div>
+          <p className="font-semibold text-[13px]">{deletedCount} deleted, {failed.length} failed</p>
+          <ul className="mt-1 text-[11px] list-disc list-inside space-y-0.5">
+            {failed.map((f, i) => <li key={i}>{f.reason}</li>)}
+          </ul>
+        </div>
+      );
+    }
+  };
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids) => {
+      const failed = [];
+      let deletedCount = 0;
+      for (const id of ids) {
+        try {
+          await bookingsService.remove(id);
+          deletedCount++;
+        } catch (e) {
+          failed.push({ id, reason: e?.response?.data?.message || e?.message || 'Delete failed' });
+        }
+      }
+      return { deletedCount, failed };
+    },
+    onSuccess: ({ deletedCount, failed }) => {
+      qc.invalidateQueries(['bookings']);
+      setSelected([]);
+      setBulkConfirm(false);
+      bulkDeleteSummary(deletedCount, failed);
+    },
+  });
+
+  const manualBulkDeleteMutation = useMutation({
+    mutationFn: async (ids) => {
+      const failed = [];
+      let deletedCount = 0;
+      for (const id of ids) {
+        try {
+          await bookingsService.removeManual(id);
+          deletedCount++;
+        } catch (e) {
+          failed.push({ id, reason: e?.response?.data?.message || e?.message || 'Delete failed' });
+        }
+      }
+      return { deletedCount, failed };
+    },
+    onSuccess: ({ deletedCount, failed }) => {
+      qc.invalidateQueries(['manual-bookings']);
+      setManualSelected([]);
+      setManualBulkConfirm(false);
+      bulkDeleteSummary(deletedCount, failed);
+    },
+  });
+
   const bookings   = data?.data || [];
   const pagination = data?.pagination;
 
   const toggleSelect = (id) => setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   const toggleAll    = ()   => setSelected(p => p.length === bookings.length ? [] : bookings.map(b => b._id));
+
+  const manualBookings = manualData?.data || [];
+  const manualToggleSelect = (id) => setManualSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const manualToggleAll    = ()   => setManualSelected(p => p.length === manualBookings.length ? [] : manualBookings.map(m => m._id));
 
   const sc = 'text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:border-teal-500 cursor-pointer';
 
@@ -189,6 +274,12 @@ export default function BookingList() {
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <ExportButton module="bookings" filters={{ voyageId, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />
+          {/* Sprint 047 — bulk delete */}
+          {selected.length > 0 && can('bookings', 'delete') && (
+            <Button variant="danger" size="sm" onClick={() => setBulkConfirm(true)}>
+              Delete Selected ({selected.length})
+            </Button>
+          )}
           {/* Sprint 027 — Discharge List export */}
           {(can('bookings', 'export') && can('export', 'read')) && (
             <button
@@ -321,24 +412,36 @@ export default function BookingList() {
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <ExportButton module="manualBookings" filters={{ voyageId: manualVoyageId, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />
+          {/* Sprint 047 — bulk delete */}
+          {manualSelected.length > 0 && can('bookings', 'delete') && (
+            <Button variant="danger" size="sm" onClick={() => setManualBulkConfirm(true)}>
+              Delete Selected ({manualSelected.length})
+            </Button>
+          )}
         </div>
 
         <div className="card overflow-hidden min-w-0">
           {manualLoading ? (
             <LoadingSpinner fullPage />
-          ) : !manualData?.data?.length ? (
+          ) : !manualBookings.length ? (
             <EmptyState title="No estimated bookings found" message="Create an estimated booking to record commercial cargo reservations before container numbers are available." />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse" style={{ minWidth: 700 }}>
                 <thead>
                   <tr className="table-header">
+                    <th className="w-10 px-4 py-2.5">
+                      <input type="checkbox" checked={manualSelected.length === manualBookings.length && manualBookings.length > 0} onChange={manualToggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
+                    </th>
                     {['Booking No','Voyage','Agent','POL → POD','Rows','Total TEU','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
-                  {(manualData?.data || []).map(m => (
+                  {manualBookings.map(m => (
                     <tr key={m._id} className="table-row">
+                      <td className="px-4">
+                        <input type="checkbox" checked={manualSelected.includes(m._id)} onChange={() => manualToggleSelect(m._id)} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
+                      </td>
                       <td>
                         <button onClick={() => router.push(`/bookings/manual/${m._id}`)} className="mono text-xs font-bold text-purple-600 hover:text-purple-800 transition whitespace-nowrap">
                           {m.bookingNumber}
@@ -371,7 +474,10 @@ export default function BookingList() {
 
         {manualData?.pagination?.total > 0 && (
           <div className="flex items-center justify-between mt-4">
-            <p className="text-xs text-gray-400">{manualData.pagination.total} estimated booking{manualData.pagination.total !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-400">
+              {manualData.pagination.total} estimated booking{manualData.pagination.total !== 1 ? 's' : ''}
+              {manualSelected.length > 0 && <span className="text-teal-600 font-medium"> · {manualSelected.length} selected</span>}
+            </p>
             <Pagination page={manualData.pagination.page} totalPages={manualData.pagination.totalPages} onPageChange={setManualPage} />
           </div>
         )}
@@ -406,6 +512,28 @@ export default function BookingList() {
         loading={manualDeleteMutation.isPending}
         title="Delete Estimated Booking"
         message={`Delete estimated booking "${manualDeleteTarget?.bookingNumber}"? This is permanent.`}
+      />
+
+      {/* ── Bulk delete confirm — Operational/Discharged/Remaining ────── */}
+      <ConfirmDialog
+        open={bulkConfirm}
+        onClose={() => setBulkConfirm(false)}
+        onConfirm={() => bulkDeleteMutation.mutate(selected)}
+        loading={bulkDeleteMutation.isPending}
+        title="Delete Selected Bookings"
+        message={`Delete ${selected.length} selected booking${selected.length !== 1 ? 's' : ''}? This is permanent. Any booking that can't be deleted will be reported and skipped.`}
+        confirmLabel="Delete Selected"
+      />
+
+      {/* ── Bulk delete confirm — Estimated/Manual ─────────────────────── */}
+      <ConfirmDialog
+        open={manualBulkConfirm}
+        onClose={() => setManualBulkConfirm(false)}
+        onConfirm={() => manualBulkDeleteMutation.mutate(manualSelected)}
+        loading={manualBulkDeleteMutation.isPending}
+        title="Delete Selected Estimated Bookings"
+        message={`Delete ${manualSelected.length} selected estimated booking${manualSelected.length !== 1 ? 's' : ''}? This is permanent. Any booking that can't be deleted will be reported and skipped.`}
+        confirmLabel="Delete Selected"
       />
 
       {/* Sprint 027 — Discharge List export modal */}

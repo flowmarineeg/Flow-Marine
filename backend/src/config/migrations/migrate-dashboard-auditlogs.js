@@ -16,7 +16,7 @@ const Role       = require('../../modules/roles/role.model');
 const logger     = require('../../utils/logger');
 
 const migrate = async () => {
-  const nonAdminRoles = await Role.find({ isSystem: false, isDeleted: false }).lean();
+  const nonAdminRoles = await Role.find({ isSystem: false }).lean();
   if (!nonAdminRoles.length) {
     logger.info('[Migration] No non-admin roles found — skipping dashboard lock');
     return;

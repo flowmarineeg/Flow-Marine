@@ -37,8 +37,6 @@ const vesselSchema = new mongoose.Schema(
 
     status:                { type: String, enum: VESSEL_STATUS, default: 'Active' },
     notes:                 { type: String, trim: true, default: null },
-    isDeleted:             { type: Boolean, default: false },
-    deletedAt:             { type: Date, default: null },
     createdBy:             { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy:             { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -47,6 +45,5 @@ const vesselSchema = new mongoose.Schema(
 
 // vesselCode and imoNumber uniqueness enforced inline
 vesselSchema.index({ status: 1 });
-vesselSchema.index({ isDeleted: 1 });
 
 module.exports = mongoose.model('Vessel', vesselSchema);

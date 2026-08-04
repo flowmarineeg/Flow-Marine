@@ -38,7 +38,7 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await bookingService.softDelete(req.params.id, req.user._id);
+    await bookingService.hardDelete(req.params.id);
     return success(res, null, 'Booking deleted');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };

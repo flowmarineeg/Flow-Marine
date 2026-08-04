@@ -6,3 +6,5 @@ claude.md
 /sprints/*
 /sprints
 .env
+
+full.diff

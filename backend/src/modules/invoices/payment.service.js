@@ -54,7 +54,7 @@ const create = async (invoiceId, data, createdBy) => {
     throw { status: 400, message: 'At least one allocation is required' };
   }
 
-  const invoice = await Invoice.findOne({ _id: invoiceId, isDeleted: false });
+  const invoice = await Invoice.findOne({ _id: invoiceId });
   if (!invoice) throw { status: 404, message: 'Invoice not found' };
   if (!PAYABLE_STATUSES.includes(invoice.status)) {
     throw { status: 400, message: `Cannot record a payment against an invoice with status "${invoice.status}"` };

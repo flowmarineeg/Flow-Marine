@@ -7,6 +7,8 @@ export const invoicesService = {
   getById:     (id)     => api.get(`${BASE}/${id}`),
   create:      (data)   => api.post(BASE, data),
   update:      (id, data) => api.put(`${BASE}/${id}`, data),
+  // Sprint 047 — Bill To (PDF contact details), always editable
+  updateBillTo: (id, data) => api.put(`${BASE}/${id}/bill-to`, data),
   remove:      (id)     => api.delete(`${BASE}/${id}`),
   // Sprint020: download invoice as PDF
   downloadPdf: (id)     => api.get(`${BASE}/${id}/pdf`, { responseType: 'blob' }),

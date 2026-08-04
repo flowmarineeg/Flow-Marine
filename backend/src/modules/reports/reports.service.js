@@ -80,7 +80,7 @@ const voyageDurationDays = (voyage) => {
 const getRoundPnL = async ({ roundId, voyageId } = {}) => {
   if (!roundId) throw { status: 400, message: 'roundId is required' };
 
-  const round = await Round.findOne({ _id: roundId, isDeleted: false })
+  const round = await Round.findOne({ _id: roundId })
     .populate('serviceId', 'serviceCode serviceName')
     .populate('vesselId',  'vesselCode vesselName')
     .lean();
@@ -103,7 +103,7 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
 
   // ── Legacy fields — unchanged behaviour, kept for backward compatibility ──
   const revenueAgg = await Booking.aggregate([
-    { $match: { voyageId: { $in: voyageIds }, isDeleted: false, status: { $ne: 'Cancelled' } } },
+    { $match: { voyageId: { $in: voyageIds }, status: { $ne: 'Cancelled' } } },
     { $group: {
         _id:          null,
         totalRevenue: { $sum: '$totalFreight' },
@@ -143,7 +143,7 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
   const rev = revenueAgg[0] || { totalRevenue: 0, bookingCount: 0, totalQty: 0 };
 
   const l1Agg = await ManualBooking.aggregate([
-    { $match: { voyageId: { $in: voyageIds }, isDeleted: false, status: { $ne: 'Cancelled' } } },
+    { $match: { voyageId: { $in: voyageIds }, status: { $ne: 'Cancelled' } } },
     { $group: { _id: null, totalRevenue: { $sum: '$totalFreight' }, totalUnits: { $sum: '$totalUnits' }, count: { $sum: 1 } } },
   ]);
   const l1 = l1Agg[0] || { totalRevenue: 0, totalUnits: 0, count: 0 };
@@ -164,7 +164,7 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
 
   // Revenue per voyage — Layer 2, Final Loading ONLY (ADR-2).
   const revenueBookings = await Booking.find({
-    voyageId: { $in: scopedVoyageIds }, status: 'Final Loading', isDeleted: false,
+    voyageId: { $in: scopedVoyageIds }, status: 'Final Loading',
   }).populate('containerTypeId', 'size').lean();
 
   const revenueByVoyage = new Map();
@@ -403,13 +403,13 @@ const getVoyagePerformance = async ({
   const [l2Agg, l1Agg] = await Promise.all([
     bookingSource !== 'L1'
       ? Booking.aggregate([
-          { $match: { voyageId: { $in: voyageIds }, isDeleted: false, ...statusMatch } },
+          { $match: { voyageId: { $in: voyageIds }, ...statusMatch } },
           { $group: { _id: '$voyageId', bookingCount: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' } } },
         ])
       : Promise.resolve([]),
     bookingSource !== 'L2'
       ? ManualBooking.aggregate([
-          { $match: { voyageId: { $in: voyageIds }, isDeleted: false, ...statusMatch } },
+          { $match: { voyageId: { $in: voyageIds }, ...statusMatch } },
           { $group: { _id: '$voyageId', bookingCount: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' }, totalUnits: { $sum: '$totalUnits' } } },
         ])
       : Promise.resolve([]),
@@ -468,7 +468,7 @@ const getBookingReport = async ({ voyageId, agentId, status, dateFrom, dateTo, s
   // logic is the single source of truth for both the row queries and
   // the summary aggregates below, so the two can never disagree again.
   const buildMatch = () => {
-    const match = { isDeleted: false };
+    const match = {};
     if (voyageFilterIds) match.voyageId = { $in: voyageFilterIds };
     else if (voyageId)   match.voyageId = toObjId(voyageId);
     if (agentId) match.agentId = toObjId(agentId);
@@ -575,7 +575,6 @@ const getRevenueReport = async ({ serviceId, dateFrom, dateTo } = {}) => {
         pipeline: [
           { $match: { $expr: { $and: [
             { $eq: ['$voyageId', '$$vid'] },
-            { $eq: ['$isDeleted', false] },
             { $eq:  ['$status', 'Final Loading'] },
           ]}}},
           { $group: {
@@ -691,7 +690,7 @@ const getRoundCapacityReport = async ({ roundId, statuses } = {}) => {
 // the grouped bookings, never an average.
 // ─────────────────────────────────────────────────────────────────────────────
 const getBookingRevenueDetails = async ({ agentId, voyageId, roundId, dateFrom, dateTo } = {}) => {
-  const match = { status: 'Final Loading', isDeleted: false };
+  const match = { status: 'Final Loading' };
   if (agentId) match.agentId = toObjId(agentId);
   if (voyageId) {
     match.voyageId = toObjId(voyageId);
@@ -702,7 +701,20 @@ const getBookingRevenueDetails = async ({ agentId, voyageId, roundId, dateFrom, 
   const dr = dateRange(dateFrom, dateTo);
   if (dr) match.createdAt = dr;
 
+  // Post-audit fix (system-audit-2026-8-3.md §3.6): this query is
+  // intentionally NOT `.limit()`-ed — the pricing-group totals below are
+  // computed by grouping ALL matching bookings in JS; truncating the raw
+  // set before grouping would silently corrupt every group's count/teus/
+  // revenue (the Booking Revenue Details report's core business rule).
+  // `.select()` is safe, correctness-preserving cost reduction instead —
+  // every field actually read below is `agentId/polId/podId/
+  // containerTypeId/commodity/freightRate/vgm` (createdAt is used only in
+  // the `match` filter above, not read after fetch); the many other
+  // fields on Booking (shipper, consignee, containerNumber, remarks,
+  // etc.) were being fetched and held in memory for every matched row
+  // without ever being used.
   const bookings = await Booking.find(match)
+    .select('agentId polId podId containerTypeId commodity freightRate vgm')
     .populate('agentId', 'agentCode agentName')
     .populate('polId', 'name')
     .populate('podId', 'name')

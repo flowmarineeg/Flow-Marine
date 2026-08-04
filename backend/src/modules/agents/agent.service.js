@@ -1,18 +1,20 @@
 'use strict';
 
 const Agent = require('./agent.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (status) query.status = status;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { agentCode: { $regex: search, $options: 'i' } },
-      { agentName: { $regex: search, $options: 'i' } },
-      { country:   { $regex: search, $options: 'i' } },
-      { 'contacts.email':         { $regex: search, $options: 'i' } },
-      { 'contacts.contactPerson': { $regex: search, $options: 'i' } },
+      { agentCode: { $regex: rx, $options: 'i' } },
+      { agentName: { $regex: rx, $options: 'i' } },
+      { country:   { $regex: rx, $options: 'i' } },
+      { 'contacts.email':         { $regex: rx, $options: 'i' } },
+      { 'contacts.contactPerson': { $regex: rx, $options: 'i' } },
     ];
   }
   const skip = (Number(page) - 1) * Number(limit);
@@ -24,7 +26,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
 };
 
 const getById = async (id) => {
-  const agent = await Agent.findOne({ _id: id, isDeleted: false }).lean();
+  const agent = await Agent.findOne({ _id: id }).lean();
   if (!agent) throw { status: 404, message: 'Agent not found' };
   return agent;
 };
@@ -50,7 +52,7 @@ const create = async (data, createdBy) => {
 };
 
 const update = async (id, data, updatedBy) => {
-  const agent = await Agent.findOne({ _id: id, isDeleted: false });
+  const agent = await Agent.findOne({ _id: id });
   if (!agent) throw { status: 404, message: 'Agent not found' };
 
   // Only check agentCode uniqueness if a new code is being set
@@ -70,27 +72,31 @@ const update = async (id, data, updatedBy) => {
   return agent.toObject();
 };
 
-const softDelete = async (id, deletedBy) => {
-  const agent = await Agent.findOne({ _id: id, isDeleted: false });
+const hardDelete = async (id) => {
+  const agent = await Agent.findOne({ _id: id });
   if (!agent) throw { status: 404, message: 'Agent not found' };
 
   const Booking = require('../bookings/booking.model');
-  const hasBookings = await Booking.findOne({ agentId: id, status: { $in: ['Pending', 'Confirmed'] }, isDeleted: false });
+  const hasBookings = await Booking.findOne({ agentId: id, status: { $in: ['Pending', 'Confirmed'] } });
   if (hasBookings) throw { status: 400, message: 'Cannot delete — agent has active bookings' };
 
-  agent.isDeleted = true;
-  agent.deletedAt = new Date();
-  agent.updatedBy = deletedBy;
-  await agent.save();
+  // Same pattern as Booking's own delete guard — blocked only by a
+  // non-cancelled invoice, not by cancelled invoice history.
+  const Invoice = require('../invoices/invoice.model');
+  const hasInvoice = await Invoice.findOne({ agentId: id, status: { $ne: 'Cancelled' } });
+  if (hasInvoice) throw { status: 400, message: 'Cannot delete — agent has related invoices' };
+
+  await Agent.findByIdAndDelete(id);
 };
 
 const getAll = async (filters = {}, selectedIds = []) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (filters.status) query.status = filters.status;
   if (filters.search) {
+    const rx = escapeRegex(filters.search);
     query.$or = [
-      { agentCode: { $regex: filters.search, $options: 'i' } },
-      { agentName: { $regex: filters.search, $options: 'i' } },
+      { agentCode: { $regex: rx, $options: 'i' } },
+      { agentName: { $regex: rx, $options: 'i' } },
     ];
   }
   if (selectedIds && selectedIds.length > 0) query._id = { $in: selectedIds };
@@ -104,7 +110,7 @@ const getAll = async (filters = {}, selectedIds = []) => {
 // Scope is Final Loading bookings only (Decision 1 — that is the entire
 // invoiceable/reportable population for an agent).
 const getAgentFinancialAccount = async (id) => {
-  const agent = await Agent.findOne({ _id: id, isDeleted: false }).lean();
+  const agent = await Agent.findOne({ _id: id }).lean();
   if (!agent) throw { status: 404, message: 'Agent not found' };
 
   const Booking = require('../bookings/booking.model');
@@ -112,7 +118,7 @@ const getAgentFinancialAccount = async (id) => {
   const Payment = require('../invoices/payment.model');
   const mongoose = require('mongoose');
 
-  const bookings = await Booking.find({ agentId: id, status: 'Final Loading', isDeleted: false })
+  const bookings = await Booking.find({ agentId: id, status: 'Final Loading' })
     .populate({
       path: 'voyageId',
       select: 'voyageNumber voyageName roundId',
@@ -131,7 +137,6 @@ const getAgentFinancialAccount = async (id) => {
   // BOOKING–INVOICE OWNERSHIP (no field on Booking for this).
   const invoices = bookingIds.length ? await Invoice.find({
     'lineItems.bookingId': { $in: bookingIds },
-    isDeleted: false,
     status: { $ne: 'Cancelled' },
   }).select('lineItems status invoiceNumber invoiceType totalAmount paidAmount').lean() : [];
 
@@ -224,7 +229,7 @@ const getAgentFinancialAccount = async (id) => {
   const totalRevenue = bookings.reduce((s, b) => s + b.totalFreight, 0);
 
   const [invoiceAgg] = await Invoice.aggregate([
-    { $match: { agentId: new mongoose.Types.ObjectId(String(id)), isDeleted: false, status: { $ne: 'Cancelled' } } },
+    { $match: { agentId: new mongoose.Types.ObjectId(String(id)), status: { $ne: 'Cancelled' } } },
     { $group: { _id: null, totalInvoiced: { $sum: '$totalAmount' } } },
   ]);
   const totalInvoiced = invoiceAgg?.totalInvoiced || 0;
@@ -257,4 +262,4 @@ const getAgentFinancialAccount = async (id) => {
   };
 };
 
-module.exports = { list, getById, create, update, softDelete, getAll, getAgentFinancialAccount };
+module.exports = { list, getById, create, update, hardDelete, getAll, getAgentFinancialAccount };

@@ -11,12 +11,25 @@ import { WidgetCard, WidgetEmptyState, WidgetSkeleton, fmtMoney } from './Widget
 // report endpoint already returns; none re-implements Booking Revenue
 // Details' pricing-group logic or Voyage Profitability's calculations.
 
+// Post-audit note (system-audit-2026-8-3.md §3.6): unlike
+// VoyageLeaderboardWidget below (which needs one specific Round to rank),
+// these two widgets are deliberately fleet-wide-by-default — "Top Agents/
+// Routes by Revenue" is meant to answer that question with no filter
+// applied, so they intentionally do NOT get an `enabled: !!someFilter`
+// gate (that would remove their whole no-filter default view). The real
+// cost concern — an expensive, slow-changing aggregate refetching on
+// every dashboard mount — is addressed with a long `staleTime` instead:
+// this data doesn't need to be recomputed more than once every few
+// minutes for a "top performers" ranking to stay useful.
+const TOP_PERFORMER_STALE_TIME = 5 * 60 * 1000;
+
 export function TopAgentsWidget() {
   const router = useRouter();
   const { roundId, voyageId, agentId, dateFrom, dateTo } = useDashboardFilters();
   const { data, isLoading } = useQuery({
     queryKey: ['dash-booking-revenue-details', roundId, voyageId, agentId, dateFrom, dateTo],
     queryFn:  () => reportsService.getBookingRevenueDetails({ roundId, voyageId, agentId, dateFrom, dateTo }).then(r => r.data.data),
+    staleTime: TOP_PERFORMER_STALE_TIME,
   });
   const rows = useMemo(() => data?.rows || [], [data]);
 
@@ -54,6 +67,7 @@ export function TopRoutesWidget() {
   const { data, isLoading } = useQuery({
     queryKey: ['dash-booking-revenue-details', roundId, voyageId, agentId, dateFrom, dateTo],
     queryFn:  () => reportsService.getBookingRevenueDetails({ roundId, voyageId, agentId, dateFrom, dateTo }).then(r => r.data.data),
+    staleTime: TOP_PERFORMER_STALE_TIME,
   });
   const rows = useMemo(() => data?.rows || [], [data]);
 

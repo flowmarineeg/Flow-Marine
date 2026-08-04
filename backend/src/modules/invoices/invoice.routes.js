@@ -7,7 +7,7 @@ const paymentCtrl = require('./payment.controller');
 const auth    = require('../../middleware/auth');
 const rbac    = require('../../middleware/rbac');
 const audit   = require('../../middleware/auditLogger');
-const { validateCreate, validateUpdate } = require('./invoice.validation');
+const { validateCreate, validateUpdate, validateBillTo } = require('./invoice.validation');
 const { validateCreate: validatePaymentCreate, validateVoid: validatePaymentVoid } = require('./payment.validation');
 
 router.use(auth);
@@ -24,6 +24,9 @@ router.post('/:id/payments/:paymentId/void',   rbac('invoices'), audit('invoices
 router.get('/:id',     rbac('invoices'), ctrl.getById);
 router.post('/',       rbac('invoices'), audit('invoices'), validateCreate, ctrl.create);
 router.put('/:id',     rbac('invoices'), audit('invoices'), validateUpdate, ctrl.update);
+// Sprint 047 — Bill To (PDF contact details), always editable regardless of
+// the invoice's paid/locked state — separate route, separate lock-free path.
+router.put('/:id/bill-to', rbac('invoices'), audit('invoices'), validateBillTo, ctrl.updateBillTo);
 router.delete('/:id',  rbac('invoices'), audit('invoices'), ctrl.remove);
 
 module.exports = router;

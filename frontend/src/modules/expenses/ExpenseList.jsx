@@ -34,6 +34,8 @@ export default function ExpenseList() {
   const [dateFrom,     setDateFrom]     = useState('');
   const [dateTo,       setDateTo]       = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [selected,     setSelected]     = useState([]); // Sprint 047
+  const [bulkConfirm,  setBulkConfirm]  = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['expenses', page, expenseTypeId, currency, dateFrom, dateTo],
@@ -56,8 +58,43 @@ export default function ExpenseList() {
     onError: (e) => showErrorToast(e, 'delete'),
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids) => {
+      const failed = [];
+      let deletedCount = 0;
+      for (const id of ids) {
+        try {
+          await expensesService.remove(id);
+          deletedCount++;
+        } catch (e) {
+          failed.push({ id, reason: e?.response?.data?.message || e?.message || 'Delete failed' });
+        }
+      }
+      return { deletedCount, failed };
+    },
+    onSuccess: ({ deletedCount, failed }) => {
+      qc.invalidateQueries(['expenses']);
+      setSelected([]);
+      setBulkConfirm(false);
+      if (failed.length === 0) {
+        toast.success(`${deletedCount} expense${deletedCount !== 1 ? 's' : ''} deleted`);
+      } else {
+        toast.error(
+          <div>
+            <p className="font-semibold text-[13px]">{deletedCount} deleted, {failed.length} failed</p>
+            <ul className="mt-1 text-[11px] list-disc list-inside space-y-0.5">
+              {failed.map((f, i) => <li key={i}>{f.reason}</li>)}
+            </ul>
+          </div>
+        );
+      }
+    },
+  });
+
   const expenses   = data?.data || [];
   const pagination = data?.pagination;
+  const toggleSelect = (id) => setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const toggleAll    = ()   => setSelected(p => p.length === expenses.length ? [] : expenses.map(e => e._id));
   const sc = 'text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:border-teal-500 cursor-pointer';
 
   return (
@@ -87,6 +124,12 @@ export default function ExpenseList() {
         <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
           className="text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-teal-500" />
         <ExportButton module="expenses" filters={{ expenseTypeId, currency, dateFrom, dateTo }} selectedIds={[]} onClear={() => {}} />
+        {/* Sprint 047 — bulk delete */}
+        {selected.length > 0 && can('expenses', 'delete') && (
+          <Button variant="danger" size="sm" onClick={() => setBulkConfirm(true)}>
+            Delete Selected ({selected.length})
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -98,6 +141,9 @@ export default function ExpenseList() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
+                  <th className="w-10 px-4 py-2.5">
+                    <input type="checkbox" checked={selected.length === expenses.length && expenses.length > 0} onChange={toggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
+                  </th>
                   {['Date', 'Type', 'Category', 'Scope', 'Round / Voyage', 'Agent', 'Amount', 'Port', 'File', 'Actions'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
@@ -106,6 +152,9 @@ export default function ExpenseList() {
               <tbody>
                 {expenses.map(exp => (
                   <tr key={exp._id} className="table-row">
+                    <td className="px-4">
+                      <input type="checkbox" checked={selected.includes(exp._id)} onChange={() => toggleSelect(exp._id)} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
+                    </td>
                     <td className="text-xs text-gray-600">{fmt(exp.expenseDate)}</td>
                     <td>
                       <span className="text-sm font-medium text-gray-700">{exp.expenseTypeId?.name}</span>
@@ -170,7 +219,10 @@ export default function ExpenseList() {
 
       {pagination && pagination.total > 0 && (
         <div className="flex items-center justify-between mt-4">
-          <p className="text-xs text-gray-400">{pagination.total} expense{pagination.total !== 1 ? 's' : ''} total</p>
+          <p className="text-xs text-gray-400">
+            {pagination.total} expense{pagination.total !== 1 ? 's' : ''} total
+            {selected.length > 0 && <span className="text-teal-600 font-medium"> · {selected.length} selected</span>}
+          </p>
           <Pagination page={pagination.page} totalPages={pagination.totalPages} onPageChange={setPage} />
         </div>
       )}
@@ -182,6 +234,16 @@ export default function ExpenseList() {
         loading={deleteMutation.isPending}
         title="Delete Expense"
         message="Delete this expense? Any attached file will also be removed from the server. This cannot be undone."
+      />
+
+      <ConfirmDialog
+        open={bulkConfirm}
+        onClose={() => setBulkConfirm(false)}
+        onConfirm={() => bulkDeleteMutation.mutate(selected)}
+        loading={bulkDeleteMutation.isPending}
+        title="Delete Selected Expenses"
+        message={`Delete ${selected.length} selected expense${selected.length !== 1 ? 's' : ''}? Any attached files will also be removed from the server. This is permanent. Any expense that can't be deleted will be reported and skipped.`}
+        confirmLabel="Delete Selected"
       />
     </div>
   );

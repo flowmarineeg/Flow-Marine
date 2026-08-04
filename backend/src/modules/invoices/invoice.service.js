@@ -39,7 +39,7 @@ const list = async ({
   agentId = '', status = '', invoiceType = '',
   dateFrom = '', dateTo = '',
 } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (agentId)     query.agentId     = agentId;
   if (status)      query.status      = status;
   if (invoiceType) query.invoiceType = invoiceType;
@@ -59,7 +59,7 @@ const list = async ({
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 const getById = async (id) => {
-  const inv = await pop(Invoice.findOne({ _id: id, isDeleted: false })).lean({ virtuals: true });
+  const inv = await pop(Invoice.findOne({ _id: id })).lean({ virtuals: true });
   if (!inv) throw { status: 404, message: 'Invoice not found' };
   return inv;
 };
@@ -69,20 +69,52 @@ const getByIdForPdf = async (id) => {
   // Sprint 033: line items are self-contained historical snapshots — the PDF
   // never needs a live Booking read. Only agentId/voyageId/roundId are
   // populated, purely for the header labels.
-  const inv = await Invoice.findOne({ _id: id, isDeleted: false })
+  const inv = await Invoice.findOne({ _id: id })
     .populate('agentId', 'agentCode agentName contacts')
     .populate('voyageId', 'voyageNumber voyageName')
     .populate('roundId', 'roundNumber roundName')
     .lean({ virtuals: true });
   if (!inv) throw { status: 404, message: 'Invoice not found' };
+
+  // Sprint 047 — actual recorded payments (date, amount, method, reference
+  // — no per-booking allocations breakdown), for the PDF's Payments
+  // Received table, one row per payment — replaces the old static
+  // bank-wire-details block.
+  const Payment = require('./payment.model');
+  inv.payments = await Payment.find({ invoiceId: id, isVoided: false })
+    .select('paymentDate amount method reference')
+    .sort({ paymentDate: 1 })
+    .lean();
+
   return inv;
+};
+
+// ─── Update Bill To (PDF contact details) ─────────────────────────────────────
+// Sprint 047 — deliberately separate from update()'s lock logic: this is
+// presentational data for the PDF, not financial, so it stays editable
+// regardless of paidAmount/status. Does not touch dates/currency/notes/
+// status or run validateManualTransition() at all.
+const updateBillTo = async (id, billTo = {}) => {
+  const invoice = await Invoice.findOne({ _id: id });
+  if (!invoice) throw { status: 404, message: 'Invoice not found' };
+
+  invoice.billTo = {
+    phone:   billTo.phone   || null,
+    mobile:  billTo.mobile  || null,
+    email:   billTo.email   || null,
+    jobCode: billTo.jobCode || null,
+    taxId:   billTo.taxId   || null,
+    address: billTo.address || null,
+    office:  billTo.office  || null,
+  };
+  await invoice.save();
+  return getById(id);
 };
 
 // ─── Already-invoiced check (Invoice-side only — see BOOKING–INVOICE OWNERSHIP) ─
 const findActiveInvoiceIdsForBookings = async (bookingIds) => {
   const rows = await Invoice.find({
     'lineItems.bookingId': { $in: bookingIds },
-    isDeleted: false,
     status: { $ne: 'Cancelled' },
   }, { 'lineItems.bookingId': 1 }).lean();
 
@@ -98,7 +130,7 @@ const getEligibleBookings = async ({ agentId, voyageId = '', roundId = '' }) => 
   if (!agentId) throw { status: 400, message: 'Agent is required' };
   if (!voyageId && !roundId) throw { status: 400, message: 'Voyage or Round is required' };
 
-  const scopeQuery = { agentId, status: 'Final Loading', isDeleted: false };
+  const scopeQuery = { agentId, status: 'Final Loading' };
   if (voyageId) {
     scopeQuery.voyageId = voyageId;
   } else {
@@ -181,7 +213,7 @@ const create = async (data, createdBy) => {
     throw { status: 400, message: 'Due date must be on or after invoice date' };
   }
 
-  const bookings = await Booking.find({ _id: { $in: bookingIds }, isDeleted: false }).lean();
+  const bookings = await Booking.find({ _id: { $in: bookingIds } }).lean();
   if (bookings.length !== bookingIds.length) throw { status: 400, message: 'One or more bookings not found' };
 
   bookings.forEach(b => {
@@ -201,7 +233,6 @@ const create = async (data, createdBy) => {
       // between reading the eligible-bookings list and this submit.
       const alreadyClaimed = await Invoice.find({
         'lineItems.bookingId': { $in: bookingIds },
-        isDeleted: false,
         status: { $ne: 'Cancelled' },
       }, { 'lineItems.bookingId': 1 }).session(session).lean();
 
@@ -254,7 +285,7 @@ const create = async (data, createdBy) => {
 // driven auto engine) is untouched — a later payment event may still
 // recompute/overwrite whatever status is set here.
 const update = async (id, data, updatedBy, canOverride = false) => {
-  const invoice = await Invoice.findOne({ _id: id, isDeleted: false });
+  const invoice = await Invoice.findOne({ _id: id });
   if (!invoice) throw { status: 404, message: 'Invoice not found' };
 
   if (!canOverride) {
@@ -281,16 +312,13 @@ const update = async (id, data, updatedBy, canOverride = false) => {
   return getById(invoice._id);
 };
 
-// ─── Soft Delete ──────────────────────────────────────────────────────────────
-const softDelete = async (id, deletedBy) => {
-  const invoice = await Invoice.findOne({ _id: id, isDeleted: false });
+// ─── Hard Delete ──────────────────────────────────────────────────────────────
+const hardDelete = async (id) => {
+  const invoice = await Invoice.findOne({ _id: id });
   if (!invoice) throw { status: 404, message: 'Invoice not found' };
   if (invoice.paidAmount > 0) throw { status: 400, message: 'Invoices with recorded payments cannot be deleted' };
 
-  invoice.isDeleted = true;
-  invoice.deletedAt = new Date();
-  invoice.updatedBy = deletedBy;
-  await invoice.save();
+  await Invoice.findByIdAndDelete(id);
 };
 
 // ─── Recalculate paidAmount + derived status from non-voided Payments ────────
@@ -327,7 +355,7 @@ const recalcInvoiceStatus = async (invoiceId, session = null) => {
 };
 
 module.exports = {
-  list, getById, getByIdForPdf, create, update, softDelete,
+  list, getById, getByIdForPdf, create, update, hardDelete, updateBillTo,
   getEligibleBookings, findActiveInvoiceIdsForBookings, buildLineItemSnapshot,
   recalcInvoiceStatus,
 };

@@ -1,16 +1,18 @@
 'use strict';
 
 const Vessel = require('./vessel.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (status) query.status = status;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { vesselCode: { $regex: search, $options: 'i' } },
-      { vesselName: { $regex: search, $options: 'i' } },
-      { imoNumber:  { $regex: search, $options: 'i' } },
+      { vesselCode: { $regex: rx, $options: 'i' } },
+      { vesselName: { $regex: rx, $options: 'i' } },
+      { imoNumber:  { $regex: rx, $options: 'i' } },
     ];
   }
   const skip = (Number(page) - 1) * Number(limit);
@@ -22,7 +24,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
 };
 
 const getById = async (id) => {
-  const vessel = await Vessel.findOne({ _id: id, isDeleted: false }).lean();
+  const vessel = await Vessel.findOne({ _id: id }).lean();
   if (!vessel) throw { status: 404, message: 'Vessel not found' };
   return vessel;
 };
@@ -46,7 +48,7 @@ const create = async (data, createdBy) => {
 };
 
 const update = async (id, data, updatedBy) => {
-  const vessel = await Vessel.findOne({ _id: id, isDeleted: false });
+  const vessel = await Vessel.findOne({ _id: id });
   if (!vessel) throw { status: 404, message: 'Vessel not found' };
 
   if (data.vesselCode && data.vesselCode.toUpperCase() !== vessel.vesselCode) {
@@ -72,27 +74,25 @@ const update = async (id, data, updatedBy) => {
   return vessel.toObject();
 };
 
-const softDelete = async (id, deletedBy) => {
-  const vessel = await Vessel.findOne({ _id: id, isDeleted: false });
+const hardDelete = async (id) => {
+  const vessel = await Vessel.findOne({ _id: id });
   if (!vessel) throw { status: 404, message: 'Vessel not found' };
 
   const Round = require('../rounds/round.model');
-  const activeRound = await Round.findOne({ vesselId: id, status: { $in: ['Planned', 'Active'] }, isDeleted: false });
+  const activeRound = await Round.findOne({ vesselId: id, status: { $in: ['Planned', 'Active'] } });
   if (activeRound) throw { status: 400, message: `Cannot delete — vessel is assigned to active round ${activeRound.roundNumber}` };
 
-  vessel.isDeleted = true;
-  vessel.deletedAt = new Date();
-  vessel.updatedBy = deletedBy;
-  await vessel.save();
+  await Vessel.findByIdAndDelete(id);
 };
 
 const getAll = async (filters = {}, selectedIds = []) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (filters.status) query.status = filters.status;
   if (filters.search) {
+    const rx = escapeRegex(filters.search);
     query.$or = [
-      { vesselCode: { $regex: filters.search, $options: 'i' } },
-      { vesselName: { $regex: filters.search, $options: 'i' } },
+      { vesselCode: { $regex: rx, $options: 'i' } },
+      { vesselName: { $regex: rx, $options: 'i' } },
     ];
   }
   if (selectedIds && selectedIds.length > 0) query._id = { $in: selectedIds };
@@ -101,7 +101,7 @@ const getAll = async (filters = {}, selectedIds = []) => {
 
 // ─── Vessel stats (for detail page) ─────────────────────────────────────────────────
 const getVesselStats = async (id) => {
-  const vessel = await Vessel.findOne({ _id: id, isDeleted: false }).lean();
+  const vessel = await Vessel.findOne({ _id: id }).lean();
   if (!vessel) throw { status: 404, message: 'Vessel not found' };
 
   const Round           = require('../rounds/round.model');
@@ -113,13 +113,13 @@ const getVesselStats = async (id) => {
   const { computeVesselActiveCapacity } = require('../capacity/capacity.service');
 
   // All rounds for this vessel
-  const rounds = await Round.find({ vesselId: id, isDeleted: false })
+  const rounds = await Round.find({ vesselId: id })
     .populate('serviceId', 'serviceCode serviceName')
     .sort({ startDate: -1 })
     .limit(20)
     .lean();
   const roundIds    = rounds.map(r => r._id);
-  const totalRounds = await Round.countDocuments({ vesselId: id, isDeleted: false });
+  const totalRounds = await Round.countDocuments({ vesselId: id });
 
   const activeRoundsCount    = rounds.filter(r => r.status === 'Active').length;
   const plannedRoundsCount   = rounds.filter(r => r.status === 'Planned').length;
@@ -141,11 +141,11 @@ const getVesselStats = async (id) => {
   // so status labels merge with no reconciliation needed.
   const [l2StatusAgg, l1StatusAgg] = voyageIds.length ? await Promise.all([
     Booking.aggregate([
-      { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
+      { $match: { voyageId: { $in: voyageIds } } },
       { $group: { _id: '$status', count: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' } } },
     ]),
     ManualBooking.aggregate([
-      { $match: { voyageId: { $in: voyageIds }, isDeleted: false } },
+      { $match: { voyageId: { $in: voyageIds } } },
       { $group: { _id: '$status', count: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' } } },
     ]),
   ]) : [[], []];
@@ -197,11 +197,11 @@ const getVesselStats = async (id) => {
   const Agent = require('../agents/agent.model');
   const [l2AgentAgg, l1AgentAgg] = voyageIds.length ? await Promise.all([
     Booking.aggregate([
-      { $match: { voyageId: { $in: voyageIds }, isDeleted: false, status: { $ne: 'Cancelled' } } },
+      { $match: { voyageId: { $in: voyageIds }, status: { $ne: 'Cancelled' } } },
       { $group: { _id: '$agentId', bookingCount: { $sum: 1 } } },
     ]),
     ManualBooking.aggregate([
-      { $match: { voyageId: { $in: voyageIds }, isDeleted: false, status: { $ne: 'Cancelled' } } },
+      { $match: { voyageId: { $in: voyageIds }, status: { $ne: 'Cancelled' } } },
       { $group: { _id: '$agentId', bookingCount: { $sum: 1 } } },
     ]),
   ]) : [[], []];
@@ -259,4 +259,4 @@ const getVesselStats = async (id) => {
   };
 };
 
-module.exports = { list, getById, getVesselStats, create, update, softDelete, getAll };
+module.exports = { list, getById, getVesselStats, create, update, hardDelete, getAll };

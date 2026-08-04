@@ -4,12 +4,23 @@
  * Invoice PDF Generator — clean professional design
  *
  * Layout:
- *  1. Header bar   — company name left, INVOICE + number right
+ *  1. Header bar   — company name (Flow Marine) left, INVOICE + number right
  *  2. Meta strip   — status pill, invoice date, due date
- *  3. Billing row  — Bill To (agent) left | Shipment details right
- *  4. Line items table
- *  5. Totals block (right) + Payment info (left)
+ *  3. Billing row  — Bill To (agent + invoice.billTo contact details) left |
+ *                     Shipment details (Type/POL/POD/Voyage/Round) right
+ *  4. Invoice Overview — three stat boxes: Total Amount / Total Paid /
+ *     Remaining, plus Notes if present. NO per-booking line items table.
+ *  5. Payments Received — full-width table, one row per payment (Date /
+ *     Method / Reference / Amount)
  *  6. Footer
+ *
+ * Sprint 047: Bill To is now invoice-level data (invoice.billTo — phone,
+ * mobile, email, job code, tax id, address, office), always editable
+ * regardless of the invoice's lock status; only non-empty fields render.
+ * The old per-booking line items table and the old static bank-wire-
+ * details block are both gone — replaced by the Overview stat boxes and
+ * the real Payments Received table (invoice.payments, fetched by
+ * invoice.service.js#getByIdForPdf).
  *
  * Design principles:
  *  - One accent colour (#0D4A6B) — used only for header bar, table header, total row, left stripe
@@ -99,7 +110,7 @@ const statusColor = (s) => ({
 const generateInvoicePdf = (invoice) => {
   const doc = new PDFDocument({
     size: 'A4', margin: 0,
-    info: { Title: `Invoice ${invoice.invoiceNumber}`, Author: 'Flow Dubai' },
+    info: { Title: `Invoice ${invoice.invoiceNumber}`, Author: 'Flow Marine' },
   });
 
   const bufs = [];
@@ -127,19 +138,38 @@ const generateInvoicePdf = (invoice) => {
 
   const agentName  = agent.agentName  || '--';
   const agentCode  = agent.agentCode  || '';
-  const agentMob   = contact.mobile   || '--';
-  const agentEmail = contact.email    || '--';
+
+  // Sprint 047 — Bill To (invoice.billTo) contact details, entered directly
+  // on the invoice. Mobile/Email fall back to the agent's own contact when
+  // not set on the invoice, so older invoices (no billTo yet) still show
+  // something; every other field is invoice-only, no fallback exists.
+  const billTo = invoice.billTo || {};
+  const btPhone   = billTo.phone   || null;
+  const btMobile  = billTo.mobile  || contact.mobile || null;
+  const btEmail   = billTo.email   || contact.email  || null;
+  const btJobCode = billTo.jobCode || null;
+  const btTaxId   = billTo.taxId   || null;
+  const btAddress = billTo.address || null;
+  const btOffice  = billTo.office  || null;
 
   // Shipment summary strip: for a single-booking invoice this is that
-  // booking's own POL/POD/voyage/round; for a Voyage/Round invoice it
-  // summarizes the scope (one voyage/round, N bookings).
+  // booking's own POL/POD; Voyage/Round always resolve from whatever the
+  // line items actually agree on (every line item snapshot carries its own
+  // voyageNumber/roundNumber regardless of invoiceType), not gated by
+  // invoiceType — a Round invoice can still show its one shared Voyage if
+  // every booking happens to share it, and vice versa.
   const polName  = first.polName  || '--';
   const podName  = first.podName  || '--';
-  const voyNumRaw   = invType === 'Voyage' ? first.voyageNumber : (lineItems.length === 1 ? first.voyageNumber : null);
-  const roundNumRaw = invType === 'Round'  ? first.roundNumber  : (lineItems.length === 1 ? first.roundNumber  : null);
-  const voyNum   = voyNumRaw   ? `${voyNumRaw} — ${first.voyageName || '(unnamed)'}`   : '--';
-  const roundNum = roundNumRaw ? `${roundNumRaw} — ${first.roundName || '(unnamed)'}` : '--';
-  const bkNum    = lineItems.length === 1 ? first.bookingNumber : `${lineItems.length} bookings`;
+
+  const uniqueBy = (key) => [...new Set(lineItems.map(li => li[key]).filter(Boolean))];
+  const uniqueVoyageNums = uniqueBy('voyageNumber');
+  const uniqueRoundNums  = uniqueBy('roundNumber');
+  const voyNum = uniqueVoyageNums.length === 1
+    ? `${uniqueVoyageNums[0]} — ${lineItems.find(li => li.voyageNumber === uniqueVoyageNums[0])?.voyageName || '(unnamed)'}`
+    : uniqueVoyageNums.length > 1 ? `${uniqueVoyageNums.length} voyages` : '--';
+  const roundNum = uniqueRoundNums.length === 1
+    ? `${uniqueRoundNums[0]} — ${lineItems.find(li => li.roundNumber === uniqueRoundNums[0])?.roundName || '(unnamed)'}`
+    : uniqueRoundNums.length > 1 ? `${uniqueRoundNums.length} rounds` : '--';
 
   // ════════════════════════════════════════════════════════════════════════════
   // 1. HEADER BAR
@@ -147,7 +177,7 @@ const generateInvoicePdf = (invoice) => {
   fillBox(doc, 0, 0, PW, 72, C.accent);
 
   // Company name + tagline
-  t(doc, 'FLOW DUBAI',                   ML, 18, { font: 'Helvetica-Bold', size: 20, color: C.white });
+  t(doc, 'FLOW MARINE',                  ML, 18, { font: 'Helvetica-Bold', size: 20, color: C.white });
   t(doc, 'Shipping & Logistics Operations', ML, 42, { size: 8, color: '#AACCDD' });
 
   // "INVOICE" right
@@ -199,17 +229,31 @@ const generateInvoicePdf = (invoice) => {
   t(doc, 'SHIPMENT DETAILS', RX, y, { font: 'Helvetica-Bold', size: 7,   color: C.accent });
   y += 14;
 
-  // Bill To content
+  // Bill To content — Sprint 047: agent name/code always shown; every Bill
+  // To field (phone/mobile/email/job code/tax id/office/address) renders
+  // only when actually set, so an invoice with no Bill To details filled in
+  // yet doesn't show a wall of placeholders.
   const billStartY = y;
-  t(doc, agentName, ML, y, { font: 'Helvetica-Bold', size: 9.5, color: C.black, width: LW });
-  y += 13;
-  if (agentCode) {
-    t(doc, agentCode, ML, y, { size: 8, color: C.mid, width: LW });
-    y += 12;
-  }
-  t(doc, agentMob,   ML, y, { size: 8, color: C.mid, width: LW });
-  y += 12;
-  t(doc, agentEmail, ML, y, { size: 8, color: C.mid, width: LW });
+  const billLines = [
+    { text: agentName,                     size: 9.5, font: 'Helvetica-Bold', color: C.black },
+    ...(agentCode  ? [{ text: agentCode                 }] : []),
+    ...(btPhone    ? [{ text: `Tel: ${btPhone}`         }] : []),
+    ...(btMobile   ? [{ text: `Mob: ${btMobile}`        }] : []),
+    ...(btEmail    ? [{ text: btEmail                   }] : []),
+    ...(btJobCode  ? [{ text: `Job Code: ${btJobCode}`  }] : []),
+    ...(btTaxId    ? [{ text: `Tax ID: ${btTaxId}`      }] : []),
+    ...(btOffice   ? [{ text: `Office: ${btOffice}`     }] : []),
+    ...(btAddress  ? [{ text: btAddress, wrap: true     }] : []),
+  ];
+  let by = billStartY;
+  billLines.forEach((line) => {
+    t(doc, line.text, ML, by, {
+      size: line.size || 8, font: line.font || 'Helvetica', color: line.color || C.mid,
+      width: LW, wrap: !!line.wrap,
+    });
+    by += line.wrap ? 22 : 12;
+  });
+  const billToHeight = by - billStartY;
 
   // Shipment info (label + value pairs), drawn at same starting Y
   const sRow = (label, value, ry) => {
@@ -222,136 +266,92 @@ const generateInvoicePdf = (invoice) => {
   sRow('POD',     podName,                                billStartY + 28);
   sRow('Voyage',  voyNum,                                  billStartY + 42);
   sRow('Round',   roundNum,                                billStartY + 56);
+  const shipmentHeight = 70;
 
-  y += 20;
+  y += Math.max(billToHeight, shipmentHeight) + 6;
   hLine(doc, ML, y, PW - MR);
   y += 18;
 
+  const TP = 5; // cell padding x, reused by both tables below
+
   // ════════════════════════════════════════════════════════════════════════════
-  // 4. LINE ITEMS TABLE (Sprint 033 — one row per invoiced booking, rendered
-  //    entirely from each line item's own historical snapshot, never a live
-  //    Booking read — see INVOICE LINE ITEM SNAPSHOT)
+  // 4. INVOICE OVERVIEW — Total Amount / Total Paid / Remaining
+  //    Sprint 047: NO per-booking line items table at all — this is the
+  //    entire financial summary of the invoice.
   // ════════════════════════════════════════════════════════════════════════════
-  const TC = [
-    { label: '#',                  w: 22,  align: 'center' },
-    { label: 'Booking / Container',w: 118, align: 'left'   },
-    { label: 'Voyage / Round',     w: 100, align: 'left'   },
-    { label: 'Shipper / Consignee',w: 118, align: 'left'   },
-    { label: 'Amount',             w: 0,   align: 'right'  }, // fills remaining
+  const OB_GAP = 8;
+  const OB_W   = (CW - OB_GAP * 2) / 3;
+  const OB_H   = 46;
+
+  const overview = [
+    { label: 'TOTAL AMOUNT', value: fmtMoney(totalAmount, currency), bg: C.bg,     fg: C.dark,    lc: C.muted },
+    { label: 'TOTAL PAID',   value: fmtMoney(paidAmount, currency),  bg: C.bg,     fg: '#1A7A4A', lc: C.muted },
+    { label: 'REMAINING',    value: fmtMoney(balance, currency),     bg: C.accent, fg: C.white,   lc: '#CFE3EE' },
   ];
-
-  const fixedW = TC.slice(0,-1).reduce((s, c) => s + c.w, 0);
-  TC[TC.length - 1].w = CW - fixedW;
-
-  let cx = ML;
-  TC.forEach((col) => { col.x = cx; cx += col.w; });
-
-  const TH = 20;   // table header height
-  const TR = 28;   // table row height
-  const TP = 5;    // cell padding x
-
-  fillBox(doc, ML, y, CW, TH, C.accent);
-  TC.forEach((col) => {
-    t(doc, col.label, col.x + TP, y + 6, {
-      font: 'Helvetica-Bold', size: 7.5, color: C.white,
-      width: col.w - TP * 2, align: col.align,
-    });
+  overview.forEach((box, i) => {
+    const bx = ML + i * (OB_W + OB_GAP);
+    fillBox(doc, bx, y, OB_W, OB_H, box.bg);
+    t(doc, box.label, bx + 12, y + 10, { font: 'Helvetica-Bold', size: 7, color: box.lc });
+    t(doc, box.value, bx + 12, y + 23, { font: 'Helvetica-Bold', size: 13, color: box.fg, width: OB_W - 24 });
   });
-  y += TH;
+  y += OB_H + 20;
 
-  lineItems.forEach((li, idx) => {
-    const bg = idx % 2 === 0 ? C.altRow : C.white;
-    fillBox(doc, ML, y, CW, TR, bg);
-
-    t(doc, String(idx + 1), TC[0].x + TP, y + 8, { size: 8, color: C.muted, width: TC[0].w - TP*2, align: 'center' });
-
-    t(doc, li.bookingNumber || '--',   TC[1].x + TP, y + 5,  { font: 'Helvetica-Bold', size: 8, color: C.black, width: TC[1].w - TP*2 });
-    t(doc, li.containerNumber || '--', TC[1].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[1].w - TP*2 });
-
-    const liVoyage = li.voyageNumber ? `${li.voyageNumber} (${li.voyageName || '(unnamed)'})` : '--';
-    const liRound  = li.roundNumber  ? `${li.roundNumber} (${li.roundName || '(unnamed)'})`  : '--';
-    t(doc, liVoyage, TC[2].x + TP, y + 5,  { size: 8, color: C.dark, width: TC[2].w - TP*2 });
-    t(doc, liRound,  TC[2].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[2].w - TP*2 });
-
-    t(doc, li.shipper || '--',            TC[3].x + TP, y + 5,  { size: 8, color: C.dark,  width: TC[3].w - TP*2 });
-    t(doc, `> ${li.consignee || '--'}`,   TC[3].x + TP, y + 16, { size: 7.5, color: C.muted, width: TC[3].w - TP*2 });
-
-    t(doc, fmtNum(li.freightAmount), TC[4].x + TP, y + 9, { font: 'Helvetica-Bold', size: 8.5, color: C.black, width: TC[4].w - TP*2, align: 'right' });
-    if (li.orphaned) {
-      t(doc, 'Booking cancelled after invoicing', TC[4].x + TP, y + 19, { size: 6.5, color: '#8B1A1A', width: TC[4].w - TP*2, align: 'right' });
-    }
-
-    hLine(doc, ML, y + TR, PW - MR, C.border, 0.4);
-    y += TR;
-  });
-
-  // Notes row
+  // Notes
   if (invoice.notes) {
-    const NH = 22;
-    fillBox(doc, ML, y, CW, NH, C.white);
-    t(doc, 'Note:', ML + TP,    y + 7, { size: 7.5, color: C.muted });
-    t(doc, invoice.notes, ML + 40, y + 7, { size: 8, color: C.mid, width: CW - 46 });
-    hLine(doc, ML, y + NH, PW - MR, C.border, 0.4);
-    y += NH;
+    t(doc, 'Note:', ML, y, { size: 7.5, color: C.muted });
+    t(doc, invoice.notes, ML + 34, y, { size: 8, color: C.mid, width: CW - 34, wrap: true });
+    y += 24;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 5. PAYMENTS RECEIVED — one row per payment (date, method, reference,
+  //    amount). Replaces the old per-booking line items table entirely and
+  //    the old static bank-wire-details block.
+  // ════════════════════════════════════════════════════════════════════════════
+  t(doc, 'PAYMENTS RECEIVED', ML, y, { font: 'Helvetica-Bold', size: 7, color: C.accent });
+  y += 14;
+
+  const payments = Array.isArray(invoice.payments) ? invoice.payments : [];
+  if (!payments.length) {
+    t(doc, 'No payments recorded yet.', ML, y, { size: 8, color: C.muted });
+    y += 20;
+  } else {
+    const PC = [
+      { label: 'Date',      w: 85,  align: 'left'  },
+      { label: 'Method',    w: 110, align: 'left'  },
+      { label: 'Reference', w: 0,   align: 'left'  }, // fills remaining
+      { label: 'Amount',    w: 110, align: 'right' },
+    ];
+    const fixedPW = PC[0].w + PC[1].w + PC[3].w;
+    PC[2].w = CW - fixedPW;
+    let px = ML;
+    PC.forEach((col) => { col.x = px; px += col.w; });
+
+    const PTH = 18; // table header height
+    const PTR = 20; // table row height
+
+    fillBox(doc, ML, y, CW, PTH, C.accent);
+    PC.forEach((col) => {
+      t(doc, col.label, col.x + TP, y + 5, {
+        font: 'Helvetica-Bold', size: 7.5, color: C.white,
+        width: col.w - TP * 2, align: col.align,
+      });
+    });
+    y += PTH;
+
+    payments.forEach((p, idx) => {
+      const bg = idx % 2 === 0 ? C.altRow : C.white;
+      fillBox(doc, ML, y, CW, PTR, bg);
+      t(doc, fmtDate(p.paymentDate),       PC[0].x + TP, y + 6, { size: 8, color: C.dark, width: PC[0].w - TP*2 });
+      t(doc, p.method || '--',             PC[1].x + TP, y + 6, { size: 8, color: C.dark, width: PC[1].w - TP*2 });
+      t(doc, p.reference || '--',          PC[2].x + TP, y + 6, { size: 8, color: C.mid,  width: PC[2].w - TP*2 });
+      t(doc, fmtMoney(p.amount, currency), PC[3].x + TP, y + 6, { font: 'Helvetica-Bold', size: 8, color: C.black, width: PC[3].w - TP*2, align: 'right' });
+      hLine(doc, ML, y + PTR, PW - MR, C.border, 0.4);
+      y += PTR;
+    });
   }
 
   y += 16;
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // 5. TOTALS (right) + PAYMENT INFO (left)
-  // ════════════════════════════════════════════════════════════════════════════
-  const TBW  = 210;           // totals block width
-  const TBX  = PW - MR - TBW; // totals block x
-  const TLBW = 100;            // label column inside totals
-  const TVBW = TBW - TLBW - 8;// value column inside totals
-  const ROTH = 22;             // row height for subtotals
-
-  const totals = [
-    { label: 'Subtotal',  value: fmtMoney(totalAmount, currency) },
-    { label: 'Paid',      value: fmtMoney(paidAmount, currency) },
-  ];
-
-  const totalsStartY = y;
-
-  totals.forEach((row, i) => {
-    const ry = y + i * ROTH;
-    fillBox(doc, TBX, ry, TBW, ROTH, i % 2 === 0 ? C.bg : C.white);
-    t(doc, row.label, TBX + 10, ry + 7, { size: 8, color: C.muted });
-    t(doc, row.value, TBX + TLBW, ry + 7, { size: 8.5, color: C.dark, width: TVBW, align: 'right' });
-    hLine(doc, TBX, ry + ROTH, TBX + TBW, C.border);
-  });
-
-  y += totals.length * ROTH;
-
-  // BALANCE DUE — accent background (Sprint 033: reflects exact remaining
-  // balance after Payment.allocations, not the full invoice total once any
-  // payment has been recorded)
-  const TDUEH = 26;
-  fillBox(doc, TBX, y, TBW, TDUEH, C.accent);
-  t(doc, 'BALANCE DUE', TBX + 10, y + 8, { font: 'Helvetica-Bold', size: 8, color: C.white });
-  t(doc, fmtMoney(balance, currency), TBX + TLBW, y + 8, {
-    font: 'Helvetica-Bold', size: 9.5, color: C.white, width: TVBW, align: 'right',
-  });
-
-  // Payment info — left side, aligned to top of totals block
-  const payW = TBX - ML - 20;
-  let py = totalsStartY;
-
-  t(doc, 'PAYMENT INFORMATION', ML, py, { font: 'Helvetica-Bold', size: 7, color: C.accent });
-  py += 14;
-
-  const pRow = (label, value) => {
-    t(doc, label, ML,       py, { size: 7.5, color: C.muted, width: 80 });
-    t(doc, value, ML + 84,  py, { size: 8,   color: C.dark,  width: payW - 84 });
-    py += 13;
-  };
-
-  pRow('Bank Name',   'Emirates NBD');
-  pRow('Account',     'AE12 3456 7890 1234 5678');
-  pRow('SWIFT / BIC', 'EBILAEAD');
-  pRow('Reference',   invNum);
-
-  y += TDUEH;
 
   // ════════════════════════════════════════════════════════════════════════════
   // 6. FOOTER
@@ -364,7 +364,7 @@ const generateInvoicePdf = (invoice) => {
     size: 7.5, color: C.muted, align: 'right', width: 130,
   });
 
-  t(doc, 'Flow Dubai  |  Shipping & Logistics Operations  |  Dubai, UAE', ML, FY + 24, {
+  t(doc, 'Flow Marine  |  Shipping & Logistics Operations', ML, FY + 24, {
     size: 7, color: C.muted,
   });
   t(doc, `Invoice ${invNum}`, PW - MR, FY + 24, {

@@ -1,16 +1,18 @@
 'use strict';
 
 const Service = require('./service.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (status) query.status = status;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { serviceCode: { $regex: search, $options: 'i' } },
-      { serviceName: { $regex: search, $options: 'i' } },
+      { serviceCode: { $regex: rx, $options: 'i' } },
+      { serviceName: { $regex: rx, $options: 'i' } },
     ];
   }
   const skip = (Number(page) - 1) * Number(limit);
@@ -31,7 +33,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
   const Route    = require('../routes/route.model');
 
   const serviceIds = services.map(s => s._id);
-  const routes = await Route.find({ serviceId: { $in: serviceIds }, isDeleted: false }).lean();
+  const routes = await Route.find({ serviceId: { $in: serviceIds } }).lean();
   const routeMap = {};
   routes.forEach(r => { routeMap[String(r.serviceId)] = r._id; });
 
@@ -53,7 +55,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 const getById = async (id) => {
-  const service = await Service.findOne({ _id: id, isDeleted: false })
+  const service = await Service.findOne({ _id: id })
     .populate('defaultVesselId', 'vesselCode vesselName')
     .lean();
   if (!service) throw { status: 404, message: 'Service not found' };
@@ -75,7 +77,7 @@ const create = async (data, createdBy) => {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
-  const service = await Service.findOne({ _id: id, isDeleted: false });
+  const service = await Service.findOne({ _id: id });
   if (!service) throw { status: 404, message: 'Service not found' };
 
   if (data.serviceCode) {
@@ -90,31 +92,28 @@ const update = async (id, data, updatedBy) => {
   return service.toObject();
 };
 
-// ─── Soft Delete ──────────────────────────────────────────────────────────────
-const softDelete = async (id, deletedBy) => {
-  const service = await Service.findOne({ _id: id, isDeleted: false });
+// ─── Hard Delete ──────────────────────────────────────────────────────────────
+const hardDelete = async (id) => {
+  const service = await Service.findOne({ _id: id });
   if (!service) throw { status: 404, message: 'Service not found' };
 
   // Block if active/planned rounds reference this service
   let Round;
   try { Round = require('../rounds/round.model'); } catch { Round = null; }
   if (Round) {
-    const activeRound = await Round.findOne({ serviceId: id, status: { $in: ['Planned', 'Active'] }, isDeleted: false });
+    const activeRound = await Round.findOne({ serviceId: id, status: { $in: ['Planned', 'Active'] } });
     if (activeRound) throw { status: 400, message: `Cannot delete — service is used by round ${activeRound.roundNumber}` };
   }
 
-  service.isDeleted = true;
-  service.deletedAt = new Date();
-  service.updatedBy = deletedBy;
-  await service.save();
+  await Service.findByIdAndDelete(id);
 };
 
 // ─── Get all active (for dropdowns) ──────────────────────────────────────────
 const listActive = async () => {
-  return Service.find({ isDeleted: false, status: 'Active' })
+  return Service.find({ status: 'Active' })
     .select('serviceCode serviceName')
     .sort({ serviceName: 1 })
     .lean();
 };
 
-module.exports = { list, getById, create, update, softDelete, listActive };
+module.exports = { list, getById, create, update, hardDelete, listActive };

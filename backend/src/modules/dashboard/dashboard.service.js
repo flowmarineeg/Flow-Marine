@@ -35,32 +35,32 @@ const computeStats = async () => {
     revenueAgg, monthlyTrend, revByService,
     bookingsByStatus, voyagesByStatus, invoicesByStatus, recentActivity,
   ] = await Promise.all([
-    Vessel.countDocuments({ status: 'Active',    isDeleted: false }),
-    Round.countDocuments({  status: 'Active',    isDeleted: false }),
-    Round.countDocuments({  status: 'Planned',   isDeleted: false }),
-    Round.countDocuments({  status: 'Completed', isDeleted: false }),
+    Vessel.countDocuments({ status: 'Active' }),
+    Round.countDocuments({  status: 'Active' }),
+    Round.countDocuments({  status: 'Planned' }),
+    Round.countDocuments({  status: 'Completed' }),
     Voyage.countDocuments({}),
     Voyage.countDocuments({ status: { $in: ['Scheduled', 'Departed', 'In Transit'] } }),
-    Booking.countDocuments({ isDeleted: false }),
-    Booking.countDocuments({ status: 'Confirmed', isDeleted: false }),
-    Booking.countDocuments({ status: 'Pending',   isDeleted: false }),
-    Booking.countDocuments({ status: 'Cancelled', isDeleted: false }),
-    Agent.countDocuments({   status: 'Active',    isDeleted: false }),
-    Invoice.countDocuments({ status: 'Draft',     isDeleted: false }),
-    Invoice.countDocuments({ status: 'Overdue',   isDeleted: false }),
-    Invoice.countDocuments({ status: 'Paid',      isDeleted: false }),
+    Booking.countDocuments({}),
+    Booking.countDocuments({ status: 'Confirmed' }),
+    Booking.countDocuments({ status: 'Pending' }),
+    Booking.countDocuments({ status: 'Cancelled' }),
+    Agent.countDocuments({   status: 'Active' }),
+    Invoice.countDocuments({ status: 'Draft' }),
+    Invoice.countDocuments({ status: 'Overdue' }),
+    Invoice.countDocuments({ status: 'Paid' }),
     // aggregations run in same Promise.all — no sequential waits
     Booking.aggregate([
-      { $match: { status: 'Final Loading', isDeleted: false, createdAt: { $gte: thirty } } },
+      { $match: { status: 'Final Loading', createdAt: { $gte: thirty } } },
       { $group: { _id: null, total: { $sum: '$totalFreight' }, count: { $sum: 1 } } },
     ]),
     Booking.aggregate([
-      { $match: { isDeleted: false, status: 'Final Loading', createdAt: { $gte: sixMonths } } },
+      { $match: { status: 'Final Loading', createdAt: { $gte: sixMonths } } },
       { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, totalFreight: { $sum: '$totalFreight' }, count: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
     Booking.aggregate([
-      { $match: { isDeleted: false, status: 'Final Loading' } },
+      { $match: { status: 'Final Loading' } },
       { $lookup: { from: 'voyages',  localField: 'voyageId',         foreignField: '_id', as: 'voyage'  } },
       { $unwind: { path: '$voyage',  preserveNullAndEmptyArrays: true } },
       { $lookup: { from: 'services', localField: 'voyage.serviceId', foreignField: '_id', as: 'service' } },
@@ -70,7 +70,6 @@ const computeStats = async () => {
       { $limit: 6 },
     ]),
     Booking.aggregate([
-      { $match: { isDeleted: false } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]),
@@ -79,7 +78,6 @@ const computeStats = async () => {
       { $sort: { count: -1 } },
     ]),
     Invoice.aggregate([
-      { $match: { isDeleted: false } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]),
@@ -89,11 +87,11 @@ const computeStats = async () => {
   // ── Layer 1 (ManualBooking) counts — Sprint 023 ──────────────────────────
   const [totalManualBookings, pendingManualBookings, confirmedManualBookings, manualRevenueAgg] =
     await Promise.all([
-      ManualBooking.countDocuments({ isDeleted: false }),
-      ManualBooking.countDocuments({ status: 'Pending',   isDeleted: false }),
-      ManualBooking.countDocuments({ status: 'Confirmed', isDeleted: false }),
+      ManualBooking.countDocuments({}),
+      ManualBooking.countDocuments({ status: 'Pending' }),
+      ManualBooking.countDocuments({ status: 'Confirmed' }),
       ManualBooking.aggregate([
-        { $match: { isDeleted: false, status: { $ne: 'Cancelled' }, createdAt: { $gte: thirty } } },
+        { $match: { status: { $ne: 'Cancelled' }, createdAt: { $gte: thirty } } },
         { $group: { _id: null, total: { $sum: '$totalFreight' } } },
       ]),
     ]);
@@ -168,7 +166,7 @@ const getDashboardStats = async () => {
 const getFleetUtilisation = async () => {
   const { computeRoundCapacity } = require('../capacity/capacity.service');
 
-  const activeRounds = await Round.find({ status: 'Active', isDeleted: false })
+  const activeRounds = await Round.find({ status: 'Active' })
     .populate('vesselId',  'vesselCode vesselName capacity')
     .populate('serviceId', 'serviceCode serviceName')
     .lean();

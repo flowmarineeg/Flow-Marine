@@ -31,7 +31,12 @@ const validateInvite = [
 ];
 
 const validateAcceptInvite = [
-  body('token').notEmpty().withMessage('Token is required'),
+  // .isString() is load-bearing, not cosmetic: without it, a JSON body of
+  // {"token":{"$ne":null}} sails through notEmpty() and turns
+  // user.service.js#acceptInvite's `inviteToken: token` into a live Mongo
+  // operator, matching any invited user with a pending token — NoSQL
+  // injection -> account takeover. Never remove this check.
+  body('token').isString().notEmpty().withMessage('Token is required'),
   body('password')
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
     .matches(/[A-Z]/).withMessage('Must contain an uppercase letter')

@@ -181,8 +181,8 @@ const previewImport = async ({ rows, agentId, roundId, importType }) => {
   const allRoundVoyageIds = roundVoyages.map(v => v._id);
 
   const [containerTypes, ports] = await Promise.all([
-    ContainerType.find({ isDeleted: false }).lean(),
-    Port.find({ isDeleted: false }).select('name code').lean(),
+    ContainerType.find({}).lean(),
+    Port.find({}).select('name code').lean(),
   ]);
 
   const ctMap = {};
@@ -206,7 +206,6 @@ const previewImport = async ({ rows, agentId, roundId, importType }) => {
     containerNumber: { $in: incomingCntrs },
     voyageId: { $in: allRoundVoyageIds },
     agentId,
-    isDeleted: false,
   }).lean();
   const existingMap = {}; // containerNumber -> booking doc
   existingBookings.forEach(b => {
@@ -466,7 +465,7 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
     if (savedContainerNumbers.size > 0) {
       // Mark all imported containers as Final Loading, across every voyage in the Round
       await Booking.updateMany(
-        { containerNumber: { $in: [...savedContainerNumbers] }, voyageId: { $in: roundVoyageIds }, agentId, isDeleted: false },
+        { containerNumber: { $in: [...savedContainerNumbers] }, voyageId: { $in: roundVoyageIds }, agentId },
         { $set: { status: 'Final Loading', updatedBy: createdBy } }
       );
       savedContainerNumbers.forEach(n => markedFinalLoading.push(n));
@@ -480,7 +479,6 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
       {
         voyageId: { $in: roundVoyageIds },
         agentId,
-        isDeleted: false,
         status:    { $nin: ['Cancelled'] },
         containerNumber: { $nin: [...savedContainerNumbers] },
       },
@@ -488,7 +486,7 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
     );
     if (cancelResult.modifiedCount > 0) {
       const cancelledDocs = await Booking.find(
-        { voyageId: { $in: roundVoyageIds }, agentId, isDeleted: false, status: 'Cancelled' },
+        { voyageId: { $in: roundVoyageIds }, agentId, status: 'Cancelled' },
         { containerNumber: 1 }
       ).lean();
       cancelledDocs.forEach(b => {
@@ -507,7 +505,7 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
       if (cancelledIds.length) {
         const Invoice = require('../invoices/invoice.model');
         await Invoice.updateMany(
-          { 'lineItems.bookingId': { $in: cancelledIds }, isDeleted: false, status: { $ne: 'Cancelled' } },
+          { 'lineItems.bookingId': { $in: cancelledIds }, status: { $ne: 'Cancelled' } },
           {
             $set: {
               'lineItems.$[li].orphaned':       true,
@@ -563,14 +561,13 @@ const previewDischargeImport = async ({ rows, agentId, voyageId }) => {
   roundVoyages.forEach(v => { voyagesById[String(v._id)] = v; });
   const roundVoyageIds = roundVoyages.map(v => v._id);
 
-  // Candidate population: every non-deleted booking for this agent anywhere
-  // in the Round (any status) — broad enough to distinguish "wrong voyage"
-  // from "wrong status" from "doesn't exist at all", each with its own
-  // precise error message below.
+  // Candidate population: every booking for this agent anywhere in the Round
+  // (any status) — broad enough to distinguish "wrong voyage" from "wrong
+  // status" from "doesn't exist at all", each with its own precise error
+  // message below.
   const candidateBookings = await Booking.find({
     agentId,
     voyageId:  { $in: roundVoyageIds },
-    isDeleted: false,
   }).lean();
   const byContainer = {};
   candidateBookings.forEach(b => {
@@ -662,7 +659,6 @@ const saveDischargeImport = async ({ rows, agentId, voyageId, createdBy }) => {
       voyageId,
       agentId,
       status:    'Final Loading',
-      isDeleted: false,
       _id:       { $nin: matchedIds },
     },
     { $set: { dischargeStatus: 'Remaining', updatedBy: createdBy } }

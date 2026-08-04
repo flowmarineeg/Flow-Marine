@@ -32,7 +32,7 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await serviceService.softDelete(req.params.id, req.user._id);
+    await serviceService.hardDelete(req.params.id);
     return success(res, null, 'Service deleted successfully');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };

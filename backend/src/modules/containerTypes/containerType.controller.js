@@ -7,6 +7,6 @@ const list    = async (req, res, next) => { try { const { page=1,limit=20,search
 const getById = async (req, res, next) => { try { return success(res, await svc.getById(req.params.id)); } catch(e){ if(e.status) return error(res,e.message,e.status); next(e); } };
 const create  = async (req, res, next) => { try { return created(res, await svc.create(req.body,req.user._id),'Container type created'); } catch(e){ if(e.status) return error(res,e.message,e.status); next(e); } };
 const update  = async (req, res, next) => { try { req.auditOldDoc = await svc.getById(req.params.id); return success(res, await svc.update(req.params.id,req.body,req.user._id),'Container type updated'); } catch(e){ if(e.status) return error(res,e.message,e.status); next(e); } };
-const remove  = async (req, res, next) => { try { await svc.softDelete(req.params.id,req.user._id); return success(res,null,'Container type deleted'); } catch(e){ if(e.status) return error(res,e.message,e.status); next(e); } };
+const remove  = async (req, res, next) => { try { await svc.hardDelete(req.params.id); return success(res,null,'Container type deleted'); } catch(e){ if(e.status) return error(res,e.message,e.status); next(e); } };
 
 module.exports = { list, getById, create, update, remove };

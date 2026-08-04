@@ -82,10 +82,10 @@ const getById = async (id) => {
 
 // ─── Get ports available for a round (from its service route legs) ────────────
 const getRoundRoutePorts = async (roundId) => {
-  const round = await Round.findOne({ _id: roundId, isDeleted: false }).lean();
+  const round = await Round.findOne({ _id: roundId }).lean();
   if (!round) throw { status: 404, message: 'Round not found' };
 
-  const route = await Route.findOne({ serviceId: round.serviceId, isDeleted: false }).lean();
+  const route = await Route.findOne({ serviceId: round.serviceId }).lean();
   if (!route) throw { status: 404, message: 'No route found for this service' };
 
   const legs = await RouteLeg.find({ routeId: route._id })
@@ -104,7 +104,7 @@ const getRoundRoutePorts = async (roundId) => {
 // ─── Create Manual Voyage ─────────────────────────────────────────────────────
 const createManualVoyage = async (roundId, data, createdBy) => {
   // 1. Load and validate round
-  const round = await Round.findOne({ _id: roundId, isDeleted: false }).lean();
+  const round = await Round.findOne({ _id: roundId }).lean();
   if (!round) throw { status: 404, message: 'Round not found' };
   if (['Completed', 'Cancelled'].includes(round.status)) {
     throw { status: 400, message: `Cannot add voyages to a ${round.status} round` };
@@ -120,7 +120,7 @@ const createManualVoyage = async (roundId, data, createdBy) => {
   if (String(polId) === String(podId)) throw { status: 400, message: 'POL and POD cannot be the same port' };
 
   // 4. Validate both ports are in the service route legs
-  const route = await Route.findOne({ serviceId: round.serviceId, isDeleted: false }).lean();
+  const route = await Route.findOne({ serviceId: round.serviceId }).lean();
   if (!route) throw { status: 400, message: 'Service has no route defined' };
 
   const polLeg = await RouteLeg.findOne({ routeId: route._id, portId: polId }).lean();
@@ -215,7 +215,6 @@ const deleteVoyage = async (id) => {
   if (Booking) {
     const hasBookings = await Booking.exists({
       voyageId:  id,
-      isDeleted: false,
       status:    { $ne: 'Cancelled' },
     });
     if (hasBookings) {

@@ -4,6 +4,7 @@ const Country  = require('./country.model');
 const City     = require('./city.model');
 const Port     = require('./port.model');
 const Terminal = require('./terminal.model');
+const { escapeRegex } = require('../../utils/escapeRegex');
 
 // RouteLeg module (Sprint 6) may not exist yet — guard against it safely
 const countRouteLegsReferencing = async (query) => {
@@ -21,18 +22,19 @@ const countRouteLegsReferencing = async (query) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 const listCountries = async ({ search = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { code: { $regex: search, $options: 'i' } },
+      { name: { $regex: rx, $options: 'i' } },
+      { code: { $regex: rx, $options: 'i' } },
     ];
   }
   return Country.find(query).sort({ name: 1 }).lean();
 };
 
 const getCountryById = async (id) => {
-  const country = await Country.findOne({ _id: id, isDeleted: false }).lean();
+  const country = await Country.findOne({ _id: id }).lean();
   if (!country) throw { status: 404, message: 'Country not found' };
   return country;
 };
@@ -46,7 +48,7 @@ const createCountry = async (data, createdBy) => {
 };
 
 const updateCountry = async (id, data, updatedBy) => {
-  const country = await Country.findOne({ _id: id, isDeleted: false });
+  const country = await Country.findOne({ _id: id });
   if (!country) throw { status: 404, message: 'Country not found' };
 
   const code = data.code ? data.code.toUpperCase() : country.code;
@@ -59,17 +61,14 @@ const updateCountry = async (id, data, updatedBy) => {
   return country.toObject();
 };
 
-const deleteCountry = async (id, deletedBy) => {
-  const country = await Country.findOne({ _id: id, isDeleted: false });
+const deleteCountry = async (id) => {
+  const country = await Country.findOne({ _id: id });
   if (!country) throw { status: 404, message: 'Country not found' };
 
-  const cityCount = await City.countDocuments({ countryId: id, isDeleted: false });
+  const cityCount = await City.countDocuments({ countryId: id });
   if (cityCount > 0) throw { status: 400, message: `Cannot delete — ${cityCount} cit${cityCount === 1 ? 'y' : 'ies'} reference this country` };
 
-  country.isDeleted = true;
-  country.deletedAt = new Date();
-  country.updatedBy = deletedBy;
-  await country.save();
+  await Country.findByIdAndDelete(id);
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -77,20 +76,20 @@ const deleteCountry = async (id, deletedBy) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 const listCities = async ({ countryId = '', search = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (countryId) query.countryId = countryId;
-  if (search) query.name = { $regex: search, $options: 'i' };
+  if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
   return City.find(query).populate('countryId', 'name code').sort({ name: 1 }).lean();
 };
 
 const getCityById = async (id) => {
-  const city = await City.findOne({ _id: id, isDeleted: false }).populate('countryId', 'name code').lean();
+  const city = await City.findOne({ _id: id }).populate('countryId', 'name code').lean();
   if (!city) throw { status: 404, message: 'City not found' };
   return city;
 };
 
 const createCity = async (data, createdBy) => {
-  const country = await Country.findOne({ _id: data.countryId, isDeleted: false });
+  const country = await Country.findOne({ _id: data.countryId });
   if (!country) throw { status: 400, message: 'Selected country does not exist' };
 
   const exists = await City.findOne({ name: data.name, countryId: data.countryId });
@@ -101,12 +100,12 @@ const createCity = async (data, createdBy) => {
 };
 
 const updateCity = async (id, data, updatedBy) => {
-  const city = await City.findOne({ _id: id, isDeleted: false });
+  const city = await City.findOne({ _id: id });
   if (!city) throw { status: 404, message: 'City not found' };
 
   const countryId = data.countryId || city.countryId;
   if (data.countryId) {
-    const country = await Country.findOne({ _id: countryId, isDeleted: false });
+    const country = await Country.findOne({ _id: countryId });
     if (!country) throw { status: 400, message: 'Selected country does not exist' };
   }
 
@@ -119,17 +118,14 @@ const updateCity = async (id, data, updatedBy) => {
   return city.toObject();
 };
 
-const deleteCity = async (id, deletedBy) => {
-  const city = await City.findOne({ _id: id, isDeleted: false });
+const deleteCity = async (id) => {
+  const city = await City.findOne({ _id: id });
   if (!city) throw { status: 404, message: 'City not found' };
 
-  const portCount = await Port.countDocuments({ cityId: id, isDeleted: false });
+  const portCount = await Port.countDocuments({ cityId: id });
   if (portCount > 0) throw { status: 400, message: `Cannot delete — ${portCount} port${portCount === 1 ? '' : 's'} reference this city` };
 
-  city.isDeleted = true;
-  city.deletedAt = new Date();
-  city.updatedBy = deletedBy;
-  await city.save();
+  await City.findByIdAndDelete(id);
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -137,13 +133,14 @@ const deleteCity = async (id, deletedBy) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 const listPorts = async ({ cityId = '', countryId = '', search = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (cityId) query.cityId = cityId;
   if (countryId) query.countryId = countryId;
   if (search) {
+    const rx = escapeRegex(search);
     query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { code: { $regex: search, $options: 'i' } },
+      { name: { $regex: rx, $options: 'i' } },
+      { code: { $regex: rx, $options: 'i' } },
     ];
   }
   return Port.find(query)
@@ -154,7 +151,7 @@ const listPorts = async ({ cityId = '', countryId = '', search = '' } = {}) => {
 };
 
 const getPortById = async (id) => {
-  const port = await Port.findOne({ _id: id, isDeleted: false })
+  const port = await Port.findOne({ _id: id })
     .populate('cityId', 'name')
     .populate('countryId', 'name code')
     .lean();
@@ -163,7 +160,7 @@ const getPortById = async (id) => {
 };
 
 const createPort = async (data, createdBy) => {
-  const city = await City.findOne({ _id: data.cityId, isDeleted: false });
+  const city = await City.findOne({ _id: data.cityId });
   if (!city) throw { status: 400, message: 'Selected city does not exist' };
   if (String(city.countryId) !== String(data.countryId)) {
     throw { status: 400, message: 'Selected city does not belong to the selected country' };
@@ -177,14 +174,14 @@ const createPort = async (data, createdBy) => {
 };
 
 const updatePort = async (id, data, updatedBy) => {
-  const port = await Port.findOne({ _id: id, isDeleted: false });
+  const port = await Port.findOne({ _id: id });
   if (!port) throw { status: 404, message: 'Port not found' };
 
   const cityId = data.cityId || port.cityId;
   const countryId = data.countryId || port.countryId;
 
   if (data.cityId) {
-    const city = await City.findOne({ _id: cityId, isDeleted: false });
+    const city = await City.findOne({ _id: cityId });
     if (!city) throw { status: 400, message: 'Selected city does not exist' };
     if (String(city.countryId) !== String(countryId)) {
       throw { status: 400, message: 'Selected city does not belong to the selected country' };
@@ -200,20 +197,17 @@ const updatePort = async (id, data, updatedBy) => {
   return port.toObject();
 };
 
-const deletePort = async (id, deletedBy) => {
-  const port = await Port.findOne({ _id: id, isDeleted: false });
+const deletePort = async (id) => {
+  const port = await Port.findOne({ _id: id });
   if (!port) throw { status: 404, message: 'Port not found' };
 
-  const terminalCount = await Terminal.countDocuments({ portId: id, isDeleted: false });
+  const terminalCount = await Terminal.countDocuments({ portId: id });
   if (terminalCount > 0) throw { status: 400, message: `Cannot delete — ${terminalCount} terminal${terminalCount === 1 ? '' : 's'} reference this port` };
 
   const legCount = await countRouteLegsReferencing({ portId: id });
   if (legCount > 0) throw { status: 400, message: `Cannot delete — ${legCount} route leg${legCount === 1 ? '' : 's'} reference this port` };
 
-  port.isDeleted = true;
-  port.deletedAt = new Date();
-  port.updatedBy = deletedBy;
-  await port.save();
+  await Port.findByIdAndDelete(id);
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -221,20 +215,20 @@ const deletePort = async (id, deletedBy) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 const listTerminals = async ({ portId = '', search = '' } = {}) => {
-  const query = { isDeleted: false };
+  const query = {};
   if (portId) query.portId = portId;
-  if (search) query.name = { $regex: search, $options: 'i' };
+  if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
   return Terminal.find(query).populate('portId', 'name code').sort({ name: 1 }).lean();
 };
 
 const getTerminalById = async (id) => {
-  const terminal = await Terminal.findOne({ _id: id, isDeleted: false }).populate('portId', 'name code').lean();
+  const terminal = await Terminal.findOne({ _id: id }).populate('portId', 'name code').lean();
   if (!terminal) throw { status: 404, message: 'Terminal not found' };
   return terminal;
 };
 
 const createTerminal = async (data, createdBy) => {
-  const port = await Port.findOne({ _id: data.portId, isDeleted: false });
+  const port = await Port.findOne({ _id: data.portId });
   if (!port) throw { status: 400, message: 'Selected port does not exist' };
 
   const exists = await Terminal.findOne({ name: data.name, portId: data.portId });
@@ -245,12 +239,12 @@ const createTerminal = async (data, createdBy) => {
 };
 
 const updateTerminal = async (id, data, updatedBy) => {
-  const terminal = await Terminal.findOne({ _id: id, isDeleted: false });
+  const terminal = await Terminal.findOne({ _id: id });
   if (!terminal) throw { status: 404, message: 'Terminal not found' };
 
   const portId = data.portId || terminal.portId;
   if (data.portId) {
-    const port = await Port.findOne({ _id: portId, isDeleted: false });
+    const port = await Port.findOne({ _id: portId });
     if (!port) throw { status: 400, message: 'Selected port does not exist' };
   }
 
@@ -263,17 +257,14 @@ const updateTerminal = async (id, data, updatedBy) => {
   return terminal.toObject();
 };
 
-const deleteTerminal = async (id, deletedBy) => {
-  const terminal = await Terminal.findOne({ _id: id, isDeleted: false });
+const deleteTerminal = async (id) => {
+  const terminal = await Terminal.findOne({ _id: id });
   if (!terminal) throw { status: 404, message: 'Terminal not found' };
 
   const legCount = await countRouteLegsReferencing({ terminalId: id });
   if (legCount > 0) throw { status: 400, message: `Cannot delete — ${legCount} route leg${legCount === 1 ? '' : 's'} reference this terminal` };
 
-  terminal.isDeleted = true;
-  terminal.deletedAt = new Date();
-  terminal.updatedBy = deletedBy;
-  await terminal.save();
+  await Terminal.findByIdAndDelete(id);
 };
 
 module.exports = {

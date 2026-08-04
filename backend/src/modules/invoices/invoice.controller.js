@@ -44,9 +44,17 @@ const update = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
+// Sprint 047 — always-editable PDF "Bill To" contact details, separate from
+// the locked main update() path.
+const updateBillTo = async (req, res, next) => {
+  try {
+    return success(res, await invoiceService.updateBillTo(req.params.id, req.body), 'Bill To details updated');
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
 const remove = async (req, res, next) => {
   try {
-    await invoiceService.softDelete(req.params.id, req.user._id);
+    await invoiceService.hardDelete(req.params.id);
     return success(res, null, 'Invoice deleted');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
@@ -64,4 +72,4 @@ const downloadPdf = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { list, eligibleBookings, getById, create, update, remove, downloadPdf };
+module.exports = { list, eligibleBookings, getById, create, update, updateBillTo, remove, downloadPdf };

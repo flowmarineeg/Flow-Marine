@@ -7,10 +7,31 @@ import { showErrorToast } from '@/utils/errorToast';
 import { invoicesService } from '@/services/invoices.service';
 import { PAYMENT_METHODS } from '@/utils/constants';
 
-// Sprint 033 Revision 4 — explicit per-line-item allocation. A payment
-// states exactly which booking(s) it covers and how much for each; there is
-// no lump "amount" field entered separately — it is always the sum of what
-// the user enters per row.
+// Sprint 033 Revision 4 — the backend still requires explicit per-booking
+// allocations (Payment.allocations[]) — a payment must state exactly which
+// booking(s) it covers and how much for each; this is unchanged and still
+// enforced/re-validated server-side (payment.service.js), since other
+// features (Agent Financial Account's per-booking paid/remaining, orphaned-
+// booking tracking) depend on that real per-booking breakdown existing.
+//
+// Sprint 047 — the RECORD PAYMENT form itself now presents the invoice as
+// one whole (one Amount-to-Apply input, capped at the invoice's total
+// remaining balance) rather than a row per booking. On submit, that single
+// amount is auto-distributed into the required per-booking allocations[]
+// via a deterministic waterfall: fill the first booking's own remaining
+// balance, then the next, and so on, in the order the bookings already
+// appear on the invoice — never a proportional/percentage split.
+//
+// Post-audit correction (system-audit-2026-8-3.md §3.3): an earlier
+// version of this comment claimed the payment HISTORY table's per-booking
+// "Applied To" breakdown was left unchanged by this redesign — that was
+// wrong. It was explicitly removed, by the same explicit instruction that
+// asked for "each payment record in one row" here — the table below is
+// deliberately record-level only (date/amount/method/reference/status),
+// no per-booking breakdown. `Payment.allocations[]` itself still exists
+// and is still fully validated server-side (Agent Financial Account's
+// per-booking paid/remaining still reads it) — only this table's display
+// of it was removed, on purpose.
 
 const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
 const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -19,7 +40,7 @@ const PAYABLE_STATUSES = ['Issued', 'Partially Paid', 'Overdue'];
 
 export default function InvoicePaymentPanel({ invoice }) {
   const qc = useQueryClient();
-  const [amounts, setAmounts] = useState({}); // bookingId -> string
+  const [amountToApply, setAmountToApply] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState('Bank Transfer');
   const [reference, setReference] = useState('');
@@ -50,7 +71,7 @@ export default function InvoicePaymentPanel({ invoice }) {
     mutationFn: (data) => invoicesService.createPayment(invoice._id, data),
     onSuccess: () => {
       toast.success('Payment recorded');
-      setAmounts({});
+      setAmountToApply('');
       setReference(''); setNotes('');
       qc.invalidateQueries(['invoice-payments', invoice._id]);
       qc.invalidateQueries(['invoice', invoice._id]);
@@ -70,23 +91,54 @@ export default function InvoicePaymentPanel({ invoice }) {
     onError: (e) => showErrorToast(e, 'void'),
   });
 
+  // Total remaining across every booking on this invoice — the cap for the
+  // single Amount-to-Apply input.
+  const totalRemaining = (invoice.lineItems || []).reduce((s, li) => s + remainingFor(li), 0);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    const allocations = Object.entries(amounts)
-      .filter(([, v]) => Number(v) > 0)
-      .map(([bookingId, v]) => ({ bookingId, amount: Number(v) }));
-    if (!allocations.length) return toast.error('Enter an amount for at least one booking');
+    const amt = Number(amountToApply);
+    if (!amt || amt <= 0) return toast.error('Enter an amount to apply');
+    if (amt > totalRemaining) return toast.error('Amount exceeds the invoice\'s remaining balance');
     if (!paymentDate) return toast.error('Payment date is required');
+
+    // Waterfall: fill each booking's own remaining balance in order, until
+    // the entered amount is exhausted. Never a proportional split.
+    let left = amt;
+    const allocations = [];
+    for (const li of (invoice.lineItems || [])) {
+      if (left <= 0) break;
+      const rem = remainingFor(li);
+      if (rem <= 0) continue;
+      const take = Math.min(rem, left);
+      allocations.push({ bookingId: li.bookingId?._id || li.bookingId, amount: take });
+      left -= take;
+    }
+    if (!allocations.length) return toast.error('No remaining balance to apply');
+
     createMutation.mutate({ allocations, paymentDate, method, reference, notes });
   };
-
-  const total = Object.values(amounts).reduce((s, v) => s + (Number(v) || 0), 0);
 
   return (
     <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-5">
       <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Payments</p>
 
-      {/* Payment history */}
+      {/* Sprint 047 — overview total, always visible regardless of invoice
+          status (unlike the Record Payment form below, which only shows
+          while the invoice is still payable) */}
+      <div className="flex flex-wrap gap-6">
+        <div>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Total Paid</p>
+          <p className="text-sm font-bold text-green-700">{fmtMoney(invoice.paidAmount)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Remaining</p>
+          <p className="text-sm font-bold text-amber-700">{fmtMoney(invoice.balanceAmount)}</p>
+        </div>
+      </div>
+
+      {/* Payment history — record data only: date, amount, method,
+          reference, status. No per-booking allocation breakdown. */}
       {isLoading ? <p className="text-sm text-gray-400">Loading…</p> : (
         (payments || []).length === 0 ? (
           <p className="text-sm text-gray-400 italic">No payments recorded yet.</p>
@@ -95,7 +147,7 @@ export default function InvoicePaymentPanel({ invoice }) {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[13px]">
                 <thead>
-                  <tr className="table-header">{['Date', 'Amount', 'Method', 'Reference', 'Applied To', 'Status', ''].map(h => <th key={h}>{h}</th>)}</tr>
+                  <tr className="table-header">{['Date', 'Amount', 'Method', 'Reference',  'Status', ''].map(h => <th key={h}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {payments.map(p => (
@@ -104,9 +156,6 @@ export default function InvoicePaymentPanel({ invoice }) {
                       <td className="text-xs font-semibold text-gray-700">{fmtMoney(p.amount)}</td>
                       <td className="text-xs text-gray-600">{p.method}</td>
                       <td className="text-xs text-gray-400">{p.reference || '—'}</td>
-                      <td className="text-xs text-gray-500">
-                        {p.allocations.map(a => `${a.bookingId?.bookingNumber || '—'} (${fmtMoney(a.amount)})`).join(', ')}
-                      </td>
                       <td>{p.isVoided ? <span className="text-[11px] text-red-500 font-semibold">Voided</span> : <span className="text-[11px] text-green-600 font-semibold">Active</span>}</td>
                       <td>
                         {!p.isVoided && canPay && (
@@ -127,35 +176,32 @@ export default function InvoicePaymentPanel({ invoice }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-3 border-t border-gray-200 pt-4">
           <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Record Payment</p>
 
-          <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13px]">
-                <thead>
-                  <tr className="table-header">{['Booking', 'Freight', 'Remaining'].map(h => <th key={h}>{h}</th>)}<th>Amount to Apply <span className="text-red-400">*</span></th></tr>
-                </thead>
-                <tbody>
-                  {(invoice.lineItems || []).map(li => {
-                    const remaining = remainingFor(li);
-                    return (
-                      <tr key={li._id} className="table-row">
-                        <td className="mono text-xs font-semibold text-teal-600">{li.bookingNumber}</td>
-                        <td className="text-xs text-gray-600">{fmtMoney(li.freightAmount)}</td>
-                        <td className="text-xs text-amber-700">{fmtMoney(remaining)}</td>
-                        <td>
-                          <input
-                            type="number" min="0" step="0.01" max={remaining}
-                            disabled={remaining <= 0}
-                            value={amounts[li.bookingId?._id || li.bookingId] || ''}
-                            onChange={e => setAmounts(prev => ({ ...prev, [li.bookingId?._id || li.bookingId]: e.target.value }))}
-                            placeholder="0.00"
-                            className="w-28 text-[13px] border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-teal-500 disabled:bg-gray-50 disabled:text-gray-300"
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {/* Sprint 047 — one row over the whole invoice, not per booking */}
+          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 flex flex-wrap items-center gap-6">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Invoice Total</p>
+              <p className="text-sm font-bold text-gray-700">{fmtMoney(invoice.totalAmount)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Paid So Far</p>
+              <p className="text-sm font-bold text-green-700">{fmtMoney(invoice.paidAmount)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Remaining</p>
+              <p className="text-sm font-bold text-amber-700">{fmtMoney(totalRemaining)}</p>
+            </div>
+            <div className="ml-auto">
+              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                Amount to Apply <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number" min="0" step="0.01" max={totalRemaining}
+                disabled={totalRemaining <= 0}
+                value={amountToApply}
+                onChange={e => setAmountToApply(e.target.value)}
+                placeholder="0.00"
+                className="w-32 text-[13px] border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-teal-500 disabled:bg-gray-50 disabled:text-gray-300"
+              />
             </div>
           </div>
 
@@ -180,8 +226,8 @@ export default function InvoicePaymentPanel({ invoice }) {
           </div>
 
           <div className="flex items-center justify-between pt-1">
-            <span className="text-sm text-gray-500">Total to record: <b className="text-teal-700">{fmtMoney(total)}</b></span>
-            <button type="submit" disabled={createMutation.isPending || total <= 0} className="btn btn-primary btn-md">
+            <span className="text-sm text-gray-500">Total to record: <b className="text-teal-700">{fmtMoney(Number(amountToApply) || 0)}</b></span>
+            <button type="submit" disabled={createMutation.isPending || !(Number(amountToApply) > 0)} className="btn btn-primary btn-md">
               {createMutation.isPending ? 'Recording…' : 'Record Payment'}
             </button>
           </div>

@@ -31,15 +31,25 @@ router.get('/import/template-columns', rbac('bookings', 'import'), importCtrl.te
 router.get('/import/template',         rbac('bookings', 'import'), importCtrl.downloadTemplate);
 router.post('/import/preview', rbac('bookings', 'import'), importCtrl.preview);
 router.post('/import/save',    rbac('bookings', 'import'), audit('bookings'), async (req, res, next) => {
-  // Final Loading reconciliation cancels other bookings — requires update + delete
-  if (req.body.importType === 'finalLoading' && !req.user?.roleId?.isSystem) {
+  // Both Final Loading AND Discharge reconciliation bulk-mutate bookings
+  // that were never explicitly selected by the caller — Final Loading
+  // cancels every booking absent from the manifest; Discharge
+  // (bookingImport.service.js#saveDischargeImport) flags every OTHER
+  // Final Loading booking for that agent on the voyage as 'Remaining'.
+  // Post-audit fix (system-audit-2026-8-3.md §2.2): 'discharge' used to
+  // fall through to the base 'import' check alone, letting a role with
+  // only import-permission silently flip other bookings' discharge
+  // status file-wide. Both import types now require the same elevated
+  // update+delete check, not just 'import'.
+  if (['finalLoading', 'discharge'].includes(req.body.importType) && !req.user?.roleId?.isSystem) {
     const Permission = require('../permissions/permission.model');
     const roleId = req.user?.roleId?._id || req.user?.roleId;
     const perm = await Permission.findOne({ roleId, module: 'bookings' }).lean();
     if (!perm?.actions?.update || !perm?.actions?.delete) {
+      const label = req.body.importType === 'finalLoading' ? 'Final Loading' : 'Discharge';
       return res.status(403).json({
         success: false,
-        message: 'Final Loading import requires update and delete permissions on bookings',
+        message: `${label} import requires update and delete permissions on bookings`,
       });
     }
   }
