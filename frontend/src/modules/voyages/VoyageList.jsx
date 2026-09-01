@@ -5,6 +5,7 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 import { voyagesService } from '@/services/voyages.service';
 import { servicesService } from '@/services/services.service';
 import { usePermission } from '@/context/PermissionContext';
@@ -222,8 +223,7 @@ export default function VoyageList() {
                             <input type="checkbox" checked={selected.includes(v._id)} onChange={() => toggleSelect(v._id)} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
                           </td>
                           <td>
-                            <span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span>
-                            <p className="text-[11px] text-gray-400">{v.voyageName || '(unnamed)'}</p>
+                            <span className="mono text-xs font-bold text-gray-700">{getVoyageLabel(v)}</span>
                           </td>
                           <td><span className="mono text-xs font-semibold text-teal-600">{v.serviceId?.serviceCode}</span></td>
                           <td>
@@ -286,7 +286,7 @@ export default function VoyageList() {
       <Modal
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
-        title={`Edit Voyage — ${editTarget?.voyageNumber || ''} (${editTarget?.voyageName || 'unnamed'})`}
+        title={`Edit Voyage — ${getVoyageLabel(editTarget) || ''}`}
         size="md"
       >
         {editTarget && (
@@ -308,7 +308,7 @@ export default function VoyageList() {
         onConfirm={() => deleteMutation.mutate(deleteTarget._id)}
         loading={deleteMutation.isPending}
         title="Delete Voyage"
-        message={`Delete voyage "${deleteTarget?.voyageNumber}" (${deleteTarget?.voyageName || 'unnamed'})? This cannot be undone. Voyages with active bookings cannot be deleted.`}
+        message={`Delete voyage "${getVoyageLabel(deleteTarget)}"? This cannot be undone. Voyages with active bookings cannot be deleted.`}
       />
 
       {/* Bulk delete confirm */}

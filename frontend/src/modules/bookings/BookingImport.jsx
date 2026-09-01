@@ -12,6 +12,7 @@ import { exportService } from '@/services/export.service';
 import { downloadFile } from '@/utils/exportHelper';
 import { showErrorToast } from '@/utils/errorToast';
 import { useRounds } from '@/hooks/useRounds';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 import PageHeader from '@/components/ui/PageHeader';
 
 // ─── Row status → visual style ───────────────────────────────────────────────
@@ -401,7 +402,7 @@ export default function BookingImport() {
               >
                 <option value="">{roundId ? 'Select voyage…' : 'Select a round first'}</option>
                 {roundVoyages.map(v => (
-                  <option key={v._id} value={v._id}>{v.voyageNumber} — {v.voyageName || '(unnamed)'}</option>
+                  <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>
                 ))}
               </select>
             </div>
@@ -682,13 +683,13 @@ export default function BookingImport() {
                               <option value="">{voyagesLoading ? 'Loading…' : 'Select voyage…'}</option>
                               {voyageOptions.map(v => (
                                 <option key={v._id} value={v._id}>
-                                  {v.voyageNumber} — {v.voyageName || 'unnamed'} ({v.polId?.name || v.polId?.code || '?'} → {v.podId?.name || v.podId?.code || '?'})
+                                  {getVoyageLabel(v)} ({v.polId?.name || v.polId?.code || '?'} → {v.podId?.name || v.podId?.code || '?'})
                                 </option>
                               ))}
                             </select>
                           ) : row._resolvedVoyage ? (
                             <span className="text-[11px] text-gray-600">
-                              <span className="font-semibold text-gray-700">{row._resolvedVoyage.voyageNumber} ({row._resolvedVoyage.voyageName || 'unnamed'})</span>
+                              <span className="font-semibold text-gray-700">{getVoyageLabel(row._resolvedVoyage)}</span>
                               <br />
                               <span className="text-gray-400">{row._resolvedVoyage.polId?.name} → {row._resolvedVoyage.podId?.name}</span>
                             </span>

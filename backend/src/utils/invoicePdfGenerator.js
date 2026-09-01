@@ -165,7 +165,7 @@ const generateInvoicePdf = (invoice) => {
   const uniqueVoyageNums = uniqueBy('voyageNumber');
   const uniqueRoundNums  = uniqueBy('roundNumber');
   const voyNum = uniqueVoyageNums.length === 1
-    ? `${uniqueVoyageNums[0]} — ${lineItems.find(li => li.voyageNumber === uniqueVoyageNums[0])?.voyageName || '(unnamed)'}`
+    ? (lineItems.find(li => li.voyageNumber === uniqueVoyageNums[0])?.voyageName || uniqueVoyageNums[0])
     : uniqueVoyageNums.length > 1 ? `${uniqueVoyageNums.length} voyages` : '--';
   const roundNum = uniqueRoundNums.length === 1
     ? `${uniqueRoundNums[0]} — ${lineItems.find(li => li.roundNumber === uniqueRoundNums[0])?.roundName || '(unnamed)'}`

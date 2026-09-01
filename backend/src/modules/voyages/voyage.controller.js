@@ -1,6 +1,7 @@
 'use strict';
 
 const voyageService = require('./voyage.service');
+const rbac = require('../../middleware/rbac');
 const { success, created, error, paginate } = require('../../utils/responseHelper');
 
 // GET /voyages
@@ -40,7 +41,11 @@ const create = async (req, res, next) => {
 const update = async (req, res, next) => {
   try {
     req.auditOldDoc = await voyageService.getById(req.params.id);
-    return success(res, await voyageService.update(req.params.id, req.body, req.user._id), 'Voyage updated');
+    // An additive capability on top of the base rbac('voyages') gate already
+    // applied at the route level, not a replacement for it — same pattern as
+    // invoice.controller.js's invoices:override (Sprint 046).
+    const canOverride = await rbac.hasPermission(req, 'voyages', 'override');
+    return success(res, await voyageService.update(req.params.id, req.body, req.user._id, canOverride), 'Voyage updated');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 

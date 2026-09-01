@@ -15,6 +15,8 @@
  * The ending onboard of voyage N is the starting onboard of voyage N+1.
  */
 
+import { getVoyageLabel } from '@/utils/voyageLabel';
+
 const barColor = (pct) => {
   if (pct == null)  return 'bg-gray-200';
   if (pct >= 100)   return 'bg-red-500';
@@ -155,7 +157,7 @@ export default function CapacityTimeline({ voyages = [], vesselCapacity = null }
 
                     {/* Voyage label + TEU under bar */}
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] text-gray-400 mono truncate">{leg.voyageNumber} ({leg.voyageName || 'unnamed'})</span>
+                      <span className="text-[9px] text-gray-400 mono truncate">{getVoyageLabel(leg)}</span>
                       <span className={`text-[10px] font-bold whitespace-nowrap ${textColor(leg.utilisationPct)}`}>
                         {fmt(leg.onboardTEU)}
                         <span className="text-[8px] font-normal text-gray-400 ml-0.5">TEU</span>

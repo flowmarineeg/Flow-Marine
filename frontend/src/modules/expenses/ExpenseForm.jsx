@@ -11,6 +11,7 @@ import { expenseTypesService } from '@/services/expenseTypes.service';
 import { agentsService }       from '@/services/agents.service';
 import { roundsService }       from '@/services/rounds.service';
 import { voyagesService }      from '@/services/voyages.service';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:5000';
 
@@ -193,7 +194,7 @@ export default function ExpenseForm({ item }) {
                 className={`${ic(errors.voyageId)} cursor-pointer disabled:opacity-50`}
               >
                 <option value="">Select voyage…</option>
-                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
+                {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
               </select>
               {errors.voyageId && <p className={ec}>{errors.voyageId.message}</p>}
             </div>

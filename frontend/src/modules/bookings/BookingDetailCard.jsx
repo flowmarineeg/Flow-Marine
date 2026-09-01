@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
 import { usePermission }   from '@/context/PermissionContext';
+import { getVoyageLabel }  from '@/utils/voyageLabel';
 import Badge         from '@/components/ui/Badge';
 import Modal         from '@/components/ui/Modal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -125,7 +126,7 @@ export default function BookingDetailCard({ booking, onMutated }) {
 
         {/* ── Info grid ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
-          <InfoRow label="Voyage"         value={booking.voyageId?.voyageNumber ? `${booking.voyageId.voyageNumber} (${booking.voyageId?.voyageName || 'unnamed'})` : null} mono />
+          <InfoRow label="Voyage"         value={getVoyageLabel(booking.voyageId)} mono />
           <InfoRow label="Agent"          value={[booking.agentId?.agentCode, booking.agentId?.agentName].filter(Boolean).join(' — ')} />
           <InfoRow label="Container Type" value={booking.containerTypeId ? `${booking.containerTypeId.code} (${booking.containerTypeId.size} ${booking.containerTypeId.type})` : null} />
           <InfoRow label="Container No"   value={booking.containerNumber} mono />

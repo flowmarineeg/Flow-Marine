@@ -8,6 +8,7 @@ import { useRounds } from '@/hooks/useRounds';
 import { voyagesService } from '@/services/voyages.service';
 import ReportLayout from './ReportLayout';
 import { ReportStatCard, ReportEmptyState, rsc, fmtMoney, fmtNum } from './reportHelpers';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 // Sprint 034 Task 2 — Booking Revenue Details.
 // Layer 2, Final Loading ONLY. Each row is one commercial PRICING GROUP —
@@ -75,7 +76,7 @@ export default function BookingRevenueDetailsReport() {
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Voyage</p>
             <select value={voyageId} onChange={e => setVoyageId(e.target.value)} disabled={!roundId} className={`${rsc} disabled:opacity-50`}>
               <option value="">All Voyages</option>
-              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
+              {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
             </select>
           </div>
           <div>

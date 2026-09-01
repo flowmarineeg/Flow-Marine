@@ -16,6 +16,7 @@ import LoadingSpinner        from '@/components/ui/LoadingSpinner';
 import Modal                 from '@/components/ui/Modal';
 import TrackingForm          from './TrackingForm';
 import TrackingDetailModal   from './TrackingDetailModal';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 const fmtDT = (d) => d
   ? new Date(d).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
@@ -136,7 +137,7 @@ export default function TrackingList() {
             <select value={voyageId} onChange={e => { setVoyageId(e.target.value); resetPage(); }} className={sc}>
               <option value="">All Voyages</option>
               {voyages.map(v => (
-                <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>
+                <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>
               ))}
             </select>
           </div>
@@ -222,8 +223,7 @@ export default function TrackingList() {
                       </div>
                     </td>
                     <td>
-                      <span className="mono text-xs font-semibold text-teal-600">{entry.voyageId?.voyageNumber || '—'}</span>
-                      <p className="text-[11px] text-gray-400">{entry.voyageId?.voyageName || '(unnamed)'}</p>
+                      <span className="mono text-xs font-semibold text-teal-600">{getVoyageLabel(entry.voyageId) || '—'}</span>
                     </td>
                     <td>
                       <span className="mono text-xs text-gray-500">{entry.serviceId?.serviceCode || '—'}</span>

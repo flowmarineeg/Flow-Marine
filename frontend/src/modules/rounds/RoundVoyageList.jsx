@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 import { voyagesService } from '@/services/voyages.service';
 import { usePermission } from '@/context/PermissionContext';
 import Badge        from '@/components/ui/Badge';
@@ -180,8 +181,7 @@ export default function RoundVoyageList({ roundId, round }) {
 
                   {/* Voyage number */}
                   <td className="px-3 py-2">
-                    <span className="mono text-[12px] font-bold text-gray-700">{v.voyageNumber}</span>
-                    <p className="text-[11px] text-gray-400">{v.voyageName || '(unnamed)'}</p>
+                    <span className="mono text-[12px] font-bold text-gray-700">{getVoyageLabel(v)}</span>
                   </td>
 
                   {/* Voyage Code (conditional column) */}
@@ -279,7 +279,7 @@ export default function RoundVoyageList({ roundId, round }) {
       <Modal
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
-        title={`Edit Voyage — ${editTarget?.voyageNumber || ''} (${editTarget?.voyageName || 'unnamed'})`}
+        title={`Edit Voyage — ${getVoyageLabel(editTarget) || ''}`}
         size="md"
       >
         {editTarget && (
@@ -302,7 +302,7 @@ export default function RoundVoyageList({ roundId, round }) {
         onConfirm={() => deleteMutation.mutate(deleteTarget._id)}
         loading={deleteMutation.isPending}
         title="Delete Voyage"
-        message={`Delete voyage "${deleteTarget?.voyageNumber}" (${deleteTarget?.voyageName || 'unnamed'})? This cannot be undone. Voyages with active bookings cannot be deleted.`}
+        message={`Delete voyage "${getVoyageLabel(deleteTarget)}"? This cannot be undone. Voyages with active bookings cannot be deleted.`}
       />
     </>
   );

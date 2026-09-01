@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { reportsService } from '@/services/reports.service';
 import { useDashboardFilters } from '../DashboardFilterContext';
 import { WidgetCard, WidgetEmptyState, WidgetSkeleton, fmtMoney } from './WidgetPrimitives';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 // Sprint 039 — every Performance widget re-groups rows an existing
 // report endpoint already returns; none re-implements Booking Revenue
@@ -132,7 +133,7 @@ export function VoyageLeaderboardWidget() {
             <div className="flex flex-col gap-1.5">
               {best.map(v => (
                 <div key={v.voyageId} className="flex items-center justify-between text-xs">
-                  <span className="mono text-gray-600">{v.voyageNumber} <span className="text-gray-400">({v.voyageName || 'unnamed'})</span></span>
+                  <span className="mono text-gray-600">{getVoyageLabel(v)}</span>
                   <span className="font-semibold text-teal-700">{fmtMoney(v.netProfit)}</span>
                 </div>
               ))}
@@ -143,7 +144,7 @@ export function VoyageLeaderboardWidget() {
             <div className="flex flex-col gap-1.5">
               {lowest.map(v => (
                 <div key={v.voyageId} className="flex items-center justify-between text-xs">
-                  <span className="mono text-gray-600">{v.voyageNumber} <span className="text-gray-400">({v.voyageName || 'unnamed'})</span></span>
+                  <span className="mono text-gray-600">{getVoyageLabel(v)}</span>
                   <span className={`font-semibold ${v.netProfit < 0 ? 'text-red-600' : 'text-gray-700'}`}>{fmtMoney(v.netProfit)}</span>
                 </div>
               ))}

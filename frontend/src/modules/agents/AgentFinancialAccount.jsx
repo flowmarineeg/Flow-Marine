@@ -9,6 +9,7 @@ import { paymentsService } from '@/services/payments.service';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import BookingsSummaryCard from '@/components/ui/BookingsSummaryCard';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 // Sprint 033 — Agent Details is the financial engine's primary consumer.
 // This is a connected account statement (Agent → Round → Voyage → Final
@@ -94,8 +95,7 @@ function RoundsStatement({ rounds }) {
                           <svg width="10" height="10" className={`transition-transform ${vOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                             <path strokeLinecap="round" d="M9 5l7 7-7 7" />
                           </svg>
-                          <span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span>
-                          <span className="text-[10px] text-gray-400">{v.voyageName || '(unnamed)'}</span>
+                          <span className="mono text-xs font-bold text-gray-700">{getVoyageLabel(v)}</span>
                           <span className="text-[10px] text-gray-400">{v.bookings.length} booking{v.bookings.length !== 1 ? 's' : ''}</span>
                         </div>
                         <MoneyStrip freight={v.totalFreight} paid={v.totalPaid} remaining={v.remaining} />
@@ -140,7 +140,7 @@ function VoyagesLedger({ rounds }) {
             {rows.map(v => (
               <tr key={v.voyageId} className="table-row">
                 <td className="mono text-xs font-semibold text-gray-600">{v.roundNumber}<p className="font-normal text-gray-400">{v.roundName || '(unnamed)'}</p></td>
-                <td className="mono text-xs font-bold text-teal-600">{v.voyageNumber}<p className="font-normal text-gray-400">{v.voyageName || '(unnamed)'}</p></td>
+                <td className="mono text-xs font-bold text-teal-600">{getVoyageLabel(v)}</td>
                 <td className="text-xs text-gray-600">{v.bookings.length}</td>
                 <td className="text-xs text-gray-700">{fmtMoney(v.totalFreight)}</td>
                 <td className="text-xs text-green-700">{fmtMoney(v.totalPaid)}</td>

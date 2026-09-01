@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { MdPersonOutline } from 'react-icons/md';
 import { dashboardService } from '@/services/dashboard.service';
 import { WidgetCard, WidgetEmptyState, WidgetSkeleton } from './WidgetPrimitives';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 // Sprint 039 — every Alerts widget reads warnings/utilisation data that
 // GET /dashboard/fleet-utilisation already fetches from
@@ -56,7 +57,7 @@ export function CapacityWarningsWidget() {
               className="flex items-start gap-2 text-xs text-amber-700 cursor-pointer hover:bg-amber-50/50 -mx-2 px-2 py-1 rounded-lg transition"
             >
               <span className="flex-shrink-0">🟡</span>
-              <span>Voyage {v.voyageNumber} ({v.voyageName || 'unnamed'}) — Round {v.roundNumber} ({v.roundName || 'unnamed'}) — is at {v.utilisationPct}% utilisation — near capacity</span>
+              <span>Voyage {getVoyageLabel(v)} — Round {v.roundNumber} ({v.roundName || 'unnamed'}) — is at {v.utilisationPct}% utilisation — near capacity</span>
             </div>
           ))}
         </div>

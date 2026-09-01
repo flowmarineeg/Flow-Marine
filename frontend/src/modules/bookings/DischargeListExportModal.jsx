@@ -16,6 +16,7 @@ import Modal                   from '@/components/ui/Modal';
 import { bookingsService }     from '@/services/bookings.service';
 import { exportService }       from '@/services/export.service';
 import { downloadFile }        from '@/utils/exportHelper';
+import { getVoyageLabel }      from '@/utils/voyageLabel';
 
 const sc = 'w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition cursor-pointer disabled:opacity-60';
 const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
@@ -88,7 +89,7 @@ export default function DischargeListExportModal({ open, onClose, voyages = [], 
             <option value="">Select voyage…</option>
             {selectableVoyages.map(v => (
               <option key={v._id} value={v._id}>
-                {v.voyageNumber} ({v.voyageName || 'unnamed'})
+                {getVoyageLabel(v)}
                 {v.polId?.name ? ` — ${v.polId.name}` : ''}
                 {v.podId?.name ? ` → ${v.podId.name}` : ''}
                 {` [${v.status}]`}

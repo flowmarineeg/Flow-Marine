@@ -12,6 +12,7 @@ import { agentsService }         from '@/services/agents.service';
 import { containerTypesService } from '@/services/containerTypes.service';
 import { useRounds }             from '@/hooks/useRounds';
 import { BOOKING_STATUS }        from '@/utils/constants';
+import { getVoyageLabel }        from '@/utils/voyageLabel';
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—';
 const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '$0.00';
@@ -203,7 +204,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
               <option value="">{watchedRoundId ? 'Select voyage…' : 'Select a round first…'}</option>
               {voyages.map(v => (
                 <option key={v._id} value={v._id}>
-                  {v.voyageNumber} ({v.voyageName || 'unnamed'}) — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
+                  {getVoyageLabel(v)} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
                 </option>
               ))}
             </select>
@@ -215,7 +216,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
         {selectedVoyage && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
-              { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber} <span className="font-normal text-teal-500">({selectedVoyage.voyageName || 'unnamed'})</span></span> },
+              { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{getVoyageLabel(selectedVoyage)}</span> },
               { label: 'Status',    val: selectedVoyage.status },
               { label: 'ETD',       val: fmt(selectedVoyage.etd) },
               { label: 'ETA',       val: fmt(selectedVoyage.eta) },

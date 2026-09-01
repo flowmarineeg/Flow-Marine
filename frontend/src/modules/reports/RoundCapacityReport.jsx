@@ -11,6 +11,7 @@ import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
 import CapacityTimeline     from '@/modules/vessels/components/CapacityTimeline';
 import CapacityWarnings     from '@/modules/vessels/components/CapacityWarnings';
 import VoyageCapacityCard   from './VoyageCapacityCard';
+import { getVoyageLabel }   from '@/utils/voyageLabel';
 
 // Sprint 043 — Capacity Engine rows use fromPort/toPort (not the raw
 // Voyage document's polId/podId shape), so sortVoyagesForDisplay needs the
@@ -111,7 +112,7 @@ export default function RoundCapacityReport() {
               value={`${fmt(raw.totals?.peakOnboardTEU)} TEU`}
               sub={(() => {
                 const pv = raw.voyages?.find(v => String(v.voyageId) === String(raw.totals?.peakVoyageId));
-                return pv ? `Voyage ${pv.voyageNumber} (${pv.voyageName || 'unnamed'})` : 'Voyage —';
+                return pv ? `Voyage ${getVoyageLabel(pv)}` : 'Voyage —';
               })()}
               accent
             />

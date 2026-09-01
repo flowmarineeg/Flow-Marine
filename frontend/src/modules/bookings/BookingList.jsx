@@ -11,6 +11,7 @@ import { agentsService }    from '@/services/agents.service';
 import { useRounds }        from '@/hooks/useRounds';
 import { usePermission }    from '@/context/PermissionContext';
 import { BOOKING_STATUS }   from '@/utils/constants';
+import { getVoyageLabel }   from '@/utils/voyageLabel';
 import PageHeader    from '@/components/ui/PageHeader';
 import Button        from '@/components/ui/Button';
 import Badge         from '@/components/ui/Badge';
@@ -263,7 +264,7 @@ export default function BookingList() {
           </select>
           <select value={voyageId} onChange={e => { setVoyageId(e.target.value); setPage(1); }} disabled={!roundId} className={`${sc} disabled:opacity-50`}>
             <option value="">{roundId ? 'All Voyages' : 'Select a round first'}</option>
-            {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
+            {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
           </select>
           <select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} className={sc}>
             <option value="">All Agents</option>
@@ -332,7 +333,7 @@ export default function BookingList() {
                           {b.bookingNumber}
                         </button>
                       </td>
-                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{b.voyageId?.voyageNumber}</span><p className="text-[11px] text-gray-400">{b.voyageId?.voyageName || '(unnamed)'}</p></td>
+                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{getVoyageLabel(b.voyageId)}</span></td>
                       <td><span className="text-xs text-gray-600">{b.agentId?.agentName}</span></td>
                       <td>
                         <p className="text-xs font-medium text-gray-700 truncate max-w-[140px]">{b.shipper || '—'}</p>
@@ -401,7 +402,7 @@ export default function BookingList() {
           </select>
           <select value={manualVoyageId} onChange={e => { setManualVoyageId(e.target.value); setManualPage(1); }} disabled={!manualRoundId} className={`${sc} disabled:opacity-50`}>
             <option value="">{manualRoundId ? 'All Voyages' : 'Select a round first'}</option>
-            {manualVoyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
+            {manualVoyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
           </select>
           <select value={manualAgentId} onChange={e => { setManualAgentId(e.target.value); setManualPage(1); }} className={sc}>
             <option value="">All Agents</option>
@@ -447,7 +448,7 @@ export default function BookingList() {
                           {m.bookingNumber}
                         </button>
                       </td>
-                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{m.voyageId?.voyageNumber}</span><p className="text-[11px] text-gray-400">{m.voyageId?.voyageName || '(unnamed)'}</p></td>
+                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{getVoyageLabel(m.voyageId)}</span></td>
                       <td><span className="text-xs text-gray-600">{m.agentId?.agentName}</span></td>
                       <td className="text-xs text-gray-600 whitespace-nowrap">
                         {m.polId?.code || m.polId?.name || '—'} → {m.podId?.code || m.podId?.name || '—'}

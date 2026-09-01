@@ -11,6 +11,8 @@
  * output.
  */
 
+import { getVoyageLabel } from '@/utils/voyageLabel';
+
 const fmt = (n) => n == null ? '—' : Number(n).toLocaleString();
 
 const ICONS = {
@@ -45,8 +47,7 @@ export default function VoyageCapacityCard({ voyage: v, vesselName, vesselCapaci
     <div className={`card p-5 border-2 ${isOverbooked || hasRemaining ? 'border-red-300 bg-red-50/30' : 'border-transparent'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-gray-100">
         <div className="flex items-center gap-3">
-          <span className="mono text-sm font-bold text-teal-700">{v.voyageNumber}</span>
-          <span className="text-xs text-gray-400">{v.voyageName || '(unnamed)'}</span>
+          <span className="mono text-sm font-bold text-teal-700">{getVoyageLabel(v)}</span>
           {v.isManual && <span className="text-[10px] font-semibold text-amber-500 uppercase">Manual</span>}
           <span className="text-xs text-gray-500">
             {v.fromPort?.name || v.fromPort?.code || '—'}

@@ -14,6 +14,7 @@ import { voyagesService } from '@/services/voyages.service';
 import { INVOICE_TYPES, INVOICE_STATUS } from '@/utils/constants';
 import { usePermission } from '@/context/PermissionContext';
 import BookingsSummaryCard from '@/components/ui/BookingsSummaryCard';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 // Sprint 033: an invoice now owns a SET of Final Loading bookings (Booking /
 // Voyage / Round type), never a single hand-picked booking with a manual
@@ -356,7 +357,7 @@ function CreateInvoiceForm() {
               <label className={lc}>Voyage <span className="text-red-400">*</span></label>
               <select value={voyageId} onChange={e => setVoyageId(e.target.value)} disabled={!roundId} className={`${ic(false)} cursor-pointer`}>
                 <option value="">Select voyage…</option>
-                {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
+                {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
               </select>
             </div>
           )}

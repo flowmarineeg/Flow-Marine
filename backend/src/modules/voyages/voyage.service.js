@@ -176,11 +176,15 @@ const createManualVoyage = async (roundId, data, createdBy) => {
 };
 
 // ─── Update ───────────────────────────────────────────────────────────────────
-const update = async (id, data, updatedBy) => {
+// canOverride (voyages:override permission, or SuperAdmin's implicit RBAC
+// bypass — see voyage.controller.js) skips STATUS_TRANSITIONS entirely, same
+// shape as invoice.service.js's invoices:override (Sprint 046). Without it,
+// every caller still goes through validateTransition() exactly as before.
+const update = async (id, data, updatedBy, canOverride = false) => {
   const voyage = await Voyage.findById(id);
   if (!voyage) throw { status: 404, message: 'Voyage not found' };
 
-  if (data.status && data.status !== voyage.status) {
+  if (data.status && data.status !== voyage.status && !canOverride) {
     validateTransition(voyage.status, data.status);
   }
 

@@ -12,6 +12,7 @@ import { voyagesService }   from '@/services/voyages.service';
 import { vesselsService }   from '@/services/vessels.service';
 import LocationSelect       from '@/components/forms/LocationSelect';
 import { TRACKING_STATUS }  from '@/utils/constants';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 const ic = (err) =>
   `w-full text-[13px] border rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:ring-2 transition
@@ -177,7 +178,7 @@ export default function TrackingForm({ onEntryAdded }) {
             <option value="">Select voyage…</option>
             {voyages.map(v => (
               <option key={v._id} value={v._id}>
-                {v.voyageNumber} ({v.voyageName || 'unnamed'}) — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
+                {getVoyageLabel(v)} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
               </option>
             ))}
           </select>
@@ -187,7 +188,7 @@ export default function TrackingForm({ onEntryAdded }) {
         {selectedVoyage && (
           <div className="grid grid-cols-2 gap-2 pt-1">
             {[
-              { label: 'Voyage',  val: <span className="mono font-bold text-teal-600">{selectedVoyage.voyageNumber} <span className="font-normal text-teal-500">({selectedVoyage.voyageName || 'unnamed'})</span></span> },
+              { label: 'Voyage',  val: <span className="mono font-bold text-teal-600">{getVoyageLabel(selectedVoyage)}</span> },
               { label: 'Status',  val: selectedVoyage.status },
               { label: 'Vessel',  val: vesselId
                   ? <span className="mono text-xs font-semibold text-gray-600">{selectedRound?.vesselId?.vesselCode || 'Assigned'}</span>

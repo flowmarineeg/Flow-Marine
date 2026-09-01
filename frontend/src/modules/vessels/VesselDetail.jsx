@@ -8,6 +8,7 @@ import { vesselsService } from '@/services/vessels.service';
 import { voyagesService } from '@/services/voyages.service';
 import { usePermission } from '@/context/PermissionContext';
 import { sortVoyagesForDisplay } from '@/utils/voyageDisplayOrder';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import CapacityTimeline from './components/CapacityTimeline';
@@ -523,7 +524,7 @@ export default function VesselDetail({ id }) {
               <tbody>
                 {voyages.map(v => (
                   <tr key={v._id} className="table-row">
-                    <td><span className="mono text-xs font-bold text-gray-700">{v.voyageNumber}</span><p className="text-[11px] text-gray-400">{v.voyageName || '(unnamed)'}</p></td>
+                    <td><span className="mono text-xs font-bold text-gray-700">{getVoyageLabel(v)}</span></td>
                     <td className="text-xs text-gray-700">{v.polId?.name || '—'}</td>
                     <td className="text-xs text-gray-700">{v.podId?.name || '—'}</td>
                     <td className="text-xs text-gray-500">{fmt(v.etd)}</td>
@@ -563,7 +564,7 @@ export default function VesselDetail({ id }) {
                 {recentTracking.map(t => (
                   <tr key={t._id} className="table-row">
                     <td className="text-xs text-gray-600 whitespace-nowrap">{fmtDT(t.lastUpdate)}</td>
-                    <td><span className="mono text-xs font-semibold text-teal-600">{t.voyageId?.voyageNumber || '—'}</span><p className="text-[11px] text-gray-400">{t.voyageId?.voyageName || '(unnamed)'}</p></td>
+                    <td><span className="mono text-xs font-semibold text-teal-600">{getVoyageLabel(t.voyageId) || '—'}</span></td>
                     <td className="text-xs text-gray-700">{t.portId?.name || '—'}</td>
                     <td className="text-xs text-gray-500">{t.terminalId?.name || '—'}</td>
                     <td>

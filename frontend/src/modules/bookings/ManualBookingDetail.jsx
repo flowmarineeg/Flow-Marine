@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
 import { usePermission }   from '@/context/PermissionContext';
+import { getVoyageLabel }  from '@/utils/voyageLabel';
 import Badge         from '@/components/ui/Badge';
 import Modal         from '@/components/ui/Modal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -118,7 +119,7 @@ export default function ManualBookingDetail({ booking, onMutated }) {
 
         {/* Header info */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-          <InfoRow label="Voyage"    value={booking.voyageId?.voyageNumber ? `${booking.voyageId.voyageNumber} (${booking.voyageId?.voyageName || 'unnamed'})` : null} mono />
+          <InfoRow label="Voyage"    value={getVoyageLabel(booking.voyageId)} mono />
           <InfoRow label="Agent"     value={[booking.agentId?.agentCode, booking.agentId?.agentName].filter(Boolean).join(' — ')} />
           <InfoRow label="POL"       value={booking.polId ? `${booking.polId.name}${booking.polId.code ? ` (${booking.polId.code})` : ''}` : null} />
           <InfoRow label="POD"       value={booking.podId ? `${booking.podId.name}${booking.podId.code ? ` (${booking.podId.code})` : ''}` : null} />

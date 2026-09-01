@@ -6,6 +6,7 @@ import { roundsService }  from '@/services/rounds.service';
 import { voyagesService } from '@/services/voyages.service';
 import { servicesService } from '@/services/services.service';
 import { agentsService }  from '@/services/agents.service';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 const sc = 'text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:border-teal-500 cursor-pointer';
 
@@ -56,7 +57,7 @@ export default function DashboardFilterBar() {
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Voyage</p>
         <select value={voyageId} onChange={e => setFilter('voyageId', e.target.value)} disabled={!roundId} className={`${sc} disabled:opacity-50`}>
           <option value="">All Voyages</option>
-          {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
+          {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
         </select>
       </div>
       <div>

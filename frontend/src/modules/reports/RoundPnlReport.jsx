@@ -8,6 +8,7 @@ import { roundsService }  from '@/services/rounds.service';
 import { voyagesService } from '@/services/voyages.service';
 import ReportLayout       from './ReportLayout';
 import { ReportStatCard, ReportEmptyState, rsc, fmtMoney, fmtNum } from './reportHelpers';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 Chart.register(...registerables);
 
@@ -139,7 +140,7 @@ export default function RoundPnlReport() {
             >
               <option value="">All Voyages (Round)</option>
               {voyages.map(v => (
-                <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>
+                <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>
               ))}
             </select>
           </div>
@@ -218,7 +219,7 @@ export default function RoundPnlReport() {
                   <tbody>
                     {data.voyages.map(v => (
                       <tr key={v.voyageId} className="table-row">
-                        <td className="mono text-xs font-semibold text-teal-700">{v.voyageNumber}<p className="font-normal text-gray-400 normal-case">{v.voyageName || '(unnamed)'}</p></td>
+                        <td className="mono text-xs font-semibold text-teal-700">{getVoyageLabel(v)}</td>
                         <td className="text-xs text-gray-500">{v.revenue.polName || v.polName || '—'}</td>
                         <td className="text-xs text-gray-500">{v.revenue.podName || v.podName || '—'}</td>
                         <td className="text-xs text-gray-600">{fmtNum(v.revenue.bookingCount)}</td>
@@ -261,7 +262,7 @@ export default function RoundPnlReport() {
                       v.voyageCost.byPort.length > 0
                         ? v.voyageCost.byPort.map((p, i) => (
                           <tr key={`${v.voyageId}-${p.portId || p.portName}`} className="table-row">
-                            {i === 0 && <td rowSpan={v.voyageCost.byPort.length} className="mono text-xs font-semibold text-teal-700 align-top">{v.voyageNumber}<p className="font-normal text-gray-400 normal-case">{v.voyageName || '(unnamed)'}</p></td>}
+                            {i === 0 && <td rowSpan={v.voyageCost.byPort.length} className="mono text-xs font-semibold text-teal-700 align-top">{getVoyageLabel(v)}</td>}
                             <td className="text-xs text-gray-500">{p.portName}</td>
                             <td className="mono text-xs font-semibold text-red-600">{fmtMoney(p.total)}</td>
                           </tr>

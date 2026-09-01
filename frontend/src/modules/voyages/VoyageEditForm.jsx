@@ -4,7 +4,9 @@ import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 import { voyagesService } from '@/services/voyages.service';
+import { usePermission } from '@/context/PermissionContext';
 import { VOYAGE_STATUS } from '@/utils/constants';
 
 // Valid next status transitions (mirrors backend)
@@ -25,7 +27,16 @@ const ic  = (err) =>
    ${err ? 'border-red-400 focus:ring-red-500/10' : 'border-gray-200 focus:border-teal-500 focus:ring-teal-500/10'}`;
 
 export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
-  const allowedStatuses = [voyage.status, ...(TRANSITIONS[voyage.status] || [])];
+  const { can } = usePermission();
+  // voyages:override (granted per-role via Roles → Permissions, or implicit
+  // for SuperAdmin) is an additive escape hatch: it frees the status dropdown
+  // to any VOYAGE_STATUS value, including reversing a Cancelled/Completed
+  // voyage. Everyone else keeps today's forward-only TRANSITIONS behavior.
+  const canOverride = can('voyages', 'override');
+  const wouldBeLocked = (TRANSITIONS[voyage.status] || []).length === 0;
+  const allowedStatuses = canOverride
+    ? VOYAGE_STATUS
+    : [voyage.status, ...(TRANSITIONS[voyage.status] || [])];
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: {
@@ -54,7 +65,7 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
         <div className="grid grid-cols-2 gap-3 text-sm mb-3">
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Voyage No</p>
-            <p className="mono font-bold text-gray-700">{voyage.voyageNumber} <span className="font-normal text-gray-400">({voyage.voyageName || '(unnamed)'})</span></p>
+            <p className="mono font-bold text-gray-700">{getVoyageLabel(voyage)}</p>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Round</p>
@@ -96,8 +107,14 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
             <option key={s} value={s}>{s}{s === voyage.status ? ' (current)' : ''}</option>
           ))}
         </select>
-        {allowedStatuses.length <= 1 && (
+        {!canOverride && allowedStatuses.length <= 1 && (
           <p className="mt-1 text-[11px] text-amber-500">No further status transitions available</p>
+        )}
+        {canOverride && wouldBeLocked && (
+          <p className="mt-1 text-[11px] text-pink-600">
+            Admin override active — this voyage would normally have no further transitions from
+            {` "${voyage.status}"`}, but your Override permission allows setting any status anyway.
+          </p>
         )}
       </div>
 

@@ -10,6 +10,7 @@ import { EXPENSE_CATEGORIES } from '@/utils/constants';
 import ReportLayout   from './ReportLayout';
 import { ReportStatCard, ReportEmptyState, rsc, fmtNum } from './reportHelpers';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—';
 const fmtAmt = (n, c) => `${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${c}`;
@@ -91,7 +92,7 @@ export default function ExpenseReport() {
               className={`${rsc} disabled:opacity-50`}
             >
               <option value="">All Voyages</option>
-              {voyages.map(v => <option key={v._id} value={v._id}>{v.voyageNumber} ({v.voyageName || 'unnamed'})</option>)}
+              {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
             </select>
           </div>
           {/* Sprint 038 — Port filter, cascading from Voyage; options are
@@ -244,7 +245,7 @@ export default function ExpenseReport() {
                       </td>
                       <td>
                         {e.roundId  && <div><span className="mono text-xs text-teal-600 font-semibold">{e.roundId.roundNumber}</span><p className="text-[11px] text-gray-400">{e.roundId.roundName || '(unnamed)'}</p></div>}
-                        {e.voyageId && <div><span className="mono text-xs text-purple-600 font-semibold">{e.voyageId.voyageNumber}</span><p className="text-[11px] text-gray-400">{e.voyageId.voyageName || '(unnamed)'}</p></div>}
+                        {e.voyageId && <div><span className="mono text-xs text-purple-600 font-semibold">{getVoyageLabel(e.voyageId)}</span></div>}
                       </td>
                       <td className="text-xs text-gray-500">{e.agentId?.agentName || '—'}</td>
                       <td><span className="mono text-xs font-semibold text-gray-700">{Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></td>

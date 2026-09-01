@@ -17,6 +17,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 import ExportButton from '@/components/ui/ExportButton';
+import { getVoyageLabel } from '@/utils/voyageLabel';
 
 const API_BASE  = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:5000';
 const fmt       = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -176,7 +177,7 @@ export default function ExpenseList() {
                     </td>
                     <td>
                       {exp.roundId  && <div><span className="mono text-xs text-teal-600 font-semibold">{exp.roundId.roundNumber}</span><p className="text-[11px] text-gray-400">{exp.roundId.roundName || '(unnamed)'}</p></div>}
-                      {exp.voyageId && <div><span className="mono text-xs text-purple-600 font-semibold">{exp.voyageId.voyageNumber}</span><p className="text-[11px] text-gray-400">{exp.voyageId.voyageName || '(unnamed)'}</p></div>}
+                      {exp.voyageId && <span className="mono text-xs text-purple-600 font-semibold">{getVoyageLabel(exp.voyageId)}</span>}
                     </td>
                     <td className="text-xs text-gray-500">{exp.agentId?.agentName || '—'}</td>
                     <td>
