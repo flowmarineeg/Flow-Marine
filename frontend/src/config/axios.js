@@ -8,6 +8,20 @@ const api = axios.create({
   withCredentials: true,
 });
 
+// ─── CSRF token (Sprint049 C1) ────────────────────────────────────────────────
+// The backend returns a per-session token in the X-CSRF-Token response header
+// on login, /auth/me and change-password. Keep it in memory and send it back
+// on every state-changing request. A page reload re-fetches it via /auth/me.
+let csrfToken = null;
+
+api.interceptors.request.use((config) => {
+  const method = (config.method || 'get').toLowerCase();
+  if (csrfToken && !['get', 'head', 'options'].includes(method)) {
+    config.headers['X-CSRF-Token'] = csrfToken;
+  }
+  return config;
+});
+
 // ─── Global 401 handler ───────────────────────────────────────────────────────
 // Only redirect to /login for 401s that come from protected API calls.
 // Auth-related endpoints must be exempted so their errors bubble up normally:
@@ -17,7 +31,11 @@ const api = axios.create({
 //                           AuthContext setting isAuthenticated=false, NOT a redirect
 //   - /auth/forgot-password, /auth/reset-password → public flows
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const t = response.headers?.['x-csrf-token'];
+    if (t) csrfToken = t;
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       const url = error.config?.url || '';

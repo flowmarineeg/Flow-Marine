@@ -2,6 +2,7 @@
 
 const authService = require('./auth.service');
 const { success, error } = require('../../utils/responseHelper');
+const { csrfTokenFor } = require('../../middleware/csrf');
 
 // ─── Cookie config helper ─────────────────────────────────────────────────────
 // Owner note #2: secure=true only in production; SameSite=strict in dev / none in prod
@@ -24,6 +25,7 @@ const login = async (req, res, next) => {
 
     // Set httpOnly cookie — token never exposed to browser JS
     res.cookie('token', token, cookieOptions());
+    res.set('X-CSRF-Token', csrfTokenFor(token)); // Sprint049 C1
 
     // Return only user data in body — no token
     return success(res, { user }, 'Login successful');
@@ -49,6 +51,7 @@ const logout = async (req, res) => {
 const getMe = async (req, res, next) => {
   try {
     const user = await authService.getMe(req.user._id);
+    if (req.cookies?.token) res.set('X-CSRF-Token', csrfTokenFor(req.cookies.token));
     return success(res, user);
   } catch (err) {
     next(err);
@@ -59,7 +62,9 @@ const getMe = async (req, res, next) => {
 const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    await authService.changePassword(req.user._id, currentPassword, newPassword);
+    const { token } = await authService.changePassword(req.user._id, currentPassword, newPassword);
+    res.cookie('token', token, cookieOptions());
+    res.set('X-CSRF-Token', csrfTokenFor(token));
     return success(res, null, 'Password changed successfully');
   } catch (err) {
     if (err.status) return error(res, err.message, err.status);

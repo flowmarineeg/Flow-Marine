@@ -33,7 +33,6 @@ const expenseSchema = new mongoose.Schema(
 );
 
 expenseSchema.index({ roundId: 1 });
-expenseSchema.index({ voyageId: 1 });
 expenseSchema.index({ voyageId: 1, portId: 1 });
 expenseSchema.index({ expenseTypeId: 1 });
 expenseSchema.index({ expenseDate: -1 });

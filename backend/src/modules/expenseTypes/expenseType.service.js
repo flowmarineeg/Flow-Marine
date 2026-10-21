@@ -1,5 +1,6 @@
 'use strict';
 
+const pickFields = require('../../utils/pickFields');
 const ExpenseType     = require('./expenseType.model');
 const ExpenseCategory = require('./expenseCategory.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
@@ -108,7 +109,7 @@ const create = async (data, createdBy) => {
   // Auto-sync category to category collection
   await syncCategory(trimmedCategory, createdBy);
 
-  const et = await ExpenseType.create({ ...data, category: trimmedCategory, createdBy });
+  const et = await ExpenseType.create({ ...pickFields(ExpenseType, data), category: trimmedCategory, createdBy });
   return et.toObject();
 };
 
@@ -127,7 +128,7 @@ const update = async (id, data, updatedBy) => {
     await syncCategory(data.category, updatedBy);
   }
 
-  Object.assign(et, { ...data, updatedBy });
+  Object.assign(et, { ...pickFields(ExpenseType, data), updatedBy });
   await et.save();
   return et.toObject();
 };

@@ -1,5 +1,6 @@
 'use client';
 import { use, useState } from 'react';
+import PageGuard from '@/components/ui/PageGuard';
 import AgentForm from '@/modules/agents/AgentForm';
 import AgentFinancialAccount from '@/modules/agents/AgentFinancialAccount';
 
@@ -12,6 +13,7 @@ export default function AgentDetailPage({ params }) {
 
   if (mode === 'edit') {
     return (
+      <PageGuard module="agents">
       <div className="flex flex-col gap-3">
         <button
           onClick={() => setMode('statement')}
@@ -24,7 +26,8 @@ export default function AgentDetailPage({ params }) {
         </button>
         <AgentForm id={id} />
       </div>
+      </PageGuard>
     );
   }
-  return <AgentFinancialAccount id={id} onEdit={() => setMode('edit')} />;
+  return <PageGuard module="agents"><AgentFinancialAccount id={id} onEdit={() => setMode('edit')} /></PageGuard>;
 }

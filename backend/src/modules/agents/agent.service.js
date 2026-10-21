@@ -1,5 +1,6 @@
 'use strict';
 
+const pickFields = require('../../utils/pickFields');
 const Agent = require('./agent.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
@@ -39,7 +40,7 @@ const create = async (data, createdBy) => {
   }
 
   const payload = {
-    ...data,
+    ...pickFields(Agent, data),
     agentCode: (data.agentCode && data.agentCode.trim() !== '')
       ? data.agentCode.toUpperCase()
       : null,
@@ -67,7 +68,7 @@ const update = async (id, data, updatedBy) => {
     data.agentCode = null;
   }
 
-  Object.assign(agent, { ...data, updatedBy });
+  Object.assign(agent, { ...pickFields(Agent, data), updatedBy });
   await agent.save();
   return agent.toObject();
 };

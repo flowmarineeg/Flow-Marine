@@ -1,5 +1,6 @@
 'use strict';
 
+const pickFields = require('../../utils/pickFields');
 const ContainerType = require('./containerType.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
@@ -32,7 +33,7 @@ const getById = async (id) => {
 const create = async (data, createdBy) => {
   const exists = await ContainerType.findOne({ code: data.code.toUpperCase() });
   if (exists) throw { status: 400, message: `Container type code "${data.code}" already exists` };
-  const ct = await ContainerType.create({ ...data, code: data.code.toUpperCase(), createdBy });
+  const ct = await ContainerType.create({ ...pickFields(ContainerType, data), code: data.code.toUpperCase(), createdBy });
   return ct.toObject();
 };
 
@@ -43,7 +44,7 @@ const update = async (id, data, updatedBy) => {
     const exists = await ContainerType.findOne({ code: data.code.toUpperCase(), _id: { $ne: id } });
     if (exists) throw { status: 400, message: `Container type code "${data.code}" already exists` };
   }
-  Object.assign(ct, { ...data, code: (data.code || ct.code).toUpperCase(), updatedBy });
+  Object.assign(ct, { ...pickFields(ContainerType, data), code: (data.code || ct.code).toUpperCase(), updatedBy });
   await ct.save();
   return ct.toObject();
 };

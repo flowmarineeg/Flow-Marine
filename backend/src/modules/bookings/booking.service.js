@@ -1,5 +1,6 @@
 'use strict';
 
+const pickFields = require('../../utils/pickFields');
 const mongoose  = require('mongoose');
 const Booking   = require('./booking.model');
 const Voyage    = require('../voyages/voyage.model');
@@ -193,7 +194,7 @@ const update = async (id, data, updatedBy) => {
   // editable — voyageId itself is already immutable post-creation, so POL/POD
   // (which follow the voyage) must stay immutable with it.
   const { totalFreight: _ig1, bookingNumber: _ig2, voyageId: _ig3, polId: _ig4, podId: _ig5, ...safeData } = data;
-  Object.assign(booking, { ...safeData, totalFreight, updatedBy });
+  Object.assign(booking, { ...pickFields(Booking, safeData, ['dischargeStatus', 'dischargedAt', 'bookingNumber']), totalFreight, updatedBy });
   await booking.save();
 
   // Invalidate capacity cache — pol, pod, status or rate may have changed

@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const crypto = require('crypto');
 const User   = require('../users/user.model');
+const cache  = require('../../utils/cache');
 const logger = require('../../utils/logger');
 const {
   sendPasswordResetEmail,
@@ -11,8 +12,8 @@ const {
 } = require('../../utils/mailer');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const signToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, {
+const signToken = (id, tokenVersion = 0) =>
+  jwt.sign({ id, tv: tokenVersion || 0 }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   });
 
@@ -59,7 +60,7 @@ const login = async (email, password) => {
   user.lastLogin = new Date();
   await user.save();
 
-  const token = signToken(user._id);
+  const token = signToken(user._id, user.tokenVersion);
   logger.debug(`[Auth] Login successful: ${user.email}`);
 
   return { token, user: safeUser(user) };
@@ -84,9 +85,13 @@ const changePassword = async (userId, currentPassword, newPassword) => {
   if (!match) throw { status: 400, message: 'Current password is incorrect' };
 
   user.password = await bcrypt.hash(newPassword, 12);
+  user.tokenVersion = (user.tokenVersion || 0) + 1; // Sprint049 M7: revoke every older session
   await user.save();
+  cache.del(`user:${userId}`);
 
   sendPasswordChangedEmail(user.email, user.name).catch(() => {});
+  // Re-issue so the session that just changed the password stays signed in
+  return { token: signToken(user._id, user.tokenVersion) };
 };
 
 // ─── Forgot password ──────────────────────────────────────────────────────────
@@ -115,7 +120,9 @@ const resetPassword = async (token, newPassword) => {
   user.password            = await bcrypt.hash(newPassword, 12);
   user.resetToken          = null;
   user.resetTokenExpiresAt = null;
+  user.tokenVersion        = (user.tokenVersion || 0) + 1; // Sprint049 M7
   await user.save();
+  cache.del(`user:${user._id}`);
 
   sendPasswordChangedEmail(user.email, user.name).catch(() => {});
 };

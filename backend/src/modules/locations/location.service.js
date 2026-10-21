@@ -1,5 +1,6 @@
 'use strict';
 
+const pickFields = require('../../utils/pickFields');
 const Country  = require('./country.model');
 const City     = require('./city.model');
 const Port     = require('./port.model');
@@ -43,7 +44,7 @@ const createCountry = async (data, createdBy) => {
   const code = data.code.toUpperCase();
   const exists = await Country.findOne({ $or: [{ name: data.name }, { code }] });
   if (exists) throw { status: 400, message: `Country with this name or code "${code}" already exists` };
-  const country = await Country.create({ ...data, code, createdBy });
+  const country = await Country.create({ ...pickFields(Country, data), code, createdBy });
   return country.toObject();
 };
 
@@ -56,7 +57,7 @@ const updateCountry = async (id, data, updatedBy) => {
   const dup = await Country.findOne({ $or: [{ name }, { code }], _id: { $ne: id } });
   if (dup) throw { status: 400, message: `Country with this name or code "${code}" already exists` };
 
-  Object.assign(country, { ...data, code, updatedBy });
+  Object.assign(country, { ...pickFields(Country, data), code, updatedBy });
   await country.save();
   return country.toObject();
 };
@@ -95,7 +96,7 @@ const createCity = async (data, createdBy) => {
   const exists = await City.findOne({ name: data.name, countryId: data.countryId });
   if (exists) throw { status: 400, message: `City "${data.name}" already exists in this country` };
 
-  const city = await City.create({ ...data, createdBy });
+  const city = await City.create({ ...pickFields(City, data), createdBy });
   return city.toObject();
 };
 
@@ -113,7 +114,7 @@ const updateCity = async (id, data, updatedBy) => {
   const dup = await City.findOne({ name, countryId, _id: { $ne: id } });
   if (dup) throw { status: 400, message: `City "${name}" already exists in this country` };
 
-  Object.assign(city, { ...data, updatedBy });
+  Object.assign(city, { ...pickFields(City, data), updatedBy });
   await city.save();
   return city.toObject();
 };
@@ -169,7 +170,7 @@ const createPort = async (data, createdBy) => {
   const exists = await Port.findOne({ name: data.name, cityId: data.cityId });
   if (exists) throw { status: 400, message: `Port "${data.name}" already exists in this city` };
 
-  const port = await Port.create({ ...data, code: data.code ? data.code.toUpperCase() : null, createdBy });
+  const port = await Port.create({ ...pickFields(Port, data), code: data.code ? data.code.toUpperCase() : null, createdBy });
   return port.toObject();
 };
 
@@ -192,7 +193,7 @@ const updatePort = async (id, data, updatedBy) => {
   const dup = await Port.findOne({ name, cityId, _id: { $ne: id } });
   if (dup) throw { status: 400, message: `Port "${name}" already exists in this city` };
 
-  Object.assign(port, { ...data, code: data.code ? data.code.toUpperCase() : port.code, updatedBy });
+  Object.assign(port, { ...pickFields(Port, data), code: data.code ? data.code.toUpperCase() : port.code, updatedBy });
   await port.save();
   return port.toObject();
 };
@@ -234,7 +235,7 @@ const createTerminal = async (data, createdBy) => {
   const exists = await Terminal.findOne({ name: data.name, portId: data.portId });
   if (exists) throw { status: 400, message: `Terminal "${data.name}" already exists in this port` };
 
-  const terminal = await Terminal.create({ ...data, createdBy });
+  const terminal = await Terminal.create({ ...pickFields(Terminal, data), createdBy });
   return terminal.toObject();
 };
 
@@ -252,7 +253,7 @@ const updateTerminal = async (id, data, updatedBy) => {
   const dup = await Terminal.findOne({ name, portId, _id: { $ne: id } });
   if (dup) throw { status: 400, message: `Terminal "${name}" already exists in this port` };
 
-  Object.assign(terminal, { ...data, updatedBy });
+  Object.assign(terminal, { ...pickFields(Terminal, data), updatedBy });
   await terminal.save();
   return terminal.toObject();
 };

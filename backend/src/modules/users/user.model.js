@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
     roleId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Role', required: true },
     status:    { type: String, enum: USER_STATUS, default: 'Active' },
     lastLogin: { type: Date, default: null },
+    tokenVersion: { type: Number, default: 0 },      // Sprint049: bumped on password change/reset to revoke old JWTs
 
     // Invitation flow
     inviteToken:     { type: String, default: null },

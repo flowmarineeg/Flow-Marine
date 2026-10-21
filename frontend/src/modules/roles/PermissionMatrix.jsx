@@ -11,7 +11,7 @@ import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
 
-const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'override', 'hidden'];
+const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'import', 'export', 'override', 'hidden'];
 
 const ACTION_COLORS = {
   view:   { active: '#DBEAFE', text: '#1E40AF' },
@@ -23,6 +23,9 @@ const ACTION_COLORS = {
   // shown for every module row like every other action here — this table
   // has no per-module column customization (e.g. 'delete' already renders,
   // unused, for modules like 'reports').
+  // Sprint049: import/export were on the schema since Sprint019 but had no toggle
+  import: { active: '#E0E7FF', text: '#3730A3' },
+  export: { active: '#E0F2FE', text: '#075985' },
   override: { active: '#FCE7F3', text: '#9D174D' },
   hidden: { active: '#F3E8FF', text: '#6B21A8' },
 };
@@ -85,7 +88,7 @@ export default function PermissionMatrix({ roleId }) {
   const setAll = (module, value) => {
     // Sprint046: preserve `override` — it's a deliberate, separately-granted
     // escalation, not part of the standard CRUD set this quick-set toggles.
-    setPerms(prev => ({ ...prev, [module]: { view: value, read: value, create: value, update: value, delete: value, hidden: false, override: prev[module]?.override || false } }));
+    setPerms(prev => ({ ...prev, [module]: { ...prev[module], view: value, read: value, create: value, update: value, delete: value, hidden: false, import: prev[module]?.import || false, export: prev[module]?.export || false, override: prev[module]?.override || false } }));
   };
 
   const isSystem = roleData?.isSystem;

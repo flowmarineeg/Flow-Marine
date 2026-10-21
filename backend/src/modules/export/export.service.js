@@ -693,10 +693,11 @@ const buildZipStream = (exportList, res, generatedBy = null) => {
       const archive = archiver('zip', { zlib: { level: 9 } });
       archive.on('error', reject);
       archive.pipe(res);
-      for (const item of exportList) {
-        const { buffer, filename } = await exportSingle(
-          item.module, item.filters || {}, item.selectedIds || [], generatedBy
-        );
+      // Sprint049: build every module's workbook in parallel, append in request order
+      const results = await Promise.all(exportList.map((item) =>
+        exportSingle(item.module, item.filters || {}, item.selectedIds || [], generatedBy)
+      ));
+      for (const { buffer, filename } of results) {
         archive.append(Buffer.from(buffer), { name: filename });
       }
       archive.finalize();

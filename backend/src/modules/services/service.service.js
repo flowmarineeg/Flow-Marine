@@ -1,5 +1,6 @@
 'use strict';
 
+const pickFields = require('../../utils/pickFields');
 const Service = require('./service.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
@@ -68,7 +69,7 @@ const create = async (data, createdBy) => {
   if (exists) throw { status: 400, message: `Service code "${data.serviceCode}" already exists` };
 
   const service = await Service.create({
-    ...data,
+    ...pickFields(Service, data),
     serviceCode: data.serviceCode.toUpperCase(),
     createdBy,
   });
@@ -87,7 +88,7 @@ const update = async (id, data, updatedBy) => {
     data.serviceCode = code;
   }
 
-  Object.assign(service, { ...data, updatedBy });
+  Object.assign(service, { ...pickFields(Service, data), updatedBy });
   await service.save();
   return service.toObject();
 };

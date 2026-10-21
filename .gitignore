@@ -1,10 +1,3 @@
-/docs/*
-docs
-system-flow.txt
-system-report.txt
-claude.md
-/sprints/*
-/sprints
 .env
 
 full.diff
@@ -13,3 +6,6 @@ system-audit-2026-8-4.md
 prompt.txt
 .claude
 node_modules
+sprints
+CLAUDE.md
+docs

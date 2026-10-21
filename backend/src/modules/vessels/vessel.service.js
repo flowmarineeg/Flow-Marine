@@ -1,5 +1,6 @@
 'use strict';
 
+const pickFields = require('../../utils/pickFields');
 const Vessel = require('./vessel.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
@@ -43,7 +44,7 @@ const create = async (data, createdBy) => {
       throw { status: 400, message: 'Charter start date must be before end date' };
   }
 
-  const vessel = await Vessel.create({ ...data, vesselCode: data.vesselCode.toUpperCase(), createdBy });
+  const vessel = await Vessel.create({ ...pickFields(Vessel, data), vesselCode: data.vesselCode.toUpperCase(), createdBy });
   return vessel.toObject();
 };
 
@@ -69,7 +70,7 @@ const update = async (id, data, updatedBy) => {
     if (new Date(start) >= new Date(end)) throw { status: 400, message: 'Charter start date must be before end date' };
   }
 
-  Object.assign(vessel, { ...data, vesselCode: (data.vesselCode || vessel.vesselCode).toUpperCase(), updatedBy });
+  Object.assign(vessel, { ...pickFields(Vessel, data), vesselCode: (data.vesselCode || vessel.vesselCode).toUpperCase(), updatedBy });
   await vessel.save();
   return vessel.toObject();
 };

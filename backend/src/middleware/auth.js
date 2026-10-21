@@ -44,6 +44,8 @@ const authMiddleware = async (req, res, next) => {
 
     if (!user)                    return unauthorized(res, 'User not found or deactivated');
     if (user.status === 'Inactive') return unauthorized(res, 'Account is inactive');
+    // Sprint049 M7: tokens issued before a password change/reset are revoked
+    if ((decoded.tv || 0) !== (user.tokenVersion || 0)) return unauthorized(res, 'Session expired. Please sign in again.');
 
     req.user = user;
     next();

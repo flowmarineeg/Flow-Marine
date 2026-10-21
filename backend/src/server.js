@@ -25,12 +25,14 @@ app.use(compression());   // Sprint020 PERF-010: gzip all JSON responses
 app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000',
   credentials: true,
+  exposedHeaders: ['X-CSRF-Token'],
 }));
 
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use(require('./middleware/csrf').csrfProtection); // Sprint049 C1
 
 if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 
