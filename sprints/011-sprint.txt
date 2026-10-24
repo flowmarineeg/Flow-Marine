@@ -1,0 +1,138 @@
+================================================================================
+SPRINT 011 — REPORTS
+================================================================================
+
+STATUS: ✅ COMPLETE
+
+GOAL:
+  Build all 5 report types using MongoDB aggregation pipelines.
+  Each report has filter controls, summary stat cards, a data table,
+  and a consistent shared layout. No new data models required.
+
+--------------------------------------------------------------------------------
+MODULES: reports
+--------------------------------------------------------------------------------
+
+DATABASE TASKS:
+  [x] No new collections — all reports use aggregation on existing collections
+
+BACKEND TASKS:
+  [x] Create /src/modules/reports/reports.service.js
+        5 functions, each a focused aggregation pipeline:
+
+        getRoundPnL({ roundId }):
+          - Finds round, populates service + vessel
+          - Revenue: Booking aggregate — sum totalFreight (non-cancelled) for round's voyageIds
+          - Expenses: Expense aggregate — matches roundId OR voyageId IN voyageIds
+            $lookup expensetypes → $group by { category, currency }
+          - Returns: round info, voyageCount, bookingCount, totalRevenue,
+            expenseTotals { USD: n, EUR: n }, expenseBreakdown[]
+
+        getVoyagePerformance({ voyageId, serviceId, roundId, status, dateFrom, dateTo }):
+          - $lookup bookings (correlated sub-pipeline) → $group bookingCount, totalFreight, totalSlots, totalQty
+          - $lookup rounds, services, ports (POL/POD)
+          - Returns: rows[] + totals (aggregated across all rows)
+
+        getBookingReport({ voyageId, agentId, status, serviceId, dateFrom, dateTo }):
+          - Filters bookings with full populate
+          - Runs separate summary aggregate for totals (non-cancelled only)
+          - Returns: rows[], total count, summary { totalFreight, totalQty, totalSlots, count }
+
+        getRevenueReport({ serviceId, dateFrom, dateTo }):
+          - Matches voyages, correlated $lookup bookings, $group by serviceId
+          - Returns: rows[] sorted by totalRevenue DESC, grandTotal
+
+        getExpenseReport({ category, expenseTypeId, roundId, voyageId, dateFrom, dateTo, currency }):
+          - Finds expenses with populate, filters category post-populate
+          - Builds summary map: group by { category, currency } → total, count
+          - Returns: rows[], summary[]
+
+  [x] Create /src/modules/reports/reports.controller.js
+        5 GET handlers — one per report, all pass req.query directly to service
+
+  [x] Create /src/modules/reports/reports.routes.js
+        GET /reports/round-pnl
+        GET /reports/voyage-performance
+        GET /reports/bookings
+        GET /reports/revenue
+        GET /reports/expenses
+
+  [x] Registered in server.js under Sprint 011
+
+FRONTEND TASKS:
+  [x] Create /src/services/reports.service.js — 5 API wrappers
+
+  Shared UI:
+  [x] Create /src/modules/reports/ReportLayout.jsx
+        Consistent shell: breadcrumb + title, export button (top-right),
+        filters card, summary row, children (table)
+
+  [x] Create /src/modules/reports/reportHelpers.jsx
+        ReportStatCard, ReportEmptyState, rsc (select class), fmtMoney, fmtNum
+
+  Report Components (all Tailwind):
+  [x] RoundPnlReport.jsx
+        - Round selector dropdown (load-on-select, no "Run" button needed)
+        - 4 stat cards: Revenue, Expenses(USD), Net P&L, Bookings
+        - Round details grid (service, vessel, status, dates, voyages, qty)
+        - Expense breakdown table (category, currency, total, count)
+
+  [x] VoyagePerformanceReport.jsx
+        - Filters: service, round (filtered by service), status, ETD date range
+        - "Run Report" button pattern
+        - Table: Voyage, Service, Round, POL, POD, ETD, ETA, Bookings, Slots, Freight, Status
+        - Totals row at bottom of table
+
+  [x] BookingReport.jsx
+        - Filters: service, voyage, agent, status, date range
+        - 4 stat cards: Bookings, Total Freight, Units, Slots
+        - Table: Booking No, Voyage, Agent, Shipper, Consignee, Container, Qty, Freight, Status, Date
+
+  [x] RevenueReport.jsx
+        - Filters: service, ETD date range
+        - 4 stat cards: Services, Voyages, Bookings, Total Revenue
+        - Table: Service Code, Service Name, Voyages, Bookings, Units, Revenue
+        - Grand total row at bottom
+
+  [x] ExpenseReport.jsx
+        - Filters: category, expense type, round, voyage, currency, date range
+        - Dynamic summary cards per currency (handles multi-currency)
+        - Category summary table (grouping)
+        - Full expense detail table (date, type, category, round/voyage, agent, amount, port)
+
+  Hub page:
+  [x] /reports/page.jsx — 5 clickable report cards with icon, title, desc, "Open report" CTA
+        Cards: Round P&L (teal) | Voyage Performance (purple) | Booking (blue) | Revenue (green) | Expense (amber)
+
+  Sub-pages (all thin wrappers):
+  [x] /reports/round-pnl/page.jsx
+  [x] /reports/voyage-performance/page.jsx
+  [x] /reports/bookings/page.jsx
+  [x] /reports/revenue/page.jsx
+  [x] /reports/expenses/page.jsx
+
+  Sidebar: [x] "Reports" already in Analytics section
+
+NOTES:
+  - All pipelines use $lookup sub-pipelines (correlated) to avoid N+1 queries
+  - Empty results return zeros, not errors
+  - isDeleted:false enforced on bookings and rounds; expenses have no isDeleted
+  - Cancelled bookings excluded from revenue/summary aggregates (status: $ne: 'Cancelled')
+  - Multi-currency expense totals shown as separate stat cards per currency
+  - "Run Report" pattern used for heavy queries (voyage-perf, booking, revenue, expense)
+  - Round P&L auto-loads on round selection (single-round query is fast)
+
+--------------------------------------------------------------------------------
+COMPLETION CHECKLIST
+--------------------------------------------------------------------------------
+  [x] Round P&L: revenue = sum of non-cancelled booking totalFreight for all round voyages
+  [x] Round P&L: expenses aggregated from both roundId-linked and voyageId-linked records
+  [x] Voyage Performance: booking counts and freight totals correct per voyage
+  [x] Booking Report: filters work, summary row excludes cancelled bookings
+  [x] Revenue Report: grouped by service, grand total row accurate
+  [x] Expense Report: grouped by category + currency, handles multi-currency correctly
+  [x] Empty state shown when filters return no results
+  [x] No N+1 queries — all use aggregation pipelines with $lookup
+  [x] Hub page navigates to all 5 report sub-pages
+
+================================================================================

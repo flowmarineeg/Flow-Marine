@@ -1,0 +1,144 @@
+================================================================================
+  SPRINT 027 — Export Discharge List
+  Date: 2026-07-21
+  Status: COMPLETE
+  Version: 2 (Revised + Implemented)
+================================================================================
+
+================================================================================
+  OBJECTIVE
+================================================================================
+
+Add a new "Export Discharge List" feature to the Layer 2 Booking module.
+
+Allows operations users to select a Voyage and an Agent, then download an Excel
+file containing all Final Loading bookings for that (Voyage + Agent) scope.
+
+The file is intended for ports, terminals, customers, and operational teams.
+It always represents the CURRENT Final Loading state at the exact moment of
+export — it is NOT a historical snapshot.
+
+================================================================================
+  REVISIONS APPLIED (from original Sprint 027 planning)
+================================================================================
+
+  R1: No dedicated count endpoint.
+      The /count route was removed. Empty-result handling is done entirely
+      within the single export endpoint and on the frontend.
+
+  R2: Column order revised — Rate moved to last column.
+
+  R3: Filename simplified to:
+        Discharge_List_{Voyage}_{Agent}.xlsx
+      No export date in filename.
+
+  R4: Excel styling not hardcoded in sprint.
+      Implementation reuses the project's existing ExcelJS pattern
+      (same as export.service.js buildExcelBuffer internals).
+
+  R5: Business rule added:
+      The exported file always reflects the CURRENT Final Loading state.
+      It is NOT a historical snapshot.
+
+================================================================================
+  BUSINESS RULES
+================================================================================
+
+  1. Export scope is ALWAYS (Voyage + Agent). Never the entire voyage.
+  2. ONLY status = 'Final Loading' bookings are exported.
+     Pending, Confirmed, Cancelled are NEVER included.
+  3. One Excel row = One physical container = One booking.
+  4. No internal IDs or MongoDB ObjectIds in the output.
+  5. Rows sorted by containerNumber ascending.
+  6. The export always represents the CURRENT state — not a snapshot.
+  7. If no Final Loading bookings exist for the selected (Voyage + Agent):
+     Backend returns 404. Frontend shows an error toast. No file is downloaded.
+     This is simpler and safer than downloading an empty file.
+  8. RBAC: user must have can('bookings', 'export') — reuses existing permission.
+
+================================================================================
+  API DESIGN
+================================================================================
+
+  Method:  GET
+  URL:     /api/v1/bookings/export/discharge-list
+  Auth:    Required (JWT cookie)
+  RBAC:    rbac('bookings', 'export')
+
+  Query Parameters:
+    voyageId   string  required  MongoDB ObjectId
+    agentId    string  required  MongoDB ObjectId
+
+  Success (200):
+    Content-Type:        application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    Content-Disposition: attachment; filename="Discharge_List_V2024001_MSCEG.xlsx"
+    X-Export-Count:      {count}
+    Body:                Excel binary
+
+  Errors:
+    400  voyageId and agentId are required
+    404  Voyage not found
+    404  Agent not found
+    404  No Final Loading bookings found for this Voyage and Agent
+
+================================================================================
+  EXCEL COLUMN ORDER (Rate last — operational-first)
+================================================================================
+
+  1.  Container Number   (containerNumber)
+  2.  Container Size     (containerSize)
+  3.  Container Type     (containerType)
+  4.  POL                (pol)
+  5.  POD                (pod)
+  6.  Container Status   (containerStatus)
+  7.  Carrier Name       (carrierName)
+  8.  Shipper            (shipper)
+  9.  Consignee          (consignee)
+  10. Commodity          (commodity)
+  11. VGM (kg)           (vgm)
+  12. Hazardous          (hazardous)       "Yes" or "No"
+  13. IMDG Code          (imdgCode)
+  14. Rate (USD)         (rate)            freightRate field — last
+
+================================================================================
+  FILE NAMING
+================================================================================
+
+  Format: Discharge_List_{VoyageNumber}_{AgentCode}.xlsx
+
+  Example: Discharge_List_V2024001_MSCEG.xlsx
+
+  Sanitization: / \ : * ? " < > |  → replaced with underscore.
+  AgentCode fallback: agentName first 10 chars if agentCode is empty.
+
+================================================================================
+  FILES MODIFIED
+================================================================================
+
+  BACKEND:
+    booking.service.js    — ADD exportDischargeList()
+    booking.controller.js — ADD exportDischargeList handler
+    booking.routes.js     — ADD GET /export/discharge-list (before /:id)
+
+  FRONTEND:
+    bookings.service.js   — ADD exportDischargeList method
+    BookingList.jsx       — ADD button + modal mount
+    DischargeListExportModal.jsx — NEW FILE
+
+  DOCS:
+    027-sprint.txt, STATUS.md, claude.md
+
+================================================================================
+  FILES NOT MODIFIED
+================================================================================
+
+  export.service.js, export.controller.js, export.routes.js
+  bookingImport.service.js, bookingImport.controller.js
+  booking.model.js, booking.validation.js
+  manualBooking.* (all files), capacity.service.js
+  ExportButton.jsx, export.service.js [frontend], exportHelper.js
+  BookingForm.jsx, BookingDetailCard.jsx, BookingImport.jsx
+
+================================================================================
+  STATUS: COMPLETE
+================================================================================

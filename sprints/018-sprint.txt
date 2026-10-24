@@ -1,0 +1,430 @@
+================================================================================
+SPRINT 018 — TRACKING TAB OVERHAUL + VESSEL DETAIL PAGE
+================================================================================
+
+STATUS: ⏳ Pending
+
+GOAL:
+  Two separate but related improvements:
+
+  A) TRACKING TAB — Overhaul the tracking page into a proper data view
+     matching the style of other tabs in the system:
+     - Filter bar with vessel, service, voyage, status, date range filters
+     - Table of all tracking entries with pagination
+     - "+ Add Tracking" button opening a modal form
+     - Tracking detail panel/modal for each row
+
+  B) VESSEL DETAIL PAGE — When clicking a vessel row in the Vessels tab,
+     navigate to a full vessel detail page showing:
+     - All vessel fields (overview)
+     - Capacity utilisation gauge (capacity vs current confirmed bookings)
+     - Booking statistics
+     - Agent usage (which agents handle this vessel's routes)
+     - Voyage history (all voyages for all rounds of this vessel)
+     - Tracking history (all position entries for this vessel)
+
+================================================================================
+PART A — TRACKING TAB OVERHAUL
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+A1. BACKEND — New tracking list endpoint
+────────────────────────────────────────────────────────────────────────────────
+
+tracking.service.js — ADD: listEntries()
+
+  listEntries({ page, limit, vesselId, voyageId, serviceId, status, dateFrom, dateTo })
+
+  Query: TrackingHistory with all filters applied
+  Sort: lastUpdate DESC
+  Populate: voyageId, roundId, vesselId, serviceId, portId, terminalId, createdBy
+  Returns: { data[], total }
+
+  This is the backbone of the new tracking list view. It allows filtering by:
+    - vesselId      → show only entries for a specific vessel
+    - voyageId      → show only entries for a specific voyage
+    - serviceId     → show entries for all voyages of a service
+    - status        → filter by position status (At Port, Departed, etc.)
+    - dateFrom/dateTo → filter by lastUpdate date range
+
+tracking.controller.js — ADD: listEntries handler
+  GET /tracking with query params → calls trackingService.listEntries()
+
+tracking.routes.js — ADD:
+  router.get('/', rbac('tracking'), ctrl.listEntries)
+  {Must be BEFORE '/:voyageId/history' to avoid route conflicts}
+  {'/latest' already defined before — keep that order}
+
+────────────────────────────────────────────────────────────────────────────────
+A2. FRONTEND — Tracking service update
+────────────────────────────────────────────────────────────────────────────────
+
+tracking.service.js — ADD:
+  list: (params) => api.get(BASE, { params })
+
+────────────────────────────────────────────────────────────────────────────────
+A3. FRONTEND — Tracking page overhaul
+────────────────────────────────────────────────────────────────────────────────
+
+CURRENT STATE:
+  The tracking page (/tracking) is a split-panel:
+    LEFT:  TrackingForm (add new entry)
+    RIGHT: TrackingHistoryTable (for selected voyage)
+
+DESIRED STATE:
+  The tracking page becomes a proper list view like all other tabs:
+    - Filter bar at top
+    - Full-width scrollable table of all entries
+    - "+ Add Tracking" button → Modal with existing TrackingForm
+    - Row click or "View" button → Detail panel or modal
+
+NEW PAGE LAYOUT (/tracking):
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ PageHeader: "Tracking" | subtitle | [+ Add Tracking] button  │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Filter bar:                                                   │
+  │  [Vessel ▾] [Service ▾] [Voyage ▾] [Status ▾]               │
+  │  [Date From] [Date To] [Search remarks…]                     │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Table:                                                        │
+  │  # | Date/Time | Vessel | Service | Voyage | Port | Terminal │
+  │    | Status | Remarks | Recorded By | [View]                 │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Pagination                                                    │
+  └──────────────────────────────────────────────────────────────┘
+
+  FILTERS:
+    - Vessel dropdown  — all vessels (from vesselsService.list limit:200)
+    - Service dropdown — all services (from servicesService.listActive)
+    - Voyage dropdown  — filtered by selected service if any
+                        (from voyagesService.list, limit:500)
+    - Status dropdown  — TRACKING_STATUS enum
+    - Date From / Date To  — filter by lastUpdate
+    - Search — filter by remarks text (optional, backend regex)
+
+  TABLE COLUMNS:
+    1. # (row number)
+    2. Date/Time — lastUpdate formatted (date + time)
+    3. Vessel    — vesselCode + vesselName
+    4. Voyage    — voyageNumber (mono chip)
+    5. Round     — roundNumber
+    6. Service   — serviceCode
+    7. Port      — portName (+ terminal if present)
+    8. Status    — coloured badge chip
+    9. Remarks   — truncated (max ~60 chars)
+   10. Recorded  — user name + relative time
+   11. Actions   — [View] button
+
+  "+ ADD TRACKING" MODAL:
+    Opens Modal with the existing TrackingForm component (no changes to form itself)
+    On success: close modal + invalidate ['tracking-list'] query
+
+  "VIEW" ROW MODAL (Tracking Detail):
+    Opens Modal showing full details of one entry:
+      - Vessel: code + name + flag
+      - Service: code + name
+      - Round: roundNumber
+      - Voyage: voyageNumber
+      - Position: Country → City → Port → Terminal (populated names)
+      - Status: coloured chip
+      - Last Update: full date/time
+      - Remarks: full text
+      - Recorded by: user name
+      - Recorded at: createdAt timestamp
+    Small "Append-only — this entry cannot be edited or deleted" notice
+
+────────────────────────────────────────────────────────────────────────────────
+A4. FILES TO CREATE/MODIFY (Part A)
+────────────────────────────────────────────────────────────────────────────────
+
+NEW:
+  frontend/src/modules/tracking/TrackingList.jsx       (new main list component)
+  frontend/src/modules/tracking/TrackingDetailModal.jsx (view modal for one entry)
+
+MODIFIED:
+  backend/src/modules/tracking/tracking.service.js     (add listEntries)
+  backend/src/modules/tracking/tracking.controller.js  (add listEntries handler)
+  backend/src/modules/tracking/tracking.routes.js      (add GET / route)
+  frontend/src/services/tracking.service.js            (add list method)
+  frontend/src/app/(dashboard)/tracking/page.jsx       (swap to TrackingList)
+
+TrackingForm.jsx — NO CHANGES (reused inside modal)
+TrackingHistoryTable.jsx — kept as-is (still used in Round/Voyage detail pages if needed)
+
+================================================================================
+PART B — VESSEL DETAIL PAGE
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+B1. BACKEND — New vessel detail stats endpoint
+────────────────────────────────────────────────────────────────────────────────
+
+NEW ENDPOINT: GET /vessels/:id/stats
+
+vessel.service.js — ADD: getVesselStats(id)
+
+  Runs in parallel using Promise.all:
+
+  1. vessel = Vessel.findById(id)
+
+  2. activeRounds = Round.find({ vesselId: id, isDeleted: false })
+        .populate('serviceId', 'serviceCode serviceName')
+        .sort({ startDate: -1 })
+        .limit(20)
+     Returns list of all rounds for this vessel
+
+  3. totalRounds = Round.countDocuments({ vesselId: id, isDeleted: false })
+
+  4. voyages = Voyage.find({
+       roundId: { $in: activeRounds.map(r => r._id) }
+     }).populate('polId podId', 'name code')
+       .sort({ etd: -1 })
+       .limit(30)
+     Returns recent voyages (via rounds)
+
+  5. totalVoyages = count all voyages for this vessel's rounds
+
+  6. bookingStats = Booking.aggregate:
+       match: voyageId in vessel's voyage IDs, isDeleted:false
+       group: by status → { status, count, totalFreight }
+       also: sum all totalFreight (revenue), sum quantity (units booked)
+
+  7. capacityUsed = sum of quantity on Confirmed + 'Final Loading' bookings
+       on voyages of ACTIVE rounds of this vessel
+       (current live utilisation)
+
+  8. agents = find all unique agentIds from bookings of this vessel's voyages
+       Return: [{ agentId, agentCode, agentName, bookingCount }]
+       Use Booking.aggregate:
+         match voyages, group by agentId, count
+
+  9. recentTracking = TrackingHistory.find({ vesselId: id })
+       .populate('portId', 'name code')
+       .populate('voyageId', 'voyageNumber')
+       .sort({ lastUpdate: -1 })
+       .limit(10)
+     Latest 10 tracking entries for this vessel
+
+  10. lastPosition = recentTracking[0] (most recent entry)
+
+  RETURNS:
+  {
+    vessel: { ...all fields },
+    stats: {
+      totalRounds,    activeRounds (count), completedRounds (count),
+      totalVoyages,   activeVoyages (count, status in Scheduled/Departed/In Transit),
+      totalBookings,  confirmedBookings, pendingBookings, cancelledBookings,
+      totalRevenue,   totalUnitsBooked,
+      capacityUsed,   capacityPct (= capacityUsed / vessel.capacity * 100, or null if no capacity),
+    },
+    rounds:         [...],   // recent rounds list
+    voyages:        [...],   // recent voyages list
+    agents:         [...],   // agent usage list
+    recentTracking: [...],   // last 10 tracking entries
+    lastPosition:   {...},   // most recent tracking entry (or null)
+  }
+
+vessel.controller.js — ADD: getStats handler
+
+vessel.routes.js — ADD:
+  router.get('/:id/stats', rbac('vessels'), ctrl.getStats)
+  {MUST be before /:id to avoid shadowing — use explicit /stats/:id pattern}
+  Actually use: router.get('/:id/stats', ...) which is fine since Express matches
+  routes in order and /stats/... is matched before /:id
+
+────────────────────────────────────────────────────────────────────────────────
+B2. FRONTEND — Vessels service update
+────────────────────────────────────────────────────────────────────────────────
+
+vessels.service.js — ADD:
+  getStats: (id) => api.get(`${BASE}/${id}/stats`)
+
+────────────────────────────────────────────────────────────────────────────────
+B3. FRONTEND — Vessel Detail Page
+────────────────────────────────────────────────────────────────────────────────
+
+NEW PAGE: /vessels/:id   (vessel detail — currently this is the edit form)
+
+CURRENT BEHAVIOUR: /vessels/:id → VesselForm (edit mode)
+NEW BEHAVIOUR: Split into two separate routes:
+  /vessels/:id         → VesselDetail (the new detail page)
+  /vessels/:id/edit    → VesselForm   (edit form, moved to /edit sub-route)
+
+CHANGE IN VesselList.jsx:
+  Edit button: router.push(`/vessels/${v._id}/edit`)    (was /vessels/${v._id})
+  ADD: "View" button: router.push(`/vessels/${v._id}`)   (new detail page)
+
+NEW FILE: frontend/src/app/(dashboard)/vessels/[id]/page.jsx
+  Becomes VesselDetail page (currently VesselForm)
+
+NEW FILE: frontend/src/app/(dashboard)/vessels/[id]/edit/page.jsx
+  Thin wrapper → <VesselForm id={id} /> (moved from [id]/page.jsx)
+
+NEW FILE: frontend/src/modules/vessels/VesselDetail.jsx
+  The full vessel detail component
+
+─── VESSEL DETAIL PAGE LAYOUT ─────────────────────────────────────────────────
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │ HEADER                                                                    │
+  │  [← Back to Vessels]                                                     │
+  │  MSL-JEBALI — MSL Jebel Ali    [Active badge]   [Edit Vessel] button    │
+  │  IMO: 9123001 · Panama · Owned · Built 2015                             │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  ┌─── ROW: 4 KPI Cards ──────────────────────────────────────────────────────┐
+  │ Total Rounds │ Total Voyages │ Total Bookings │ Total Revenue             │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+  ┌─── CAPACITY UTILISATION ──────────────────────────────────────────────────┐
+  │ Vessel Capacity: 14,000 TEU                                               │
+  │ Currently Booked: 3,240 TEU (from active round Confirmed + Final Loading) │
+  │  ████████░░░░░░░░░░░░░░░░░░  23.1% utilised                              │
+  │ Remaining: 10,760 TEU available                                           │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+  ┌─── 2-COLUMN GRID ─────────────────────────────────────────────────────────┐
+  │ LEFT (vessel overview):              │ RIGHT (booking breakdown):          │
+  │  • Vessel Code / Name                │  • Booking Status Chart (doughnut) │
+  │  • IMO / Flag / Call Sign            │    Pending (amber)                  │
+  │  • Ownership Type / Owner            │    Confirmed (teal)                 │
+  │  • Ownership Description             │    Final Loading (blue)             │
+  │  • Capacity / DWT / Built Year       │    Cancelled (red)                  │
+  │  • Charter dates (if Chartered)      │                                     │
+  │  • Status                            │                                     │
+  │  • Notes                             │                                     │
+  └──────────────────────────────────────┴─────────────────────────────────────┘
+
+  ┌─── AGENTS HANDLING THIS VESSEL ───────────────────────────────────────────┐
+  │ Table: Agent Code | Agent Name | Bookings Count                           │
+  │ (agents who have bookings on voyages of this vessel's rounds)             │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+  ┌─── ROUND & VOYAGE HISTORY ────────────────────────────────────────────────┐
+  │ Table: Round No | Service | Status | Start | End | Voyages | Bookings    │
+  │ Limited to 10 most recent rounds                                          │
+  │ [View all rounds] link → /rounds?vesselId=XXX (future filter)            │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+  ┌─── RECENT VOYAGES ────────────────────────────────────────────────────────┐
+  │ Table: Voyage No | Round | POL | POD | ETD | ETA | Status               │
+  │ Limited to 10 most recent voyages                                         │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+  ┌─── TRACKING HISTORY ──────────────────────────────────────────────────────┐
+  │ Shows last 10 position entries for this vessel                            │
+  │ Table: Date/Time | Voyage | Port | Terminal | Status | Remarks           │
+  │ [View all tracking →] link → /tracking?vesselId=XXX                      │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+CHART.JS usage in detail page:
+  Booking doughnut (status breakdown)
+  Capacity bar (simple progress bar, not Chart.js — cleaner for single value)
+
+REACT-ICONS in detail page:
+  GiCargoShip  — vessel header icon
+  FaClipboardList — bookings section
+  MdAnchor     — ownership section
+  MdOutlineSailing — voyages section
+  MdMyLocation — tracking section
+
+────────────────────────────────────────────────────────────────────────────────
+B4. FILES TO CREATE/MODIFY (Part B)
+────────────────────────────────────────────────────────────────────────────────
+
+NEW BACKEND:
+  (No new files — new handler added to vessel.service.js + vessel.controller.js)
+
+MODIFIED BACKEND:
+  src/modules/vessels/vessel.service.js    (add getVesselStats)
+  src/modules/vessels/vessel.controller.js (add getStats handler)
+  src/modules/vessels/vessel.routes.js     (add GET /:id/stats route)
+
+NEW FRONTEND:
+  src/modules/vessels/VesselDetail.jsx                    (full detail component)
+  src/app/(dashboard)/vessels/[id]/page.jsx               (now → VesselDetail)
+  src/app/(dashboard)/vessels/[id]/edit/page.jsx          (new → VesselForm)
+  src/modules/tracking/TrackingList.jsx                   (new list component)
+  src/modules/tracking/TrackingDetailModal.jsx            (entry detail modal)
+
+MODIFIED FRONTEND:
+  src/modules/vessels/VesselList.jsx          (add View button, Edit → /edit route)
+  src/modules/tracking/TrackingForm.jsx       (no structural change — reused in modal)
+  src/services/vessels.service.js             (add getStats)
+  src/services/tracking.service.js            (add list)
+  src/app/(dashboard)/tracking/page.jsx       (swap to TrackingList)
+
+================================================================================
+DEPENDENCIES
+================================================================================
+
+  chart.js ✅ already installed
+  react-icons ✅ already installed
+  No new npm packages needed
+
+================================================================================
+API SUMMARY
+================================================================================
+
+NEW ENDPOINTS:
+  GET /api/v1/tracking              ← list with filters (vesselId, voyageId,
+                                       serviceId, status, dateFrom, dateTo, search)
+  GET /api/v1/vessels/:id/stats     ← full vessel overview + capacity + history
+
+EXISTING ENDPOINTS UNCHANGED:
+  POST /api/v1/tracking              ← still creates a new entry
+  GET  /api/v1/tracking/latest       ← still returns latest per voyage
+  GET  /api/v1/tracking/:voyageId/history ← still returns voyage history
+
+================================================================================
+ROUTING CHANGE (VESSELS)
+================================================================================
+
+  OLD: /vessels/:id     → VesselForm (edit)
+  NEW: /vessels/:id     → VesselDetail (view)
+       /vessels/:id/edit → VesselForm (edit)
+
+  VesselList.jsx changes:
+    Edit button: router.push(`/vessels/${v._id}/edit`)
+    View button: router.push(`/vessels/${v._id}`)
+    (Both buttons visible together — Edit requires permission)
+
+================================================================================
+TESTING CHECKLIST
+================================================================================
+
+  Tracking Tab:
+  [ ] Tracking page shows table of all entries (not split panel)
+  [ ] Filter by vessel → only that vessel's entries
+  [ ] Filter by service → entries for that service's voyages
+  [ ] Filter by voyage → specific voyage entries
+  [ ] Filter by status → coloured status chips
+  [ ] Filter by date range → works on lastUpdate
+  [ ] "+ Add Tracking" button → opens TrackingForm in modal
+  [ ] Adding entry → table refreshes, new entry at top
+  [ ] "View" button → detail modal with all fields
+  [ ] Detail modal shows append-only notice
+  [ ] Pagination works (10 per page default)
+
+  Vessel Detail Page:
+  [ ] Clicking vessel row → navigates to /vessels/:id detail page
+  [ ] "Edit" in list → navigates to /vessels/:id/edit
+  [ ] KPI cards show correct counts
+  [ ] Capacity bar: correct percentage
+  [ ] Capacity bar: "No capacity set" gracefully if vessel.capacity = null
+  [ ] Booking doughnut shows status breakdown
+  [ ] Agents table shows correct booking counts
+  [ ] Rounds history table shows recent rounds
+  [ ] Voyages table shows recent voyages
+  [ ] Tracking history shows last 10 entries for this vessel
+  [ ] [View all tracking →] links to /tracking with vessel pre-filtered
+
+================================================================================
+ESTIMATED COMPLEXITY: Medium-High
+  Part A (Tracking): Medium — mostly frontend restructure + one new backend query
+  Part B (Vessel Detail): High — new backend stats aggregation + full detail page
+  Total: ~15 new/modified files
+================================================================================
+END OF SPRINT 018 PLAN
+================================================================================

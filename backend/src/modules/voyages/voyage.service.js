@@ -1,5 +1,6 @@
 'use strict';
 
+const lock = require('../rounds/roundLock');
 const Voyage   = require('./voyage.model');
 const Round    = require('../rounds/round.model');
 const Route    = require('../routes/route.model');
@@ -103,6 +104,7 @@ const getRoundRoutePorts = async (roundId) => {
 
 // ─── Create Manual Voyage ─────────────────────────────────────────────────────
 const createManualVoyage = async (roundId, data, createdBy) => {
+  await lock.assertRoundOpen(roundId);
   // 1. Load and validate round
   const round = await Round.findOne({ _id: roundId }).lean();
   if (!round) throw { status: 404, message: 'Round not found' };
@@ -181,6 +183,7 @@ const createManualVoyage = async (roundId, data, createdBy) => {
 // shape as invoice.service.js's invoices:override (Sprint 046). Without it,
 // every caller still goes through validateTransition() exactly as before.
 const update = async (id, data, updatedBy, canOverride = false) => {
+  await lock.assertVoyageRoundOpen(id);
   const voyage = await Voyage.findById(id);
   if (!voyage) throw { status: 404, message: 'Voyage not found' };
 
@@ -209,6 +212,7 @@ const update = async (id, data, updatedBy, canOverride = false) => {
 
 // ─── Delete Voyage (hard delete, guarded by bookings) ────────────────────────
 const deleteVoyage = async (id) => {
+  await lock.assertVoyageRoundOpen(id);
   const voyage = await Voyage.findById(id).lean();
   if (!voyage) throw { status: 404, message: 'Voyage not found' };
 
@@ -225,6 +229,11 @@ const deleteVoyage = async (id) => {
       throw { status: 400, message: 'Cannot delete — voyage has active bookings. Cancel the bookings first.' };
     }
   }
+
+  // Audit H5: never orphan ledger lines / posted expenses / invoiced items
+  const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
+  await assertNoDependents('voyage', id, DEPENDENTS.voyage);
+  await require('mongoose').model('BookingItem').deleteMany({ voyageId: id, locked: false }).catch(() => {});
 
   // Remove from Round.voyageIds
   await Round.findByIdAndUpdate(voyage.roundId, { $pull: { voyageIds: voyage._id } });

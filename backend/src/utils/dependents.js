@@ -1,0 +1,82 @@
+'use strict';
+
+const mongoose = require('mongoose');
+const AppError = require('./AppError');
+
+/**
+ * Sprint050 P8 / R6 — dependents check for delete. Deliberately NOT a
+ * cascade: it only COUNTS records that still depend on the target and refuses
+ * the delete, naming each blocker with its count (proposal §9.2). The caller
+ * decides what to delete once nothing blocks.
+ *
+ * spec: { model: 'ModelName', field: 'refField', label: 'human plural',
+ *         filter?: extra query, flag?: feature flag that must be ON for this
+ *         check to apply (used where the check is NEW behaviour that V1,
+ *         with all flags off, must not see) }
+ * A spec whose model is not registered (collection not built yet) is skipped.
+ */
+const countDependents = async (id, specs, { session } = {}) => {
+  const out = [];
+  for (const s of specs) {
+    let Model;
+    try { Model = mongoose.model(s.model); } catch { continue; }
+    const q = { [s.field]: id, ...(s.filter || {}) };
+    const n = await Model.countDocuments(q).session(session || null);
+    if (n > 0) out.push({ label: s.label, count: n });
+  }
+  return out;
+};
+
+const assertNoDependents = async (what, id, specs, opts = {}) => {
+  const blockers = await countDependents(id, specs, opts);
+  if (blockers.length) {
+    const msg = blockers.map((b) => `${b.count} ${b.label}`).join(', ');
+    const err = new AppError(409, `Cannot delete this ${what} — still has: ${msg}`, 'HAS_DEPENDENTS');
+    err.blockers = blockers;
+    throw err;
+  }
+};
+
+// Declarative table (proposal §9.2). Entries with a `flag` are NEW behaviour
+// and only apply once that module is switched on; the rest are checks on
+// collections that only exist in V2 (always empty while flags are off).
+const DEPENDENTS = {
+  partner: [
+    { model: 'VesselPartner',    field: 'partnerId', label: 'vessel share rows' },
+    { model: 'JournalEntryLine', field: 'partnerId', label: 'ledger lines' },
+    { model: 'Expense',          field: 'paidByPartnerId', label: 'expenses paid' },
+    { model: 'PartnerSettlement', field: 'partners.partnerId', label: 'partner settlements' },
+    { model: 'PartnerTransfer',  field: 'fromPartnerId', label: 'transfers paid' },
+    { model: 'PartnerTransfer',  field: 'toPartnerId', label: 'transfers received' },
+    { model: 'InvoiceSettlement', field: 'bankAccount.partnerId', label: 'receipts into their bank' },
+  ],
+  vessel: [
+    { model: 'VesselPartner', field: 'vesselId', label: 'partner share rows' },
+    { model: 'Round',         field: 'vesselId', label: 'rounds' },
+  ],
+  // Audit H5 - posted records must never be orphaned by a delete.
+  round: [
+    { model: 'JournalEntryLine',         field: 'roundId', label: 'ledger lines' },
+    { model: 'PartnerSettlement',        field: 'roundId', label: 'finalised partner settlements', filter: { status: 'Final' } },
+    { model: 'JvReserveMovement',        field: 'roundId', label: 'reserve movements' },
+    { model: 'HandlingCharge',           field: 'roundId', label: 'handling charges' },
+    { model: 'AgentSettlementStatement', field: 'roundId', label: 'agent settlement statements' },
+    { model: 'Expense',                  field: 'roundId', label: 'posted expenses', filter: { ledgerEntryId: { $ne: null } } },
+    { model: 'BookingItem',              field: 'roundId', label: 'items on invoices', filter: { locked: true } },
+  ],
+  voyage: [
+    { model: 'JournalEntryLine', field: 'voyageId', label: 'ledger lines' },
+    { model: 'Expense',          field: 'voyageId', label: 'posted expenses', filter: { ledgerEntryId: { $ne: null } } },
+    { model: 'BookingItem',      field: 'voyageId', label: 'items on invoices', filter: { locked: true } },
+  ],
+  agent: [
+    { model: 'AgentAgreement',   field: 'agentId', label: 'agreements' },
+    { model: 'AgentCommission',  field: 'agentId', label: 'commissions' },
+    { model: 'HandlingCharge',    field: 'agentId', label: 'handling charges' },
+    { model: 'AgentSettlementStatement', field: 'agentId', label: 'settlement statements' },
+    { model: 'JournalEntryLine', field: 'agentId', label: 'ledger lines' },
+    { model: 'ManualBooking',    field: 'agentId', label: 'estimated bookings' },
+  ],
+};
+
+module.exports = { countDependents, assertNoDependents, DEPENDENTS };

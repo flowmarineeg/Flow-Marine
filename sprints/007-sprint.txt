@@ -1,0 +1,122 @@
+================================================================================
+SPRINT 007 — ROUNDS & AUTOMATIC VOYAGE GENERATION
+================================================================================
+
+STATUS: ✅ COMPLETE
+
+GOAL:
+  Build the Round module with automatic voyage generation on save.
+  When a Round is saved, the system reads the route legs and auto-generates
+  one voyage per consecutive leg pair. Voyages are editable (ETD/ETA/ATD/ATA/Status)
+  but never manually created.
+
+--------------------------------------------------------------------------------
+MODULES: rounds, voyages
+--------------------------------------------------------------------------------
+
+DATABASE TASKS:
+  [x] Create /src/modules/rounds/round.model.js
+        Fields: roundNumber(unique), serviceId, vesselId, startDate, endDate,
+                status(enum ROUND_STATUS), notes, voyageIds([ObjectId]),
+                isDeleted, deletedAt, createdBy, updatedBy, timestamps
+        Indexes: roundNumber(unique), serviceId, vesselId, status, startDate
+
+  [x] Create /src/modules/voyages/voyage.model.js
+        Fields: voyageNumber(unique), roundId, serviceId, polId, podId,
+                sequence, etd, eta, atd, ata, status(enum VOYAGE_STATUS),
+                createdBy, updatedBy, timestamps
+        Indexes: voyageNumber(unique), roundId, serviceId, polId, podId, status, etd
+
+BACKEND TASKS:
+  [x] Create /src/utils/voyageGenerator.js
+        - generateVoyages(round, routeLegs, service, createdBy)
+        - voyageNumber format: SERVICECODE-ROUNDNUMBER-SEQ (e.g. AS-ME-R000001-01)
+        - Validates min 2 legs
+        - Uses insertMany for bulk efficiency
+
+  [x] Create /src/modules/rounds/round.service.js
+        - list (with voyage count aggregation + service/vessel populate)
+        - getById, getRoundVoyages, create, update, softDelete
+        - create: validates service route, vessel conflict, generates voyages
+        - update: enforces status transitions, blocks service change
+        - softDelete: blocks if bookings exist under any voyage
+
+  [x] Create /src/modules/rounds/round.controller.js
+  [x] Create /src/modules/rounds/round.validation.js
+  [x] Create /src/modules/rounds/round.routes.js
+        GET /rounds, GET /rounds/:id, GET /rounds/:id/voyages
+        POST /rounds, PUT /rounds/:id, DELETE /rounds/:id
+  [x] Register in server.js
+
+  [x] Create /src/modules/voyages/voyage.service.js
+        - list, getById, update (ETD/ETA/ATD/ATA/status only)
+        - Status transitions enforced (Scheduled→Departed→In Transit→Arrived→Completed)
+        - No create, no delete
+  [x] Create /src/modules/voyages/voyage.controller.js (GET list, GET :id, PUT :id)
+  [x] Create /src/modules/voyages/voyage.validation.js
+  [x] Create /src/modules/voyages/voyage.routes.js
+  [x] Register in server.js
+
+FRONTEND TASKS:
+  [x] Create /src/services/rounds.service.js
+  [x] Create /src/services/voyages.service.js
+
+  [x] Create /src/modules/rounds/RoundForm.jsx
+        - Service dropdown auto-fills default vessel on change
+        - Voyage generation notice shown on create
+        - serviceId disabled in edit mode
+
+  [x] Create /src/modules/rounds/RoundList.jsx
+        - Table: Round No, Service, Vessel, Start/End Date, Voyages badge, Status
+        - Filters: service dropdown, status dropdown, search
+        - Voyage count badge links to round detail
+
+  [x] Create /src/modules/rounds/RoundVoyageList.jsx
+        - Voyage table: Seq, Voyage No, POL, POD, ETD, ETA, ATD, ATA, Status, Edit
+        - Opens VoyageEditForm in modal
+
+  [x] Create /src/modules/rounds/RoundDetail.jsx
+        - Header card: round info, dates, status, notes
+        - Advance status button (Planned→Active, Active→Completed)
+        - Embedded RoundVoyageList
+
+  [x] Create /src/modules/voyages/VoyageEditForm.jsx
+        - Read-only info panel (voyage no, round, POL, POD)
+        - Editable: ETD, ETA, ATD, ATA (datetime-local), status
+        - Status dropdown shows only valid transitions
+
+  [x] Create /src/modules/voyages/VoyageList.jsx
+        - Standalone voyage list with service + status filters
+        - Edit button opens VoyageEditForm in modal
+
+  Pages:
+  [x] /src/app/(dashboard)/rounds/page.jsx → RoundList
+  [x] /src/app/(dashboard)/rounds/[id]/page.jsx → RoundDetail
+  [x] /src/app/(dashboard)/voyages/page.jsx → VoyageList
+
+  Sidebar: [x] "Rounds" and "Voyages" already present in Operations section
+
+NOTES:
+  - Voyage number format: {serviceCode}-{roundNumber}-{seq:02}
+  - Voyage generation uses insertMany for atomicity
+  - Round voyageIds[] updated after generation
+  - Status transitions enforced on both backend and frontend
+  - "Mark Active / Mark Completed" shortcut on round detail header
+  - Sprint 008 (Bookings) depends on voyageId from this sprint
+
+--------------------------------------------------------------------------------
+COMPLETION CHECKLIST
+--------------------------------------------------------------------------------
+  [x] Creating a round generates correct number of voyages (legs - 1)
+  [x] Voyage numbers follow format: ServiceCode-RoundNumber-Seq
+  [x] POL and POD correctly set from consecutive route leg pairs
+  [x] Round detail shows all generated voyages
+  [x] Voyage ETD/ETA/ATD/ATA can be set and saved
+  [x] Voyage status transitions work correctly
+  [x] Cannot create round if service has < 2 legs
+  [x] Cannot create round if vessel is in another Active round
+  [x] Round soft delete blocked if bookings exist
+  [x] Round and voyage mutations appear in audit log
+  [x] Status advance button on round detail page
+
+================================================================================

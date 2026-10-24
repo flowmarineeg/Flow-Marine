@@ -1,0 +1,541 @@
+# Sprint 041 — Round/Voyage Display Names + Booking Module UX Fixes
+Status: PLANNING — ALL OPEN QUESTIONS ANSWERED AND DECISIONS LOCKED (see
+§1.7 and §2.4, both now marked DECIDED). NO CODE WAS WRITTEN OR MODIFIED,
+NO SCHEMA WAS CHANGED, NO ENDPOINT WAS CREATED — still awaiting explicit
+go-ahead to begin implementation. This is a NEW Sprint 041,
+unrelated to the previous Sprint 041 content (RBAC Enforcement Audit,
+Performance & Caching Review, Bug Sweep), which has been renamed to
+`sprints/soon-1-sprint.txt` and deferred to later in the project. The
+former Sprint 042 (Delete Validation Business Rules) is likewise deferred,
+renamed to `sprints/soon-sprint.txt`. Neither deferred document is touched
+by this sprint.
+
+Every claim below was confirmed by reading the actual model/service/
+component file named — nothing is assumed from `claude.md`'s summary.
+
+---
+
+# 0. SCOPE — TWO POINTS
+
+1. **Round Name / Voyage Name** — add an admin-entered display name to
+   Round and Voyage, shown next to the system-generated Round
+   Number/Voyage Number everywhere that number is used as a reference
+   (tables, selectors, view pages) across the whole system.
+2. **Booking module UX fixes** — rename the "Manual Booking" tab/label to
+   "Estimated Booking" and move it before "Operational"; add a
+   downloadable Excel import template to Booking Import; fix two
+   case-sensitivity bugs in the Booking Import save path.
+
+Both points are additive/corrective — no existing collection is renamed,
+no existing field is removed, no existing route path changes.
+
+---
+
+# 1. POINT 1 — ROUND NAME / VOYAGE NAME
+
+## 1.1 Business objective
+
+Today `Round.roundNumber` (e.g. `R000001`) and `Voyage.voyageNumber`
+(e.g. `SEN-R000001-01`) are the ONLY human-facing reference for a Round
+or Voyage anywhere in the system — in every list table, every `<select>`
+dropdown, every detail/view page, and every other module that references
+a Round or a Voyage (Bookings both layers, Expenses, Invoices, Tracking,
+Capacity Reports, Voyage Performance, Agent Financial Account, Vessel
+Details, Export, Dashboard). These codes are useful as unique system
+identifiers but meaningless as a business reference — nobody remembers
+"R000001" refers to the Q3 Red Sea coffee run. The objective is to let
+an admin attach a real name to a Round/Voyage at creation or edit time,
+and have that name appear next to the number everywhere the number is
+shown today, so operators can recognize records by name instead of code.
+
+## 1.2 What already exists (do not confuse with the new fields)
+
+- `Round.notes` (`round.model.js` line 14) — free-text but semantically
+  "operational notes," not a short display name. Kept as-is, untouched.
+- `Voyage.voyageCode` (`voyage.model.js` line 9, `String, trim, default:
+  null, maxlength: 50`) — an EXISTING optional admin-entered free-text
+  field, already editable in both `VoyageAddForm.jsx` and
+  `VoyageEditForm.jsx` (e.g. "V2025-001", "SHUTTLE-MAR").
+  **DECIDED (§1.7 Q1): `voyageCode` stays untouched, separate purpose.**
+  A genuinely new `voyageName` field is added alongside it — two
+  distinct free-text fields will sit next to `voyageNumber` on Voyage
+  (`voyageCode` for whatever code-like label it's used for today,
+  `voyageName` as the new business-facing display name). Both are
+  distinct fields going forward; do not merge or conflate them anywhere
+  in implementation.
+- Confirmed via codebase-wide search: zero existing usages of
+  `roundName` or `voyageName` anywhere in backend or frontend today.
+
+## 1.3 Schema changes (additive only)
+
+- `round.model.js` — add `roundName: { type: String, trim: true, default:
+  null }`, sitting next to `roundNumber`. Schema-level `required: true`
+  is NOT used (see note below) — required-ness is enforced only in
+  `round.validation.js#validateCreate`, not at the Mongoose schema layer.
+- `voyage.model.js` — add `voyageName: { type: String, trim: true,
+  default: null }`, sitting next to `voyageNumber` (and distinct from the
+  existing `voyageCode`, per §1.2, DECIDED — both fields coexist).
+- No index changes required — **DECIDED (§1.7 Q3): not unique**, this is
+  a display label, not an identifier.
+- **DECIDED (§1.7 Q7): required going forward for new records only.**
+  `validateCreate` for both Round and Voyage will reject a create request
+  with no `roundName`/`voyageName`. The schema field itself stays
+  `default: null` (not `required: true` at the Mongoose level) precisely
+  because every EXISTING Round/Voyage in the database has no name and
+  must remain loadable/editable without being force-migrated — the hard
+  requirement applies only to the create-time validation layer, not
+  retroactively to existing documents. `validateUpdate` does NOT require
+  it (an existing unnamed record can be edited without being forced to
+  add a name in the same request — only NEW creates are blocked without
+  one).
+
+## 1.4 Backend changes required, by file (confirmed from source)
+
+**Validation / create / update allow-lists** (currently these fields are
+not validated or accepted — need explicit additions):
+- `round.validation.js` `validateCreate` (lines 15-22) and
+  `validateUpdate` (lines 24-30) — add optional `roundName` string
+  validator to both.
+- `round.service.js#create()` (doc built at lines 132-143) — add
+  `roundName: data.roundName ?? null` to the constructed object.
+- `round.service.js#update()` (line 195 allow-list `['vesselId',
+  'startDate', 'endDate', 'status', 'notes']`) — add `'roundName'`.
+- `round.service.js#list()` search clause (lines 36-41, currently `$or:
+  [{roundNumber: regex}, {notes: regex}]`) — add `{roundName: regex}` if
+  Round Name should be searchable (recommended, see §1.7 Q6).
+- `voyage.validation.js` `validateCreate` (lines 16-28) and
+  `validateUpdate` (lines 31-40) — add optional `voyageName` string
+  validator to both.
+- `voyage.service.js#createManualVoyage()` (doc built at lines 144-161)
+  — add `voyageName: data.voyageName ?? null`. NOTE: this endpoint only
+  creates MANUAL voyages; auto-generated voyages (created via
+  `utils/voyageGenerator.js` when a Round is saved) go through a
+  different path — see §1.7 Q2 for whether auto-generated voyages get a
+  name at generation time or only via later edit.
+- `voyage.service.js#update()` (line 182 allow-list `['etd', 'eta',
+  'etp', 'atd', 'ata', 'status', 'voyageCode']`) — add `'voyageName'`.
+
+**Restrictive `.populate(path, 'fields')` projections that hard-code
+`roundNumber`/`voyageNumber`** — each needs `roundName`/`voyageName`
+added to the select string, or the new field will silently not appear in
+that response even after the schema change:
+
+| File : Line | Current projection |
+|---|---|
+| `voyage.service.js:52` (list) | `.populate('roundId', 'roundNumber')` |
+| `voyage.service.js:69` (getById) | `.populate('roundId', 'roundNumber startDate endDate')` |
+| `voyage.service.js:193` (update response) | `.populate('roundId', 'roundNumber')` |
+| `expense.service.js:35` | `.populate('roundId', 'roundNumber')` |
+| `expense.service.js:38` | `.populate('voyageId', 'voyageNumber roundId')` |
+| `invoice.service.js:32-33` (list/getById) | `.populate('voyageId','voyageNumber')`, `.populate('roundId','roundNumber')` |
+| `invoice.service.js:74-75` (getByIdForPdf) | same two |
+| `invoice.service.js:110` (getEligibleBookings) | nested voyageId→roundId select |
+| `agent.service.js:118-119` (financial account) | nested voyageId→roundId select |
+| `tracking.service.js:10-11` | `.populate('voyageId','voyageNumber')`, `.populate('roundId','roundNumber')` |
+| `vessel.service.js:234` | `.populate('voyageId', 'voyageNumber')` |
+| `reports.service.js:389` (getVoyagePerformance) | `.populate('roundId','roundNumber')` |
+| `reports.service.js:482, 488` (getBookingReport) | `.populate('voyageId','voyageNumber')` ×2 (L1+L2) |
+| `reports.service.js:632-633` (getExpenseReport) | round + voyage populate |
+| `booking.service.js:60` | `.populate('voyageId', 'voyageNumber roundId polId podId etd eta status')` |
+| `manualBooking.service.js:31` | same shape |
+
+**NOT restrictive — no code change needed** (Round/Voyage document
+itself returned via bare `.lean()`, so `roundName`/`voyageName` will
+appear automatically once the schema field exists): `round.service.js`
+list/getById/create/update; `voyage.service.js` list/getById/update;
+`vessel.service.js` rounds-for-detail and voyages-for-detail queries;
+`reports.service.js#getRoundPnL`'s `voyages[]`/`round` objects.
+
+**Manual field-copy sites** (data reshaped into new plain objects — each
+needs an explicit added line, e.g. `roundName: round.roundName`):
+- `capacity.service.js:364` (`computeRoundCapacity`'s `round` object),
+  `:293`/`:286` (`voyageRows`/warnings), `:470`/`:495`
+  (`computeVoyagePreview`'s bottleneck object, feeds the capacity-warning
+  banner in `BookingForm.jsx:170`).
+- `dashboard.service.js:194` (`getFleetUtilisation`), `:207` (per-voyage
+  sub-array, feeds `OperationsWidgets.jsx`/`AlertsWidgets.jsx`).
+- `bookingImport.service.js:71` (`serializeVoyage`, feeds
+  `BookingImport.jsx`'s ambiguous-voyage picker and resolved-voyage
+  display).
+
+**Invoice line item snapshot — needs an explicit decision, see §1.7 Q4:**
+`invoice.model.js#lineItemSchema` (lines 11-28) already stores
+denormalized SNAPSHOT `voyageNumber`/`roundNumber` (lines 16/18),
+explicitly documented as captured once at invoice-creation time and
+NEVER re-read from live documents (Sprint 033 rule). If `roundName`/
+`voyageName` should also appear on invoices/PDFs, `lineItemSchema` needs
+two new snapshot fields, and `invoice.service.js#buildLineItemSnapshot`
+(lines 132-155) + `getEligibleBookings` (lines 97-130) need to populate
+them at snapshot time. Existing historical invoices will NEVER retroactively
+gain a name (same rule that already applies to every other snapshot
+field) — this is a hard consequence of the existing, deliberate Sprint
+033 snapshot design, not a new gap being introduced.
+
+**Export module (`export/export.service.js`) — two edits per module
+(column definition + row-mapper), fully independent hard-coded path:**
+- `COLUMNS.rounds` (101-112) — add `{ header: 'Round Name', key:
+  'roundName', width: 22 }`.
+- `COLUMNS.voyages` (113-127) — add `{ header: 'Voyage Name', key:
+  'voyageName', width: 22 }`.
+- `COLUMNS.bookings` (129-151), `.manualBookings` (156-169), `.expenses`
+  (170-183), `.tracking` (201-213) — each already has a Voyage
+  Number/Round Number column; add the matching Name column beside it.
+- Row-mapper switch cases for `rounds`, `voyages`, `bookings`,
+  `manualBookings`, `expenses`, `tracking` (approx. lines 415-624) — each
+  currently both restricts its own `.populate()` select AND manually maps
+  `roundNumber`/`voyageNumber` into the flat export row; each needs the
+  matching `roundName`/`voyageName` addition in both places.
+
+**Invoice PDF** (`utils/invoicePdfGenerator.js` lines 138-139, 269-270) —
+would need equivalent additions if the PDF header/line-items should show
+names too — see §1.7 Q5.
+
+## 1.5 Frontend changes required, by module (exhaustive — every
+`roundNumber`/`voyageNumber` render site found)
+
+For every location below, the change is: render the Name (if set) next
+to or instead of the Number, per the fallback rule decided in §1.7 Q2.
+Grouped by module; (a)=table column, (b)=selector/dropdown option,
+(c)=detail/view display, (d)=filter bar, (e)=other (message/label text).
+
+**Rounds/Voyages own module:**
+- `RoundForm.jsx` — NEW input added (currently has no name field at all;
+  Notes textarea at lines 137-146 is the natural neighbor).
+- `RoundList.jsx:115` (a) "Round No" column; `:227` (e) delete-confirm text.
+- `RoundDetail.jsx:73` (c) breadcrumb; `:90` (c) header card title.
+- `RoundVoyageList.jsx:168` (a) "Voyage number" column; `:266` (e) edit
+  modal title; `:289` (e) delete-confirm text.
+- `VoyageList.jsx:86` (a) "Voyage No" column; `:88` (a) "Round" column;
+  `:132` (e) edit modal title.
+- `VoyageAddForm.jsx:68` (c) read-only round-info strip.
+- `VoyageEditForm.jsx:55` (c) "Voyage No" display; `:59` (c) "Round"
+  display; existing "Voyage Code" input at ~104-113 is the natural
+  neighbor for a new Voyage Name input.
+
+**Bookings (both layers):**
+- `ManualBookingForm.jsx:188` (b) Round dropdown; `:203` (b) Voyage
+  dropdown; `:215` (c) info strip.
+- `ManualBookingDetail.jsx:120` (c) Voyage InfoRow.
+- `BookingForm.jsx:201` (b) Round dropdown; `:170` (e) capacity-warning
+  banner; `:217` (b) Voyage dropdown; `:230` (c) info strip.
+- `BookingDetailCard.jsx:127` (c) Voyage InfoRow.
+- `BookingList.jsx:172/176` (d) Operational filter bar; `:230` (a)
+  Operational table Voyage column; `:284/288` (d) Manual filter bar;
+  `:322` (a) Manual table Voyage column.
+- `BookingImport.jsx:316` (b) Round selector; `:550` (b) per-row voyage
+  override picker; `:556` (c) resolved-voyage inline display.
+- `DischargeListExportModal.jsx:91` (b) Voyage selector.
+
+**Expenses:** `ExpenseForm.jsx:167/183` (b) Round dropdowns; `:195` (b)
+Voyage dropdown; `ExpenseList.jsx:128/129` (a) combined Round/Voyage column.
+
+**Invoices:** `InvoiceForm.jsx:83/84` (a) line-items table Voyage/Round
+columns; `:261` (b) Round selector; `:270` (b) Voyage selector;
+`EligibleBookingsTable.jsx:46/47` (a) Voyage/Round columns.
+
+**Tracking:** `TrackingForm.jsx:161` (b) Round dropdown; `:179` (b)
+Voyage dropdown; `:189/194` (c) info strip; `TrackingList.jsx:139` (d)
+filter; `:225` (a) Voyage column; `TrackingDetailModal.jsx:48/49` (c)
+Voyage/Round InfoRows.
+
+**Reports:** `RoundPnlReport.jsx:124` (b) Round dropdown; `:142` (b)
+Voyage dropdown; `:187` (c) Round Details grid; `:221/264` (a) Voyage
+tables. `RoundCapacityReport.jsx:63` (b) Round selector; `:90` (e) Peak
+Onboard stat-card subtitle; `:133` (c) Round+vessel metadata grid.
+`VoyagePerformanceReport.jsx:28` (e) chart labels; `:132` (b) Round
+filter; `:229/231` (a) Voyage/Round columns. `ExpenseReport.jsx:82/94`
+(d) filters; `:246/247` (a) combined column. `BookingRevenueDetailsReport
+.jsx:71/78` (d) filters. `BookingReport.jsx:56` (d) filter; `:123` (a)
+Voyage column. `VoyageCapacityCard.jsx:43` (c) per-voyage card header.
+
+**Vessel Details:** `VesselDetail.jsx:149` (c) current round card;
+`:479` (a) Round History table; `:508` (a) Recent Voyages table; `:548`
+(a) Recent Tracking table. `CapacitySegmentTable.jsx:88` (a) per-leg
+table. `CapacityTimeline.jsx:63/155` (e) timeline label.
+
+**Agent Financial Account:** `AgentFinancialAccount.jsx:96/116` (c)
+statement row headers; `:149/161/162` (a/e) VoyagesLedger; `:177/191/192`
+(a/e) BookingsLedger.
+
+**Dashboard:** `DashboardFilterBar.jsx:52/59` (d) Round/Voyage global
+filters; `OperationsWidgets.jsx:124` (a/c) per-round card; `AlertsWidgets
+.jsx:27/33/59` (e) warning text; `PerformanceWidgets.jsx:121/132` (a/c)
+Best/Lowest voyage columns.
+
+**No shared "option-shaping" chokepoint exists.** `useRounds.js`/
+`useVoyages.js` are plain `useQuery` wrappers with no `.map()` — every
+one of the ~15 `<select>` call sites above independently interpolates
+`roundNumber`/`voyageNumber` inline and will need its own individual edit.
+This is the single biggest cost driver of this point — there is no way
+to fix this in one shared place.
+
+## 1.6 Explicitly out of scope for this point
+
+- No change to `roundNumber`/`voyageNumber` generation, format, or
+  uniqueness — they remain the system's authoritative identifiers.
+- No renaming of any existing field (`notes`, `voyageCode` both stay).
+- No backfill/migration attempting to auto-generate names for existing
+  records — names start blank for all pre-existing Rounds/Voyages.
+- No change to auto-numbering (`autoNumber.js`, `voyageGenerator.js`'s
+  number-construction logic).
+
+## 1.7 Decisions (all questions answered, locked in)
+
+- **Q1 — Voyage: `voyageCode` vs. new `voyageName` → DECIDED: add a
+  genuinely new, separate `voyageName` field.** `voyageCode` is left
+  completely untouched (different field, different purpose). See §1.2.
+- **Q2 — Fallback display rule → DECIDED: always show both.** Every
+  display location in §1.5 renders a name slot next to the Number even
+  when no name has been set yet — e.g. a visible placeholder such as
+  `"(unnamed)"` or an empty/dash placeholder next to the Number, rather
+  than collapsing to Number-only until a name exists. Exact placeholder
+  copy (blank vs. "(unnamed)" vs. "—") is an implementation-time UI
+  detail, not a further open question — pick one and apply it
+  consistently across every one of the ~70 sites in §1.5.
+- **Q3 — Uniqueness → DECIDED: not unique.** Pure display label, no
+  index, duplicates allowed.
+- **Q4 — Invoice line-item snapshot → DECIDED: yes, add it.**
+  `Invoice.lineItems[]` gains `roundName`/`voyageName` snapshot fields,
+  captured at invoice-creation time going forward
+  (`invoice.service.js#buildLineItemSnapshot`/`getEligibleBookings`).
+  Historical invoices created before this ships will NOT retroactively
+  gain a name (same as every other snapshot field, per the existing,
+  deliberate Sprint 033 "snapshot, never re-read live" rule) — this is
+  an accepted, unavoidable consequence, not a gap to fix.
+- **Q5 — Invoice PDF → DECIDED: yes.** `invoicePdfGenerator.js`'s header/
+  line-item table (lines 138-139, 269-270) renders the name next to the
+  number too, consistent with Q4.
+- **Q6 — Searchability → DECIDED: yes.** `round.service.js#list()`'s
+  search `$or` clause (lines 36-41) gains a `{roundName: regex}` third
+  clause; the equivalent search in `voyage.service.js#list()` (if one
+  exists — verify at implementation time) gains `{voyageName: regex}`
+  similarly.
+- **Q7 — Required or optional → DECIDED: required, for new records
+  only.** See §1.3 for the exact validation-layer-only enforcement
+  (schema stays `default: null`, only `validateCreate` blocks a
+  nameless create going forward). Existing nameless Rounds/Voyages are
+  NOT retroactively invalidated or blocked from being edited.
+
+---
+
+# 2. POINT 2 — BOOKING MODULE UX FIXES
+
+## 2.1 Rename "Manual Booking" → "Estimated Booking"; reorder tabs first
+
+**Current state, confirmed from `frontend/src/modules/bookings/
+BookingList.jsx` lines 146-149:**
+```jsx
+{[
+  { key: 'detail', label: 'Operational Bookings' },
+  { key: 'manual', label: 'Manual Bookings' },
+].map(t => (
+```
+Operational renders first, Manual second; default active tab is
+`'detail'` (Operational) — `useState('detail')` at line 34.
+
+**Change:** swap the array order so the Manual/Estimated tab renders
+first and becomes the default active tab, AND relabel every user-facing
+occurrence of "Manual" to "Estimated" in this module. Every literal
+string found (all UI-facing text only — see §2.1.1 for what does NOT
+change):
+
+| File : Line | Current text | New text |
+|---|---|---|
+| `BookingList.jsx:148` | `label: 'Manual Bookings'` | `'Estimated Bookings'` |
+| `BookingList.jsx:132-137` | `title="New Manual Booking"`, button text `+ Manual` | `"New Estimated Booking"`, `+ Estimated` |
+| `BookingList.jsx:102` | toast `'Manual booking deleted'` | `'Estimated booking deleted'` |
+| `BookingList.jsx:305` | EmptyState title `"No manual bookings found"` + message | `"No estimated bookings found"` + message |
+| `BookingList.jsx:349` | `{n} manual booking(s)` pagination text | `{n} estimated booking(s)` |
+| `BookingList.jsx:382-383` | `title="Delete Manual Booking"`, confirm message | `"Delete Estimated Booking"` |
+| `ManualBookingDetail.jsx:74` | purple "Manual" pill badge | "Estimated" |
+| `ManualBookingDetail.jsx:46,56,179,199-200` | toasts, edit/delete titles | equivalent "Estimated" text |
+| `ManualBookingForm.jsx:131` | toasts `'Manual booking updated/created'` | `'Estimated booking updated/created'` |
+| `ManualBookingForm.jsx:434` | button `'Create Manual Booking'` | `'Create Estimated Booking'` |
+| `app/(dashboard)/bookings/new-manual/page.jsx:15` | `title="New Manual Booking"` | `"New Estimated Booking"` |
+| `app/(dashboard)/bookings/manual/[id]/page.jsx:32,39` | breadcrumb "Manual Bookings", not-found text | "Estimated Bookings" |
+
+Color-coding (purple for MB-numbers, teal for BK-numbers,
+`BookingList.jsx:226/318`) is unaffected — this is a label change only,
+colors stay as-is unless you want them changed too.
+
+### 2.1.1 What does NOT change — DECIDED: UI text only, confirmed
+
+Per this system's established pattern of keeping internal identifiers
+stable while only relabeling UI (same principle as `dg` field name vs.
+"Hazardous" UI label, documented in `claude.md`'s Sprint 026 section),
+**this rename is confirmed UI text only**:
+- The `ManualBooking` Mongoose model/collection name (`manualbookings`)
+  is UNCHANGED.
+- The `MB-000001` auto-number prefix is UNCHANGED.
+- Route paths (`/bookings/new-manual`, `/bookings/manual/:id`,
+  `?tab=manual` query param, `/bookings/manual/*` API prefix) are
+  UNCHANGED — only the visible label changes, not the technical key.
+- Backend module name (`manualBookings` reused under the `bookings` RBAC
+  module, per Sprint 023) is UNCHANGED.
+This is now locked in — implementation must not touch the model,
+collection, prefix, or route/query-param names under any circumstance.
+
+## 2.2 Booking Import — downloadable Excel template
+
+**Current state, confirmed:** no template-download feature exists
+anywhere today (`grep -rni "template"` across the entire `bookings` and
+`export` modules returns zero hits related to import). The only related
+UI is a static, read-only "Expected Excel Columns" reference grid already
+rendered in `BookingImport.jsx` lines 396-430 — informational only, not
+a downloadable file.
+
+**Change:** add a "Download Template" button to the Booking Import
+screen (`BookingImport.jsx`) that downloads a blank `.xlsx` file
+containing ONLY a header row with the column names the import parser
+actually recognizes, ready for an admin to fill in and re-upload.
+
+**Design constraint found during research — do NOT reuse the export
+module's `bookings` COLUMNS as-is.** `export.service.js`'s existing
+`buildExcelBuffer()` (lines 277-324, called with `rows=[]` would already
+produce a "headers only" file — a reusable existing mechanism) is a
+sound pattern to reuse, but its `COLUMNS.bookings` array (lines 129-151)
+is for EXPORT display, not import parsing, and the two header sets
+diverge:
+- Export's `Voyage Number`, `Agent Code`, `Agent Name`, `Total Freight`,
+  `Remarks`, `Status`, `Created At` columns have NO matching key in the
+  import's `EXCEL_COLUMN_MAP` (`BookingImport.jsx` lines 30-67) — if
+  present in an uploaded file they are silently ignored today.
+- Export's `VGM (kg)` header does not match any import alias key (only
+  bare `vgm`/`verified gross mass` are recognized) — a re-uploaded
+  export file's VGM column would silently fail to map.
+- The import map also recognizes several aliases the export COLUMNS
+  don't even have as separate columns (`Container Size`/`Size`/`Length`,
+  `Cntr No`, `Cntr Type`, `Port of Loading`/`Port of Discharge`).
+
+The template must therefore be built from a NEW, purpose-built column
+list matching the import's actual recognized primary headers (one
+canonical alias per field — e.g. `Container Number`, `Container Type`,
+`Container Size`, `POL`, `POD`, `Freight Rate`, `Shipper`, `Consignee`,
+`Carrier Name`, `Commodity`, `VGM`, `Hazardous`, `IMDG Code`, `Container
+Status`), NOT copied from `export.service.js#COLUMNS.bookings`.
+`Booking Number`/`Container Number` stay as the two identity columns
+(Container Number is the primary match key per `claude.md` Sprint 021).
+Agent and Round are page-level selections (not per-row columns, per the
+existing Import Settings panel), so they are NOT included in the
+template's columns — consistent with today's `EXCEL_COLUMN_MAP` which
+has no `agentId`/`roundId` key either.
+
+One template covers both `importType='booking'` and
+`importType='finalLoading'` — **DECIDED (§2.4 Q1): one universal
+template**, since `EXCEL_COLUMN_MAP` is not split by import type today
+(confirmed, single shared map).
+
+## 2.3 Import case-sensitivity fixes — full column-by-column audit
+
+Per explicit instruction, every column value the import parser touches
+was re-checked for case-sensitivity, not just the Hazardous/`dg` field.
+Result: two real bugs found (both already case-sensitive gaps), and
+three columns confirmed already correct — nothing else in the file
+performs case-sensitive comparison against a fixed value set. Free-text
+columns (`shipper`, `consignee`, `commodity`, `carrierName`, `remarks`,
+`imdgCode`) are excluded from this audit on purpose — they are stored
+verbatim, not matched against an enum, so "case-sensitivity" doesn't
+apply to them (forcibly upper/lower-casing a shipper or consignee name
+would corrupt real data, not fix a bug).
+
+**Already correct (confirmed, no change needed):**
+- `containerType`/`containerSize` (`ctMap`, `bookingImport.service.js`
+  lines 111-116/143-147) — already normalized via `.toUpperCase()`
+  before lookup.
+- `pol`/`pod` (`portMap`, lines 118-122/152-153) — already normalized
+  via `.toUpperCase()` before lookup.
+- `containerNumber` matching (`normCntr`, lines 19-20: `String(val).trim
+  ().toUpperCase()`) — already normalized before every lookup/dedup
+  comparison (lines 127, 141) and before the Round+Agent-scoped
+  create-vs-update decision. Verified directly against source: this is
+  NOT a bug, despite Mongoose's own `uppercase` schema transform on
+  `Booking.containerNumber` only applying on save, not on query filters
+  — `normCntr` already closes that gap independently, on the import side.
+
+**Confirmed bug, 3 sites — `containerStatus` matched with exact-case
+`Array.includes`, all in `backend/src/modules/bookings/
+bookingImport.service.js`:**
+- Line 41-43 (`validateRow`): `!['Full', 'Empty'].includes(row.
+  containerStatus)` — an Excel cell of `"full"`, `"FULL"`, or `"empty "`
+  fails validation with "Container Status must be Full or Empty" even
+  though the intent is clearly valid.
+- Line 306 (`saveImport` insert): same exact-case check, silently
+  downgrades non-matching values to `null`.
+- Line 362 (`saveImport` update): same pattern again.
+
+**Confirmed bug, 1 site — Hazardous/`dg` flag, case-sensitive
+`parseDg` helper, lines 11-12:**
+```js
+const parseDg = (val) =>
+  val === true || val === 'true' || val === 'yes' || val === '1' || val === 1;
+```
+Only matches the exact lowercase literals `'true'`/`'yes'`. Since the
+frontend's Excel parser (`BookingImport.jsx` lines 70-86) lowercases
+HEADER text but not CELL VALUES, an Excel "Hazardous" column containing
+`"Yes"`, `"YES"`, or `"True"` silently resolves to `dg: false` — a
+correctness bug (dangerous-goods cargo silently mismarked as safe),
+not just a UX inconvenience.
+
+**Fix (business intent, not code):** normalize both checks so any
+case variant of `Full`/`Empty` and `true`/`yes`/`false`/`no` is accepted
+— compare against a lowercased/trimmed copy of the input, the same
+pattern already correctly used for `containerType`/`containerSize`/
+`pol`/`pod`/`containerNumber` above — this sprint brings the two
+remaining columns up to the standard the rest of the file already
+follows, not a new pattern. **DECIDED (§2.4 Q3): case-insensitivity
+only, no new accepted synonyms** — the literal accepted value set stays
+`true`/`yes`/`1` and `false`/`no`/`0`/absent, just matched
+case-insensitively; `Y`/`N`/`X` or other shorthand are explicitly NOT
+being added.
+
+Column HEADER matching itself (`BookingImport.jsx` lines 70-86) is
+already correctly case-insensitive (`.trim().toLowerCase()` before
+lookup) — confirmed, no bug there, nothing to fix on the header side.
+
+## 2.4 Decisions (all questions answered, locked in)
+
+- **Q1 — One template or two → DECIDED: one universal template**,
+  covering both `importType='booking'` and `'finalLoading'`.
+- **Q2 — Rename scope → DECIDED: UI text only.** Model/collection/route/
+  prefix names stay `manual`/`ManualBooking`/`MB-`; only visible text
+  becomes "Estimated". See §2.1.1.
+- **Q3 — `dg`/Hazardous normalization scope → DECIDED: case-insensitivity
+  across every enum-like import column, not just `dg`.** This triggered
+  the full re-audit in §2.3: `containerType`/`containerSize`/`pol`/`pod`/
+  `containerNumber` were verified already case-normalized (no bug);
+  `containerStatus` and `dg` were the only two gaps, both now in scope.
+  No new value synonyms are being added — case-insensitivity only, same
+  accepted literal set as today.
+
+---
+
+# 3. ACCEPTANCE CRITERIA (both points)
+
+- [x] Q1-Q7 (Point 1) and Q1-Q3 (Point 2) above each have an explicit,
+      agreed answer — DONE, see §1.7 and §2.4.
+- [ ] `roundName`/`voyageName` (both new, separate fields per Q1) appear in
+      every location enumerated in §1.5, not a sampled subset.
+- [ ] Every export module COLUMNS/row-mapper pair in §1.4 is updated
+      together (column + mapper), never just one half.
+- [ ] "Estimated Booking" relabeling (§2.1) covers every string listed
+      in the table, and explicitly does NOT touch anything listed in
+      §2.1.1 unless Q2 says otherwise.
+- [ ] The downloadable template's columns are verified against the live
+      `EXCEL_COLUMN_MAP` in `BookingImport.jsx` at implementation time
+      (not copied from this document verbatim, in case the map has
+      changed), and are NOT copied from `export.service.js#COLUMNS.
+      bookings`.
+- [ ] `containerStatus` and `dg` parsing accept any case variant, verified
+      with a mixed-case test file (e.g. `"full"`, `"EMPTY"`, `"Yes"`,
+      `"TRUE"`) against both `previewImport` and `saveImport`.
+- [ ] No section of this document has been implemented yet — this is a
+      planning document only, per this sprint's explicit process (gather
+      points → analyze → plan → decide open questions → wait for final
+      go-ahead to implement).
+
+---
+
+All open questions in §1.7 and §2.4 are now answered and locked in. This
+document is still planning-only — no code was written or modified, no
+schema was changed, no endpoint was created. Implementation begins only
+once you give the explicit go-ahead.

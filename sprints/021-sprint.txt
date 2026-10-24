@@ -1,0 +1,478 @@
+================================================================================
+  SPRINT 021 - UI Fixes, Vessel Particulars Expansion & Booking Module Overhaul
+  Date: 2026-07-19
+================================================================================
+
+SPRINT SUMMARY:
+  This sprint covers four distinct work streams delivered in a single session:
+    1. Global UI fixes — form width, toast z-index, modal overlay
+    2. Vessel module expansion — 13 new particulars & bunker capacity fields
+    3. Booking manual form — 5 new cargo fields incl. containerNumber as PK
+    4. Booking Excel import — containerNumber as primary match key, new columns,
+       fix critical containerNumber→commodity mapping bug
+
+  All phases complete. No pending items.
+
+================================================================================
+  PHASES OVERVIEW
+================================================================================
+
+  Phase 1 - Service Route Legs Fix             (BUG-001)
+  Phase 2 - Global UI Fixes                    (UI-001, UI-002, UI-003)
+  Phase 3 - Vessel Particulars Expansion       (VESSEL-001, VESSEL-002)
+  Phase 4 - Booking Form New Fields            (BKG-001)
+  Phase 5 - Booking Import Overhaul            (BKG-002, BKG-003)
+
+================================================================================
+  PHASE 1 - Service Route Legs Bug Fix
+  Status: DONE
+================================================================================
+
+  BUG-001: Route legs load with empty dropdowns (country, city, port, terminal)
+  Root cause (two bugs combined):
+    1. React Query v5 silently removed the onSuccess callback from useQuery.
+       The route data was fetched successfully but the onSuccess handler never
+       fired, so the legs state was never populated from the loaded data.
+    2. Backend returns populated objects ({ _id, name, code }) for countryId,
+       cityId, portId, terminalId, agentId. The leg state must extract the _id
+       from the object before storing it.
+
+  File changed:
+    frontend/src/modules/services/RouteEditor.jsx
+
+  Change:
+    - Removed onSuccess from useQuery (RQ v5 no longer supports it)
+    - Destructured data as routeData from useQuery return value
+    - Added useEffect watching routeData:
+        useEffect(() => {
+          if (routeData?.legs?.length >= 2) {
+            setLegs(routeData.legs.map(l => ({
+              _key:       l._id || Math.random().toString(36).slice(2),
+              countryId:  (typeof l.countryId  === 'object' ? l.countryId?._id  : l.countryId)  || '',
+              cityId:     (typeof l.cityId     === 'object' ? l.cityId?._id     : l.cityId)     || '',
+              portId:     (typeof l.portId     === 'object' ? l.portId?._id     : l.portId)     || '',
+              terminalId: (typeof l.terminalId === 'object' ? l.terminalId?._id : l.terminalId) || '',
+              agentId:    (typeof l.agentId    === 'object' ? l.agentId?._id    : l.agentId)    || '',
+            })));
+          }
+        }, [routeData]);
+    - typeof === 'object' guard handles both populated object and plain string ID
+    - Cascading dropdowns (city list depends on countryId, etc.) now correctly
+      receive the resolved IDs and their dependent queries fire properly
+
+================================================================================
+  PHASE 2 - Global UI Fixes
+  Status: DONE
+================================================================================
+
+  UI-001: Form content renders left-aligned with large empty right half
+  Problem:
+    ExpenseForm, InvoiceForm — max-w-2xl wrapper on the <form> element
+    VesselForm, AgentForm, ExportPanel — max-w-3xl wrapper on the outer <div>
+    All of these were constraining content to roughly half the available width.
+
+  Files changed:
+    frontend/src/modules/expenses/ExpenseForm.jsx     removed max-w-2xl from <form>
+    frontend/src/modules/invoices/InvoiceForm.jsx     removed max-w-2xl from <form>
+    frontend/src/modules/vessels/VesselForm.jsx       removed max-w-3xl from outer <div>
+    frontend/src/modules/agents/AgentForm.jsx         removed max-w-3xl from outer <div>
+    frontend/src/modules/export/ExportPanel.jsx       removed max-w-3xl from outer <div>
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  UI-002: Toast messages hidden behind modal overlays
+  Problem:
+    Modal.jsx uses z-index: 9999 for its backdrop and panel.
+    react-hot-toast default container z-index is lower than 9999.
+    Any toast triggered while a confirm/edit modal is open is rendered underneath
+    and invisible to the user.
+
+  File changed:
+    frontend/src/components/Providers.jsx
+
+  Change:
+    <Toaster
+      position="top-right"
+      toastOptions={{ duration: 4000, style: { zIndex: 99999 } }}
+      containerStyle={{ zIndex: 99999 }}
+    />
+    Both containerStyle and toastOptions.style set to 99999 so the container
+    div and individual toast elements both clear the modal stack.
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  UI-003: Audit log before/after data shown as raw JSON
+  Problem:
+    AuditLogDetail ValueDisplay rendered all values via JSON.stringify().
+    Object fields (populated refs), arrays, booleans, dates all showed as
+    raw JSON strings — unreadable for the admin.
+
+  File changed:
+    frontend/src/modules/auditLogs/AuditLogDetail.jsx
+
+  Change:
+    Added renderValue(val) function that handles each type:
+      null/undefined   -> em dash (—)
+      boolean          -> Yes / No
+      number           -> locale-formatted (e.g. 14,000)
+      ISO date string  -> "15 Jul 2026, 09:32"
+      plain string     -> shown as-is
+      array            -> bulleted list; object items flattened to "key: val · key: val"
+      object (ref)     -> meaningful fields joined with " · ", strips _id/__v/timestamps
+    Added HIDDEN set that filters __v, password, resetToken, inviteToken from display.
+    Changed field row padding from py-1.5 to py-2 and gap from gap-2 to gap-3
+    for improved readability.
+
+================================================================================
+  PHASE 3 - Vessel Particulars & Bunker Capacity Expansion
+  Status: DONE
+================================================================================
+
+  VESSEL-001: Add 13 new fields to vessel data model
+  Business need:
+    Client needs to store full vessel particulars matching standard ship specs
+    used in shipping operations: dimensions, tonnage figures, Suez Canal figures,
+    bunker tank capacities, and manager/operator name.
+
+  Backend files changed:
+    backend/src/modules/vessels/vessel.model.js
+    backend/src/modules/vessels/vessel.validation.js
+
+  New model fields (all optional, default null):
+    -- Particulars --
+    manager              String    — vessel manager / operator company
+    loa                  Number    — Length Overall in metres
+    beam                 Number    — Beam (breadth) in metres
+    summerDraft          Number    — Summer Draft in metres
+    grossTonnage         Number    — Gross Tonnage (GT)
+    netTonnage           Number    — Net Tonnage (NT)
+    suezGT               Number    — Suez Canal Gross Tonnage
+    suezNT               Number    — Suez Canal Net Tonnage
+    -- Bunker Capacities (metric tonnes) --
+    totalBunkerCapacity  Number    — Total bunker tank capacity
+    vlsfoCapacity        Number    — VLSFO capacity in MT
+    mdoCapacity          Number    — MDO capacity in MT
+    fwCapacity           Number    — Fresh Water Tank capacity in MT
+
+  Validation (both validateCreate and validateUpdate):
+    All 12 numeric fields: optional, isFloat({ min: 0 })
+    manager: optional, trim()
+    containerStatus (vessels): not applicable here — see BKG-001
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  VESSEL-002: Update VesselForm and VesselDetail to use new fields
+
+  Frontend files changed:
+    frontend/src/modules/vessels/VesselForm.jsx
+    frontend/src/modules/vessels/VesselDetail.jsx
+
+  VesselForm.jsx changes:
+    - All 12 new fields added to reset() defaultValues mapping
+    - "Vessel Specifications" section: removed builtYear (moved to Particulars),
+      now only holds Capacity (TEU) and DWT — 2-column grid
+    - NEW "Vessel Particulars" section added after Specifications:
+        Manager/Operator  — full-width text input
+        4-column grid:    LOA (m), Beam (m), Summer Draft (m), Built Year,
+                          Gross Tonnage, Net Tonnage, Suez GT, Suez NT
+    - NEW "Bunker Capacities (MT)" section added after Particulars:
+        4-column grid:    Total Bunker Cap., VLSFO (MT), MDO (MT), F.W. Tank (MT)
+        step=0.1 for precision
+    - Removed unused Input and Select imports (were never used — just present)
+
+  VesselDetail.jsx changes:
+    "Vessel Particular" panel redesigned with three sub-sections separated by
+    thin dividers:
+
+    1. Identity & Ownership grid (3-col):
+       Vessel Code, Vessel Name, IMO Number, Flag, Call Sign,
+       Ownership, Owner, Manager, Status, Ownership Notes
+
+    2. Dimensions & Tonnage sub-header + grid (4-col):
+       Capacity, DWT, Built Year, LOA, Beam, Summer Draft,
+       Gross Tonnage, Net Tonnage, Suez GT, Suez NT
+       Units appended inline: "14,000 TEU", "165,000 t", "299.95 m"
+
+    3. Bunker Capacities sub-header + card grid (4-col, conditional):
+       Only rendered when at least one bunker field is non-null.
+       Color-coded cards:
+         Total Bunker  — gray bg
+         VLSFO         — blue bg
+         MDO           — amber bg
+         F.W. Tank     — cyan bg
+       Each card shows value + "MT" label below it.
+
+    Notes section remains at bottom, separated by a border-t divider.
+
+================================================================================
+  PHASE 4 - Booking Form New Cargo Fields
+  Status: DONE
+================================================================================
+
+  BKG-001: Add containerNumber (required PK), vgm, dg/dgPercent, containerStatus
+  Business need:
+    Each booking represents one physical container. containerNumber is the unique
+    physical identifier for that container and is used as the primary reference
+    key for matching and updating bookings via import. Without it, the system
+    cannot reliably identify which booking to update in Final Loading.
+
+  Backend files changed:
+    backend/src/modules/bookings/booking.model.js
+    backend/src/modules/bookings/booking.validation.js
+
+  New model fields:
+    containerNumber  String    REQUIRED, uppercase, indexed — e.g. MSCU1234567
+    vgm              Number    optional, min 0 — Verified Gross Mass in kg
+    dg               Boolean   default false — Dangerous Goods flag
+    dgPercent        Number    optional, 0–100 — DG percentage (only meaningful when dg=true)
+    containerStatus  String    enum ['Full', 'Empty'], default null — container load state
+
+  containerNumber design decisions:
+    - required: true at model level — new bookings cannot be created without it
+    - index: true at model level — needed for fast containerNumber lookups in import
+    - enum on containerStatus strictly limits values to Full and Empty only;
+      Mongoose rejects any other string at the DB level
+
+  Validation changes:
+    validateCreate: containerNumber -> notEmpty().withMessage('Container number is required')
+    validateCreate: containerStatus -> isIn(['Full','Empty'])
+    validateUpdate: containerNumber -> optional (cannot change PK after creation)
+    validateUpdate: containerStatus -> isIn(['Full','Empty'])
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  Frontend file changed:
+    frontend/src/modules/bookings/BookingForm.jsx
+
+  defaultValues additions:
+    containerNumber: item?.containerNumber || ''
+    vgm:             item?.vgm ?? ''
+    dg:              item?.dg ?? false
+    dgPercent:       item?.dgPercent ?? ''
+    containerStatus: item?.containerStatus || ''
+
+  watchedDg = watch('dg') added to react to toggle changes.
+
+  New UI in "Cargo & Freight" SectionCard (added after Commodity):
+
+    Container Number (required)
+      - Text input with required rule, red border on error
+      - className includes "uppercase" so user sees uppercased as they type
+      - Error message: "Container number is required"
+
+    VGM (kg) + Container Status — 2-column grid
+      - VGM: number input, min 0, step 0.01, placeholder "Verified Gross Mass in kg"
+      - Container Status: select dropdown with options: [blank], Full, Empty
+
+    Dangerous Goods (DG) — toggle card
+      - White card with label + description on left, toggle button on right
+      - Toggle: red (active) / gray (inactive), slides with translate-x transition
+      - When toggled ON: DG Percentage input appears below
+          number input, 0–100, step 1, max-w-[160px], red % label beside it
+      - When toggled OFF: dgPercent field is cleared via setValue('dgPercent','')
+      - Entire card + toggle disabled when isLocked (Final Loading or Cancelled)
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  Frontend file changed:
+    frontend/src/modules/bookings/BookingDetailCard.jsx
+
+  Info grid additions (after Container Type row):
+    Container No    — mono font display
+    Container Status
+    VGM             — shown as "X,XXX kg" with locale formatting
+
+  DG field (after Freight Rate):
+    dg=true:  red "DG" pill + dgPercent value in red if set
+    dg=false: plain gray "No" text
+    Rendered as a custom <div> (not InfoRow) to accommodate the pill styling
+
+================================================================================
+  PHASE 5 - Booking Excel Import Overhaul
+  Status: DONE
+================================================================================
+
+  BKG-002: Fix critical containerNumber→commodity bug + switch match key
+
+  Critical bug fixed:
+    In saveImport() insertMany path, the doc builder had:
+      commodity: r.containerNumber || null
+    This was storing the container number in the commodity field and leaving
+    containerNumber null on every imported booking. Bug existed since the field
+    was first introduced. Fixed to:
+      commodity:       r.commodity       || null
+      containerNumber: r.containerNumber (always set — required field)
+
+  Primary match key change:
+    BEFORE: import matched existing bookings by bookingNumber
+    AFTER:  import matches existing bookings by containerNumber + voyageId
+
+    Rationale: containerNumber is the physical identifier of the container.
+    bookingNumber is a system-generated reference number that may not even
+    be known at import time. Using containerNumber means:
+      - Booking mode: flags duplicate if same containerNumber already exists
+        on this voyage (prevents double-booking the same box)
+      - Final Loading mode: finds the existing booking for this container
+        to update it to Final Loading status
+      - Final Loading reconciliation: cancels bookings on this voyage
+        whose containerNumber is NOT present in the manifest
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  BKG-003: Import service full rewrite + new columns
+
+  Backend file rewritten:
+    backend/src/modules/bookings/bookingImport.service.js
+
+  Structural changes:
+    - Added parseDg(val) helper: accepts true/false/"true"/"yes"/"1"/1
+      so Excel columns with "yes"/"no" values work correctly
+    - Added parseNum(val) helper: safely coerces string Excel values to
+      Number or null, guarding against empty strings and NaN
+    - Added normCntr(val) helper: trims and uppercases container number
+    - validateRow() now requires containerNumber and validates
+      containerStatus is empty or one of ['Full','Empty']
+
+  previewImport() changes:
+    - existingBookings query now uses:
+        { containerNumber: { $in: incomingCntrs }, voyageId, isDeleted: false }
+      instead of bookingNumber lookup
+    - existingMap keyed by containerNumber instead of bookingNumber
+    - isDuplicate (booking mode): containerNumber exists on this voyage
+    - isUpdate (finalLoading mode): containerNumber exists on this voyage
+    - Preview row now includes all new fields:
+        commodity, vgm, dg, dgPercent, containerStatus
+    - Exposes _existingBookingNumber on update rows so bookingNumber is
+      preserved when updating
+
+  saveImport() changes:
+    INSERT path:
+      - bookingNumber auto-generated if blank (Excel column optional)
+      - containerNumber: always written, uppercased (required)
+      - commodity, vgm, dg, dgPercent, containerStatus all written
+      - dgPercent nulled when dgFlag is false
+      - containerStatus validated against ['Full','Empty'] before write
+      - failed/created arrays now track containerNumber (more meaningful)
+
+    UPDATE path (bulkWrite):
+      - Filter by _id (found via containerNumber lookup)
+      - containerNumber itself NOT updated on update rows (it IS the key)
+      - dg/dgPercent always written on updates
+      - commodity, shipper, consignee, carrierName, containerStatus
+        written only if present in row data
+
+    Final Loading reconciliation:
+      - savedContainerNumbers set replaces savedBookingNumbers
+      - Mark Final Loading: { containerNumber: { $in: [...] }, voyageId }
+      - Cancel: { voyageId, status: { $nin: ['Cancelled'] },
+                  containerNumber: { $nin: [...] } }
+      - Excludes already-Cancelled from the cancel sweep to avoid
+        double-counting in the result array
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+  Frontend file changed:
+    frontend/src/modules/bookings/BookingImport.jsx
+
+  EXCEL_COLUMN_MAP additions:
+    'commodity'          -> 'commodity'
+    'vgm'                -> 'vgm'
+    'verified gross mass'-> 'vgm'
+    'dg'                 -> 'dg'
+    'dangerous goods'    -> 'dg'
+    'dg %'               -> 'dgPercent'
+    'dg percent'         -> 'dgPercent'
+    'dg percentage'      -> 'dgPercent'
+    'container status'   -> 'containerStatus'
+    'cntr status'        -> 'containerStatus'
+
+  Re-validate payload: now passes all new fields on re-validate:
+    commodity, vgm, dg, dgPercent, containerStatus
+
+  Column guide (Expected Excel Columns card):
+    Container Number  — moved to FIRST position, marked *, note: "REQUIRED — primary match key"
+    Container Status  — note updated to "Full or Empty only"
+    Booking Number    — moved to optional section, note: "Optional — auto-generated if blank"
+    New entries:      Commodity, VGM, DG, DG %
+    Required columns marked with red * in card header
+
+  Import type description banners updated:
+    Booking mode:      "Each row is matched by Container Number..."
+    Final Loading mode: "Matches rows by Container Number — existing bookings with the
+                         same container number on this voyage are updated..."
+
+  Preview table headers:
+    Renamed: "Container No" -> "Cntr No *"  (asterisk signals required)
+    Renamed: "Status"       -> "Cntr Status" (was duplicating the row status column)
+    New columns added: Commodity, VGM, DG, DG%
+    Container Number cell: red border on missing value error
+    Container Status cell:  red border on invalid value error
+    Container Type error check: now matches both "Container type" and "Container Type"
+
+================================================================================
+  COMPLETE FILE CHANGE LIST
+================================================================================
+
+  BACKEND:
+    backend/src/modules/services/             (RouteEditor handled frontend-side)
+    backend/src/modules/vessels/vessel.model.js           Phase 3 — new fields
+    backend/src/modules/vessels/vessel.validation.js       Phase 3 — new validators
+    backend/src/modules/bookings/booking.model.js          Phase 4 — containerNumber PK,
+                                                                     vgm, dg, dgPercent,
+                                                                     containerStatus enum
+    backend/src/modules/bookings/booking.validation.js     Phase 4 — containerNumber required,
+                                                                     containerStatus enum
+    backend/src/modules/bookings/bookingImport.service.js  Phase 5 — full rewrite:
+                                                                     containerNumber as match key,
+                                                                     bug fix, new fields,
+                                                                     parseDg/parseNum helpers
+
+  FRONTEND:
+    frontend/src/modules/services/RouteEditor.jsx          Phase 1 — onSuccess->useEffect fix
+    frontend/src/modules/expenses/ExpenseForm.jsx           Phase 2 — removed max-w-2xl
+    frontend/src/modules/invoices/InvoiceForm.jsx           Phase 2 — removed max-w-2xl
+    frontend/src/modules/vessels/VesselForm.jsx             Phase 2 + Phase 3
+    frontend/src/modules/agents/AgentForm.jsx               Phase 2 — removed max-w-3xl
+    frontend/src/modules/export/ExportPanel.jsx             Phase 2 — removed max-w-3xl
+    frontend/src/modules/auditLogs/AuditLogDetail.jsx       Phase 2 — renderValue() function
+    frontend/src/modules/vessels/VesselDetail.jsx           Phase 3 — particulars panel redesign
+    frontend/src/modules/bookings/BookingForm.jsx           Phase 4 — 5 new fields + DG toggle
+    frontend/src/modules/bookings/BookingDetailCard.jsx     Phase 4 — display new fields
+    frontend/src/modules/bookings/BookingImport.jsx         Phase 5 — new columns, match key,
+                                                                       column guide, table headers
+    frontend/src/components/Providers.jsx                   Phase 2 — Toaster z-index fix
+
+================================================================================
+  KEY DECISIONS & RULES ESTABLISHED IN THIS SPRINT
+================================================================================
+
+  1. containerNumber is the primary physical identifier for a booking.
+     It is REQUIRED on create, indexed on the model, and used as the sole
+     match key for both booking dedup and Final Loading reconciliation.
+     bookingNumber remains the system-generated display reference but is
+     NOT the match key for import operations.
+
+  2. containerStatus is strictly Full or Empty — no other values accepted
+     at model level (Mongoose enum) or API level (express-validator isIn).
+     The previous free-text field has been locked down.
+
+  3. React Query v5 has NO onSuccess on useQuery. Any existing code using
+     onSuccess must be migrated to useEffect watching the query data.
+     This is a permanent rule for all future RQ usage in this project.
+
+  4. dgPercent must be nulled when dg=false. The server never stores a DG
+     percentage for a non-DG shipment. Frontend clears it on toggle-off;
+     backend import service sets dgPercent: dgFlag ? parseNum(...) : null.
+
+  5. Audit log ValueDisplay must never use JSON.stringify. All values are
+     rendered via the renderValue() function which produces human-readable
+     plain text for all types. This is now the standard for any future
+     before/after display.
+
+  6. Toaster containerStyle zIndex must always exceed Modal zIndex.
+     Modal is at 9999; Toaster containerStyle is set to 99999 globally
+     in Providers.jsx. Never hardcode a lower value in individual toast calls.
+
+================================================================================
+  STATUS: ALL PHASES COMPLETE — SPRINT 021 DONE
+================================================================================

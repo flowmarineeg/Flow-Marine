@@ -11,7 +11,7 @@ import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
 
-const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'import', 'export', 'override', 'hidden'];
+const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'import', 'export', 'override', 'issue', 'cancel', 'record', 'approve', 'offset', 'commission', 'close', 'closeOverride', 'reopen', 'carryForward', 'useReserve', 'manage', 'hidden'];
 
 const ACTION_COLORS = {
   view:   { active: '#DBEAFE', text: '#1E40AF' },
@@ -27,6 +27,18 @@ const ACTION_COLORS = {
   import: { active: '#E0E7FF', text: '#3730A3' },
   export: { active: '#E0F2FE', text: '#075985' },
   override: { active: '#FCE7F3', text: '#9D174D' },
+  issue:  { active: '#DCFCE7', text: '#166534' }, // Sprint051: issue invoices / notes
+  cancel: { active: '#FEE2E2', text: '#991B1B' }, // Sprint051: cancel issued invoice
+  record: { active: '#CFFAFE', text: '#155E75' }, // Sprint051: record / void settlements
+  approve:{ active: '#FEF9C3', text: '#854D0E' }, // Sprint052: approve / post an FDA expense
+  offset: { active: '#EDE9FE', text: '#5B21B6' }, // Sprint052: agent netting, advances, settlement statements
+  commission: { active: '#FDF2F8', text: '#831843' }, // audit H7: cancel / adjust agent commission
+  close:  { active: '#FEE2E2', text: '#7F1D1D' }, // Sprint053: close a Round
+  closeOverride: { active: '#FFE4E6', text: '#9F1239' }, // Sprint053: close with open PDAs + reason
+  reopen: { active: '#E0F2FE', text: '#0C4A6E' }, // Sprint053: reopen a closed Round
+  carryForward: { active: '#ECFCCB', text: '#3F6212' }, // Sprint053: hold profit in the JV reserve
+  useReserve: { active: '#F3E8FF', text: '#6B21A8' }, // Sprint053: fund an expense from the reserve
+  manage: { active: '#FFEDD5', text: '#9A3412' }, // Sprint050: partners/ledger administration
   hidden: { active: '#F3E8FF', text: '#6B21A8' },
 };
 
@@ -36,6 +48,7 @@ const MODULE_LABELS = {
   services: 'Services', routes: 'Routes', rounds: 'Rounds', voyages: 'Voyages',
   bookings: 'Bookings', expenses: 'Expenses', invoices: 'Invoices',
   tracking: 'Tracking', reports: 'Reports', export: 'Export', auditLogs: 'Audit Logs',
+  partners: 'Partners', ledger: 'Ledger',
 };
 
 const MODULE_GROUPS = {
@@ -43,6 +56,7 @@ const MODULE_GROUPS = {
   'Operations': ['rounds', 'voyages', 'bookings', 'expenses', 'invoices', 'tracking'],
   'Masters':    ['vessels', 'agents', 'locations', 'containerTypes', 'expenseTypes', 'services', 'routes'],
   'Analytics':  ['reports', 'export'],
+  'Accounting (V2)': ['partners', 'ledger'],
 };
 
 export default function PermissionMatrix({ roleId }) {
@@ -88,7 +102,7 @@ export default function PermissionMatrix({ roleId }) {
   const setAll = (module, value) => {
     // Sprint046: preserve `override` — it's a deliberate, separately-granted
     // escalation, not part of the standard CRUD set this quick-set toggles.
-    setPerms(prev => ({ ...prev, [module]: { ...prev[module], view: value, read: value, create: value, update: value, delete: value, hidden: false, import: prev[module]?.import || false, export: prev[module]?.export || false, override: prev[module]?.override || false } }));
+    setPerms(prev => ({ ...prev, [module]: { ...prev[module], view: value, read: value, create: value, update: value, delete: value, hidden: false, import: prev[module]?.import || false, export: prev[module]?.export || false, override: prev[module]?.override || false, manage: prev[module]?.manage || false } }));
   };
 
   const isSystem = roleData?.isSystem;

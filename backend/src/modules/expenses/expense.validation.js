@@ -22,6 +22,9 @@ const validateCreate = [
   // Sprint 036 — Port Expense scope. No `scope` field exists; scope is
   // always inferred from roundId/voyageId/portId (expense.service.js#deriveScope).
   body('portId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  body('kind').optional({ checkFalsy: true }).isIn(['PDA', 'FDA']),
+  body('paidBy').optional({ nullable: true, checkFalsy: true }).isIn(['PortAgent', 'Company', 'Partner']),
+  body('paidByPartnerId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   handle,
 ];
 
@@ -34,6 +37,9 @@ const validateUpdate = [
   body('roundId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   body('voyageId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   body('portId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  body('kind').optional({ checkFalsy: true }).isIn(['PDA', 'FDA']),
+  body('paidBy').optional({ nullable: true, checkFalsy: true }).isIn(['PortAgent', 'Company', 'Partner']),
+  body('paidByPartnerId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
   handle,
 ];
 

@@ -14,6 +14,18 @@ const actionSchema = new mongoose.Schema(
     view:   { type: Boolean, default: false },
     hidden: { type: Boolean, default: false },
     override: { type: Boolean, default: false }, // Sprint046: invoice-only, full manual override
+    issue:    { type: Boolean, default: false }, // Sprint051 V2: issue invoices / credit+debit notes
+    cancel:   { type: Boolean, default: false }, // Sprint051 V2: cancel an issued invoice
+    record:   { type: Boolean, default: false }, // Sprint051 V2: record / void settlements
+    close:        { type: Boolean, default: false }, // Sprint053: round.close
+    closeOverride:{ type: Boolean, default: false }, // Sprint053: round.close.override (close with open PDAs + reason)
+    reopen:       { type: Boolean, default: false }, // Sprint053: round.reopen
+    carryForward: { type: Boolean, default: false }, // Sprint053: round.carry_forward
+    useReserve:   { type: Boolean, default: false }, // Sprint053: reserve.use
+    commission: { type: Boolean, default: false }, // Sprint053 fix H7: cancel / adjust agent commission (commission.manage)
+    approve:  { type: Boolean, default: false }, // Sprint052 V2: approve/post an FDA expense (expense.approve_fda)
+    offset:   { type: Boolean, default: false }, // Sprint052 V2: netting, pay agent, advances, settlement statements (agent.offset)
+    manage:   { type: Boolean, default: false }, // Sprint050 V2: partners/ledger/settings administration
   },
   { _id: false }
 );

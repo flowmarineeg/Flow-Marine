@@ -1,5 +1,6 @@
 'use client';
 
+import { fromMinor } from '@/utils/money';
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Chart, registerables } from 'chart.js';
@@ -77,6 +78,7 @@ export default function RoundPnlReport() {
   // Sprint 035 — optional Voyage narrows the report to voyage scope;
   // cascades from Round, same convention as BookingRevenueDetailsReport.jsx.
   const [voyageId, setVoyageId] = useState('');
+  const [basis, setBasis] = useState(''); // Sprint 053: '' = legacy only, 'accrual' | 'cash' = ledger P&L
 
   // ── Rounds dropdown ────────────────────────────────────────────────────────
   const { data: roundsData } = useQuery({
@@ -96,8 +98,8 @@ export default function RoundPnlReport() {
 
   // ── Report data ────────────────────────────────────────────────────────────
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['report-round-pnl', roundId, voyageId],
-    queryFn:  () => reportsService.getRoundPnL({ roundId, voyageId: voyageId || undefined }).then(r => r.data.data),
+    queryKey: ['report-round-pnl', roundId, voyageId, basis],
+    queryFn:  () => reportsService.getRoundPnL({ roundId, voyageId: voyageId || undefined, basis: basis || undefined }).then(r => r.data.data),
     enabled:  !!roundId,
   });
 
@@ -144,6 +146,15 @@ export default function RoundPnlReport() {
               ))}
             </select>
           </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Ledger basis</label>
+            <select value={basis} onChange={e => setBasis(e.target.value)}
+              className="text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white cursor-pointer focus:outline-none">
+              <option value="">Off (operational report)</option>
+              <option value="accrual">Accrual (ledger)</option>
+              <option value="cash">Cash (ledger)</option>
+            </select>
+          </div>
           {isRunning && (
             <div className="flex items-center gap-1.5 text-xs text-gray-400 self-end pb-2">
               <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
@@ -168,6 +179,18 @@ export default function RoundPnlReport() {
         </div>
       )}
     >
+      {/* Sprint 053 S6 - ledger P&L (only when the accounting flag is on and a basis is chosen) */}
+      {data?.ledgerPnl && (
+        <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Ledger P&amp;L - {data.ledgerPnl.basis} ({data.ledgerPnl.currency})</p>
+          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', fontSize: 13 }}>
+            <span>Revenue <b>{fromMinor(data.ledgerPnl.revenueMinor, 'USD')}</b></span>
+            <span>Expenses <b>{fromMinor(data.ledgerPnl.expenseMinor, 'USD')}</b></span>
+            <span>Profit <b>{fromMinor(data.ledgerPnl.profitMinor, 'USD')}</b></span>
+          </div>
+        </div>
+      )}
+
       {/* Empty / select prompt */}
       {!roundId && (
         <div className="card flex flex-col items-center justify-center py-16 text-gray-400 gap-3">

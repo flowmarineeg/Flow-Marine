@@ -10,7 +10,6 @@ const { validateCreate, validateUpdate } = require('./agent.validation');
 
 router.use(auth);
 router.get('/',       rbac('agents'), ctrl.list);
-router.get('/:id/financial-account', rbac('agents'), ctrl.getFinancialAccount); // Sprint 033
 router.get('/:id',    rbac('agents'), ctrl.getById);
 router.post('/',      rbac('agents'), audit('agents'), validateCreate, ctrl.create);
 router.put('/:id',    rbac('agents'), audit('agents'), validateUpdate, ctrl.update);

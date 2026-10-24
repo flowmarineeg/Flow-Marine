@@ -1,0 +1,518 @@
+================================================================================
+  SPRINT 020 - Production Hardening and Performance
+  Based on Enterprise Code Review Audit findings
+  Date: 2026-07-15
+================================================================================
+
+OWNER NOTES (applied to this plan):
+  1. Seed: never auto-run from server - keep manual via npm run seed only
+  2. JWT cookies: secure = true in production only, SameSite = strict in dev / none in prod
+  3. Rate limiting: auth routes only (login, forgot-password, reset-password)
+  4. File uploads: add Sharp for image compression; PDFs pass through unchanged
+  5. Testing: SKIP entirely for now
+
+================================================================================
+  PHASES OVERVIEW
+================================================================================
+
+  Phase 1 - Critical Security and Startup Fixes     (SEC-001, ARCH-001, CFG-001)
+  Phase 2 - Auth Hardening: JWT Cookies + Rate Limit (SEC-002, SEC-003, SEC-004)
+  Phase 3 - Backend Performance                     (PERF-001,002,003,009,010, ARCH-002)
+  Phase 4 - Data Operations Performance             (PERF-004, PERF-005, PERF-011, DB-001)
+  Phase 5 - Frontend Foundation                     (FE-001 to 006, PERF-006,007,008,013)
+  Phase 6 - Security Polish                         (SEC-005,006,007,008)
+  Phase 7 - Observability and DevOps                (CQ-001, DOC-001, DEVOPS-001)
+
+================================================================================
+  PHASE 1 - Critical Security and Startup Fixes
+  Estimate: 5h
+================================================================================
+
+  TASK 1.1 - Fix server startup order (ARCH-001)
+  File: backend/src/server.js
+  Problem:
+    connectDB() is not awaited before app.listen(). Server accepts
+    requests while Mongo may still be connecting or about to fail.
+  Change:
+    - Wrap entire startup in async IIFE:
+        (async () => {
+          await connectDB();
+          // NOTE: seed() is NOT called here per owner note #1
+          app.listen(PORT, () => logger.info(...));
+        })();
+    - Remove the unused `const seed = require('./config/seed')` import
+    - Add SIGTERM + SIGINT graceful shutdown handlers
+
+  TASK 1.2 - Authenticated file serving for uploads (SEC-001)
+  Problem:
+    express.static('/uploads') serves all expense receipts publicly with
+    zero authentication. Anyone who knows the filename can download it.
+  Files changed:
+    - backend/src/server.js                          remove static middleware
+    - backend/src/modules/expenses/expense.routes.js add GET /:id/attachment
+    - backend/src/modules/expenses/expense.controller.js add getAttachment
+    - backend/src/modules/expenses/expense.service.js   add getAttachmentPath
+  Change:
+    - Remove: app.use('/uploads', express.static('src/uploads'))
+    - New route: GET /api/v1/expenses/:id/attachment
+        . auth middleware required (must be logged in)
+        . rbac('expenses') - must have read permission on expenses
+        . Load expense record, verify not deleted
+        . Verify file exists on disk
+        . Stream file via res.sendFile(absolutePath)
+        . Set Content-Disposition header so browser names file correctly
+
+  TASK 1.3 - Sharp image compression for uploads (Owner note #4)
+  File: backend/src/middleware/upload.js
+  Dependency: add sharp to backend/package.json
+  Problem:
+    No image optimization. Large JPEGs/PNGs stored as-is. Can bloat storage
+    and slow down serving.
+  Change:
+    - Keep multer diskStorage unchanged for destination and filename logic
+    - Export new compressUpload middleware that wraps multer:
+        1. Run multer (save raw file to disk)
+        2. If mimetype is image/jpeg or image/png, run Sharp:
+             - Resize to max 1920px width, preserve aspect ratio, no upscale
+             - JPEG: quality 80, progressive: true
+             - PNG: compressionLevel 8
+             - Overwrite same file path
+        3. If mimetype is application/pdf: skip Sharp, pass through unchanged
+        4. Update req.file.size to compressed size
+    - Replace uploadExpense export with compressUpload
+    - Update expense.routes.js to use compressUpload instead of uploadExpense
+
+================================================================================
+  PHASE 2 - Auth Hardening: JWT Cookies + Rate Limiting
+  Estimate: 10h
+================================================================================
+
+  Context:
+    Current: login returns { token, user } and client stores token in localStorage
+    Target:  login sets httpOnly cookie, client only tracks user in state/localStorage
+    Owner note #2: secure=true only in production, SameSite=strict in dev / none in prod
+    Owner note #3: rate limit applies to auth routes only
+
+  TASK 2.1 - Switch JWT to httpOnly cookie (SEC-002, SEC-003)
+  New dependencies: cookie-parser
+  Files changed:
+    - backend/package.json                      add cookie-parser
+    - backend/src/server.js                     add cookie-parser middleware
+    - backend/src/modules/auth/auth.controller.js  set/clear cookie on login/logout
+    - frontend/src/config/axios.js              add withCredentials, remove token interceptor
+    - frontend/src/context/AuthContext.jsx      cookie-based flow, /auth/me rehydration
+
+  Backend changes:
+    a) Install cookie-parser
+    b) server.js: app.use(require('cookie-parser')()) after body parsers
+    c) auth.controller.js login():
+         const isProd = process.env.NODE_ENV === 'production';
+         res.cookie('token', token, {
+           httpOnly: true,
+           secure:   isProd,
+           sameSite: isProd ? 'none' : 'strict',
+           maxAge:   24 * 60 * 60 * 1000,
+         });
+         return success(res, { user: safeUser(user) }, 'Login successful');
+         // token NOT returned in body anymore
+    d) auth.middleware.js: read token from req.cookies.token as fallback
+         if not in Authorization header (supports both Bearer header and cookie)
+    e) auth.controller.js logout():
+         res.clearCookie('token', { httpOnly:true, secure:isProd, sameSite:isProd?'none':'strict' })
+         return success(res, null, 'Logged out successfully')
+
+  Frontend changes:
+    a) axios.js:
+         - Add withCredentials: true to axios.create() config
+         - Remove request interceptor that reads localStorage token
+           (browser sends httpOnly cookie automatically)
+         - Keep 401 response interceptor (redirect on session expiry)
+    b) AuthContext.jsx:
+         - login(): response now only has { user }, no token
+           Store user in state only (no token to store)
+           Remove localStorage.setItem('token', t)
+         - logout(): server clears cookie, just clear local user state
+           Remove localStorage.removeItem('token')
+         - Rehydration on mount: replace localStorage token check with:
+             call GET /auth/me
+             if 200 -> set user + isAuthenticated=true
+             if 401 -> set isAuthenticated=false, isLoading=false
+           This is the correct persistent-login pattern with httpOnly cookies
+         - Keep localStorage for user object only (name, role for display)
+
+  TASK 2.2 - Auth-only rate limiting (SEC-004, Owner note #3)
+  New dependencies: express-rate-limit
+  Files changed:
+    - backend/package.json             add express-rate-limit
+    - backend/src/modules/auth/auth.routes.js  add limiter to 3 routes only
+
+  Change:
+    - Install express-rate-limit
+    - Define limiter locally in auth.routes.js (NOT globally):
+        const { rateLimit } = require('express-rate-limit');
+        const authLimiter = rateLimit({
+          windowMs: 15 * 60 * 1000,
+          max: 20,
+          message: { success: false, message: 'Too many attempts, please try again later' },
+          standardHeaders: true,
+          legacyHeaders: false,
+        });
+    - Apply to ONLY these three routes:
+        POST /login
+        POST /forgot-password
+        POST /reset-password
+    - No global rate limiting anywhere else per owner note #3
+
+================================================================================
+  PHASE 3 - Backend Performance
+  Estimate: 10h
+================================================================================
+
+  TASK 3.1 - In-memory cache for user and permission lookups (PERF-001, PERF-002)
+  File: backend/src/utils/cache.js (NEW)
+  Problem:
+    Every request does User.findOne + Permission.findOne = 2-3 DB queries
+    before any business logic runs. At scale this is the primary bottleneck.
+  Change:
+    - Create simple Map-based TTL cache: get(key), set(key,val,ttlMs), del(key), delByPrefix(prefix)
+    - No external dependency, pure Node.js
+    - auth.js middleware: cache user by userId, TTL 60s
+        cache key: user:<userId>
+        miss: fetch from DB, cache result
+        invalidate: call cache.del('user:<id>') in user.service update/delete
+    - rbac.js middleware: cache permission by roleId+module, TTL 120s
+        cache key: perm:<roleId>:<module>
+        miss: fetch from DB, cache result
+        invalidate: call cache.delByPrefix('perm:<roleId>') in permission.service save
+
+  TASK 3.2 - Audit logger fire-and-forget (PERF-003)
+  File: backend/src/middleware/auditLogger.js
+  Problem:
+    res.json is overridden as async, awaiting AuditLog.create before sending
+    response. Every mutation is delayed by the audit write latency.
+  Change:
+    - Remove async override of res.json
+    - Use res.on('finish') event instead:
+        next() is called, response flows normally
+        after response finishes, setImmediate fires AuditLog.create
+        if AuditLog.create fails, log error only - never block response
+
+  TASK 3.3 - Response compression (PERF-010)
+  Files: backend/src/server.js, backend/package.json
+  Change:
+    - Install: compression
+    - app.use(require('compression')()) after helmet, before routes
+    - Significant win for JSON list and report payloads
+
+  TASK 3.4 - DB connection options (PERF-009)
+  File: backend/src/config/db.js
+  Change:
+    mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+    })
+
+  TASK 3.5 - AppError class to unify error conventions (ARCH-002)
+  File: backend/src/utils/AppError.js (NEW)
+  Problem:
+    Services throw { status, message } but errorHandler reads err.statusCode.
+    Controllers catch and manually forward err.status. If any controller
+    forgets to catch, a service error becomes a generic 500.
+  Change:
+    - class AppError extends Error { constructor(statusCode, message) }
+    - Update ALL 22 service files to throw new AppError(400, 'msg')
+    - errorHandler already reads err.statusCode - alignment complete
+
+  TASK 3.6 - Trust proxy + graceful shutdown (ARCH-001 remainder)
+  File: backend/src/server.js
+  Change:
+    - app.set('trust proxy', 1) - correct req.ip behind VPS nginx
+    - SIGTERM/SIGINT handler: close server + mongoose.disconnect()
+
+================================================================================
+  PHASE 4 - Data Operations Performance
+  Estimate: 10h
+================================================================================
+
+  TASK 4.1 - Dashboard stats caching (PERF-005)
+  File: backend/src/modules/dashboard/dashboard.service.js
+  Change:
+    - Wrap getDashboardStats in cache from Task 3.1
+    - Cache key: dashboard:stats
+    - TTL: 90 seconds
+    - All queries already in Promise.all - keep that, just add cache wrapper around the whole function
+
+  TASK 4.2 - Booking import bulkWrite (PERF-004)
+  File: backend/src/modules/bookings/bookingImport.service.js
+  Problem:
+    Sequential await booking.save() per row. 100 rows = 100 sequential round-trips.
+  Change:
+    - Separate saveable rows into toInsert[] and toUpdate[]
+    - toInsert: pre-generate all booking numbers in one call, build docs array,
+      use Booking.insertMany(docs, { ordered: false })
+    - toUpdate: build bulkWrite ops array, use Booking.bulkWrite(ops)
+    - Handle writeErrors from both operations
+    - Update autoNumber.js to support nextNumber('booking', count) batch mode
+    - Final Loading reconciliation (2 extra queries) stays sequential - acceptable
+
+  TASK 4.3 - Voyage port lookup optimization (PERF-011)
+  File: backend/src/modules/bookings/booking.service.js
+  Problem:
+    getVoyagePortIds does 3 sequential DB queries per booking create.
+  Change:
+    Replace with single aggregate pipeline:
+      Voyage -> lookup routes -> lookup routelegs -> project portIds
+    One round-trip, same result
+
+  TASK 4.4 - Compound indexes (DB-001)
+  Add to model files based on most common query patterns:
+    booking.model.js:
+      { voyageId:1, status:1, isDeleted:1 }
+      { agentId:1, status:1, isDeleted:1 }
+      { isDeleted:1, createdAt:-1 }
+    invoice.model.js:
+      { agentId:1, status:1, isDeleted:1 }
+      { isDeleted:1, invoiceDate:-1 }
+    auditLog.model.js:
+      { module:1, timestamp:-1 }
+      { userId:1, timestamp:-1 }
+    voyage.model.js:
+      { roundId:1, status:1 }
+      { serviceId:1, status:1, etd:1 }
+
+================================================================================
+  PHASE 5 - Frontend Foundation
+  Estimate: 14h
+================================================================================
+
+  TASK 5.1 - Fix QueryClient singleton (FE-001)
+  File: frontend/src/components/Providers.jsx
+  Change:
+    - Remove module-level QueryClient singleton from queryClient.js
+    - Use useState inside Providers:
+        const [queryClient] = useState(() => new QueryClient({
+          defaultOptions: { queries: { retry:1, refetchOnWindowFocus:false, staleTime:60_000 } }
+        }))
+    - Increase staleTime from 30s to 60s - reduces refetches on navigation
+
+  TASK 5.2 - Error boundaries (FE-002)
+  Files (NEW):
+    - frontend/src/app/error.jsx
+    - frontend/src/app/(dashboard)/error.jsx
+  Change:
+    - Next.js App Router error.jsx components
+    - Root: shows generic error page with Go Home button
+    - Dashboard: shows error panel but keeps sidebar visible so user can navigate
+
+  TASK 5.3 - Shared query hooks to eliminate duplicated fetch logic (PERF-008, PERF-013)
+  Location: frontend/src/hooks/ (currently empty)
+  Create these hooks:
+
+    useAgents.js         - active agents dropdown, staleTime 5min
+    useVoyages.js        - voyages dropdown, staleTime 5min
+    useServices.js       - services dropdown, staleTime 10min
+    useRounds.js         - rounds dropdown, staleTime 5min
+    useContainerTypes.js - container types, staleTime 10min
+    usePorts.js          - ports list, staleTime 10min
+    useVoyagePorts.js    - ports for a specific voyage, enabled: !!voyageId
+
+  All dropdown hooks use longer staleTime because master data rarely changes mid-session.
+  Replaces the repeated limit:200 fetches scattered across BookingList, InvoiceForm,
+  ExpenseForm, BookingForm and every other page that needs these dropdowns.
+
+  TASK 5.4 - Chart.js tree shaking (PERF-006)
+  File: frontend/src/app/(dashboard)/dashboard/page.jsx
+  Problem:
+    Chart.register(...registerables) loads all chart types including unused ones.
+    Adds roughly 120KB to dashboard bundle.
+  Change:
+    Import and register only what is actually used:
+      CategoryScale, LinearScale
+      PointElement, LineElement, BarElement, ArcElement
+      LineController, BarController, DoughnutController
+      Tooltip, Legend, Filler
+
+  TASK 5.5 - Fix chart destroy/recreate on every render (PERF-007)
+  File: frontend/src/app/(dashboard)/dashboard/page.jsx
+  Problem:
+    Chart useEffect deps are object references that change identity every render.
+    Charts are destroyed and fully recreated on every parent re-render.
+  Change:
+    - Wrap chart data in useMemo in DashboardPage:
+        const monthlyTrendData = useMemo(() => charts.monthlyTrend, [JSON.stringify(charts.monthlyTrend)])
+        const revByServiceData = useMemo(() => charts.revByService, [JSON.stringify(charts.revByService)])
+    - Pass memoized data to chart components
+    - Inside chart components: if chart already exists, update data and call chart.update()
+      instead of destroy + recreate
+
+  TASK 5.6 - Remove unused chartjs stub package (FE-003)
+  File: frontend/package.json
+  Change:
+    Remove "chartjs": "^0.3.24" - this is a squatter stub, not chart.js itself
+    Only "chart.js" should remain
+
+  TASK 5.7 - AuthContext rehydrate via /auth/me (FE-005)
+  File: frontend/src/context/AuthContext.jsx
+  Problem:
+    Rehydrates from localStorage without verifying token validity.
+    Stale or expired tokens silently fail, causing confusing redirect loops.
+  Change (depends on Phase 2 cookie migration):
+    - Remove localStorage token read on mount
+    - Call GET /auth/me on mount
+        200 -> set user + isAuthenticated=true
+        401 -> set isAuthenticated=false
+    - setIsLoading(false) after call resolves either way
+    - Keep localStorage for user object only (name, role for display purposes)
+
+  TASK 5.8 - PermissionContext refresh mechanism (FE-006)
+  File: frontend/src/context/PermissionContext.jsx
+  Problem:
+    Permissions loaded once at login, never refreshed.
+    Admin permission changes only take effect after user re-logs in.
+  Change:
+    - Convert raw axios call to useQuery(['permissions', roleId])
+    - staleTime: 5 minutes - balances freshness vs request count
+    - expose refetchPermissions() wrapper so PermissionMatrix can trigger refresh
+      after saving role permissions
+
+================================================================================
+  PHASE 6 - Security Polish
+  Estimate: 5h
+================================================================================
+
+  TASK 6.1 - Helmet CSP configuration (SEC-005)
+  File: backend/src/server.js
+  Change: Replace bare helmet() with explicit CSP directives for the VPS deployment
+
+  TASK 6.2 - File upload magic-byte validation (SEC-006)
+  File: backend/src/middleware/upload.js
+  Change:
+    - After Sharp processes image, validate file signature bytes:
+        JPEG: FF D8 FF
+        PNG:  89 50 4E 47
+        PDF:  25 50 44 46
+    - If signature does not match declared MIME type: delete file, return 400
+    - Sharp processing already catches corrupt images implicitly
+
+  TASK 6.3 - HTML-escape name in emails (SEC-007)
+  File: backend/src/utils/mailer.js
+  Change:
+    - Add escapeHtml(str) helper: replaces &, <, >, ", '
+    - Apply to name parameter in all three email template functions
+
+  TASK 6.4 - JWT_SECRET minimum length check (SEC-008)
+  File: backend/src/config/env.js
+  Change:
+    After the missing-vars check, add:
+      if (process.env.JWT_SECRET.length < 32) {
+        console.error('[ENV] JWT_SECRET must be at least 32 characters');
+        process.exit(1);
+      }
+
+================================================================================
+  PHASE 7 - Observability and DevOps
+  Estimate: 8h
+================================================================================
+
+  TASK 7.1 - Structured logging with pino (CQ-001)
+  Files:
+    - backend/package.json           add pino, pino-pretty
+    - backend/src/utils/logger.js    replace custom console logger with pino
+  Change:
+    - Dev: pino({ level:'debug' }) piped through pino-pretty (human readable)
+    - Prod: pino({ level:'info' }) pure JSON output (VPS log aggregators)
+    - Public API unchanged: logger.info/warn/error/debug - same as before
+
+  TASK 7.2 - Dockerfile and docker-compose for VPS (DEVOPS-001)
+  New files:
+    - backend/Dockerfile             node:18-alpine, multi-stage, non-root user
+    - frontend/Dockerfile            node:18-alpine, next build + start
+    - docker-compose.yml at root     backend + frontend + shared network
+    - backend/.dockerignore
+    - frontend/.dockerignore
+  Health check: GET /api/v1/health already exists and returns 200 - used in compose
+
+  TASK 7.3 - Environment documentation (CFG-001 remainder)
+  File: backend/.env.example (NEW)
+  Documents all required and optional vars including new ones from this sprint:
+    NODE_ENV, PORT, MONGODB_URI, JWT_SECRET, JWT_EXPIRES_IN
+    ALLOWED_ORIGIN, FRONTEND_URL, UPLOAD_MAX_SIZE_MB
+    ADMIN_EMAIL, ADMIN_PASSWORD
+    SMTP_EMAIL, SMTP_APP_PASSWORD, SMTP_FROM_NAME
+    LOG_LEVEL
+
+================================================================================
+  COMPLETE FILE CHANGE LIST
+================================================================================
+
+  BACKEND:
+    backend/package.json                                add: cookie-parser, sharp,
+                                                             express-rate-limit, compression,
+                                                             pino, pino-pretty
+    backend/src/server.js                               async IIFE startup, compression,
+                                                             trust proxy, graceful shutdown,
+                                                             remove static uploads middleware
+    backend/src/config/db.js                            connection pool + timeout options
+    backend/src/config/env.js                           JWT_SECRET length validation
+    backend/src/utils/AppError.js                       NEW - error class
+    backend/src/utils/cache.js                          NEW - in-memory TTL cache
+    backend/src/utils/logger.js                         replace with pino
+    backend/src/utils/mailer.js                         HTML-escape name parameter
+    backend/src/middleware/auth.js                      cache user lookup + read cookie
+    backend/src/middleware/rbac.js                      cache permission lookup
+    backend/src/middleware/auditLogger.js               fire-and-forget via res.on finish
+    backend/src/middleware/upload.js                    Sharp compression + magic-byte check
+    backend/src/modules/auth/auth.controller.js         set/clear httpOnly cookie
+    backend/src/modules/auth/auth.routes.js             authLimiter on 3 routes only
+    backend/src/modules/expenses/expense.routes.js      add GET /:id/attachment
+    backend/src/modules/expenses/expense.controller.js  add getAttachment handler
+    backend/src/modules/expenses/expense.service.js     add getAttachmentPath helper
+    backend/src/modules/dashboard/dashboard.service.js  cache wrapper around stats
+    backend/src/modules/bookings/bookingImport.service.js  bulkWrite + insertMany
+    backend/src/modules/bookings/booking.service.js     aggregate port lookup
+    backend/src/modules/bookings/booking.model.js       compound indexes
+    backend/src/modules/invoices/invoice.model.js       compound indexes
+    backend/src/modules/auditLogs/auditLog.model.js     compound indexes
+    backend/src/modules/voyages/voyage.model.js         compound indexes
+    ALL 22 service files                                throw new AppError() consistently
+    backend/Dockerfile                                  NEW
+    backend/.env.example                                NEW
+    backend/.dockerignore                               NEW
+
+  FRONTEND:
+    frontend/package.json                               remove chartjs stub
+    frontend/src/components/Providers.jsx               useState QueryClient pattern
+    frontend/src/config/axios.js                        withCredentials, remove token interceptor
+    frontend/src/context/AuthContext.jsx                cookie auth, /auth/me rehydration
+    frontend/src/context/PermissionContext.jsx          useQuery-based, expose refresh
+    frontend/src/app/error.jsx                          NEW - root error boundary
+    frontend/src/app/(dashboard)/error.jsx              NEW - dashboard error boundary
+    frontend/src/app/(dashboard)/dashboard/page.jsx     tree-shaken Chart.js + useMemo
+    frontend/src/hooks/useAgents.js                     NEW
+    frontend/src/hooks/useVoyages.js                    NEW
+    frontend/src/hooks/useServices.js                   NEW
+    frontend/src/hooks/useRounds.js                     NEW
+    frontend/src/hooks/useContainerTypes.js             NEW
+    frontend/src/hooks/usePorts.js                      NEW
+    frontend/src/hooks/useVoyagePorts.js                NEW
+    frontend/Dockerfile                                 NEW
+    frontend/.dockerignore                              NEW
+    docker-compose.yml (root)                           NEW
+
+================================================================================
+  EXECUTION ORDER
+================================================================================
+
+  Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6 -> Phase 7
+
+  Each phase completed and confirmed before starting next.
+  After each phase: say "Phase N done, continue" to proceed.
+
+  Minimum for production deployment:
+    Phase 1 + Phase 2 + Phase 3 tasks 3.1-3.3 = roughly 20h
+
+================================================================================
+  STATUS: Awaiting approval - reply "Approve" or "Start Phase 1" to begin
+================================================================================

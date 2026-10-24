@@ -10,8 +10,11 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/config/seed.js",
-    "migrate:invoice-v2": "node src/config/migrations/migrate-invoice-v2.js",
-    "migrate:hard-delete-cleanup": "node src/config/migrations/migrate-hard-delete-cleanup.js"
+    "test": "node --test",
+    "test:int": "node --test --test-concurrency=1 test/int/v2.int.test.js test/int/api.int.test.js test/int/audit-fixes.int.test.js",
+    "migrate:seed-accounts": "node src/config/migrations/migrate-seed-accounts.js",
+    "migrate:hard-delete-cleanup": "node src/config/migrations/migrate-hard-delete-cleanup.js",
+    "seed:test-data": "node src/config/seed-test-data.js"
   },
   "dependencies": {
     "archiver": "^7.0.1",

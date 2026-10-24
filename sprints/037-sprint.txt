@@ -1,0 +1,650 @@
+# Sprint 037 — Reporting Modules Architecture Audit
+Status: 🟡 AUDIT COMPLETE — awaiting approval. NO CODE WAS WRITTEN OR
+MODIFIED. This is a pure architecture-review and planning document,
+produced by reading the current, actual state of every reporting module
+and cross-checking it against the business rules established through
+Sprint 035 (Voyage Profitability), Sprint 036 (Expense Port scope), and
+every architectural decision on record in claude.md. Every finding below
+cites the exact file/line it was confirmed against — nothing here is
+inferred without a direct source read.
+
+---
+
+# 1. EXECUTIVE SUMMARY
+
+The reporting layer was built incrementally across many sprints, and
+three of its members (`getVoyagePerformance`, `getRevenueReport`,
+`getExpenseReport`) have not been touched since before Sprint 032's
+dual-layer standard, Sprint 034's Booking Report modernization, or
+Sprint 035/036's Voyage Profitability + Expense Port-scope work. This
+audit finds **one confirmed data bug present in three reports**, **one
+confirmed business-rule inconsistency** (what "Revenue" means differs
+across five different code paths), and **one confirmed feature gap**
+(Expense Report has zero awareness of Sprint 036's Port scope). None of
+these are new defects introduced by Sprint 035/036 — they are pre-existing
+reports that Sprint 035/036 correctly left untouched (per their own
+explicit scope boundaries) but that now visibly disagree with the newer,
+business-approved reports sitting next to them in the same Reports Hub.
+
+**Top findings, in order of severity:**
+1. **Dead `quantity` field, displayed as real data, in 3 places.**
+   `Booking.quantity` was removed from the schema in Sprint 025/026, but
+   `getVoyagePerformance`, `getRevenueReport`, and `getRoundPnL`'s legacy
+   block all still run `$sum: '$quantity'` against Booking — this always
+   evaluates to `0` and is rendered to users as "Units" / "Total Units"
+   on three different pages. Confirmed, high-confidence, user-visible bug.
+2. **"Revenue" has two competing, silently coexisting definitions.**
+   Sprint 033 (Invoice eligibility), Sprint 034 (Booking Revenue
+   Details), and Sprint 035/036 (Voyage Profitability) all converged on
+   **Layer 2, status = Final Loading ONLY** as the business-approved
+   definition of realized revenue. `getVoyagePerformance`,
+   `getRevenueReport`, and `getRoundPnL`'s own legacy top-level fields
+   still use the older **any non-Cancelled status, L1+L2 combined**
+   definition. `getRoundPnL` currently emits BOTH definitions in the
+   same response payload without reconciling them.
+3. **Expense Report was never updated for Sprint 036.** No `portId`
+   filter, no `portId` populate (Port column still shows only the
+   legacy free-text string), no Scope column, no Voyage Cost / Other
+   Voyage Cost classification grouping — the least consistent report in
+   the system relative to its sibling, Voyage Profitability.
+4. **Round Capacity Report resolves "this round's voyages" via
+   `Round.voyageIds`**, the same denormalized array Sprint 035's ADR-4
+   explicitly moved away from (in favor of `Voyage.find({roundId})`) for
+   Voyage Profitability. Currently kept in sync by `voyage.service.js`,
+   so not an active bug — but a structural inconsistency against the
+   sprint's own established precedent.
+5. **Round Capacity Report has no VGM figure at all.** Confirmed
+   intentional-by-omission (capacity is a TEU/slot metric; VGM is a
+   weight metric) rather than a miscalculation — flagged as an open
+   business question, not a defect.
+
+Everything else audited (TEU resolution, capacity onboard/discharge
+chain, Voyage Cost/Other Voyage Cost classification, Layer 1/Layer 2
+booking-status inclusion rules) is **confirmed correct and consistent**
+with the current architecture — see the report-by-report sections below
+for what was checked and passed.
+
+---
+
+# 2. CURRENT ARCHITECTURE REVIEW
+
+Confirmed by direct inspection of the current schema and services (not
+re-derived from memory):
+
+- **Booking Layer 1 (`ManualBooking`)**: commercial reservation, no
+  `containerNumber`, multi-row `cargoRows[]`, `status` ∈ `BOOKING_STATUS`
+  (`Pending/Confirmed/Final Loading/Cancelled`), `totalFreight`/
+  `totalTEU`/`totalUnits` are server-computed sums over `cargoRows[]`.
+- **Booking Layer 2 (`Booking`)**: operational, one booking = one
+  container, `containerNumber` required/indexed, **no `quantity` field**
+  (confirmed absent from `booking.model.js` — removed Sprint 025/026),
+  **no `currency` field** (freight is always in the system's single
+  implicit operating currency at the booking level).
+- **Capacity Engine (`capacity.service.js`)**: voyage-anchored cargo-flow
+  chain (Sprint 023/028/029), `L1_STATUSES = L2_STATUSES =
+  ['Pending','Confirmed','Final Loading']`, Cancelled/soft-deleted
+  excluded, TEU resolved via `teuResolver.js#resolveTEU()` from
+  container size only (container type ignored). Confirmed unmodified by
+  any sprint since 029.
+- **Revenue calculation redesign**: `totalFreight` is server-computed on
+  both booking layers; `freightRate` immutable input. Sprint 034
+  established the **pricing-group** concept (Agent+Commodity+POL+POD+
+  ContainerType+FreightRate, Layer 2, Final Loading only) as the
+  authoritative "real revenue" report. Sprint 035 (ADR-2) reused that
+  same Final-Loading-only, Layer-2-only population for Voyage
+  Profitability's Revenue-by-Voyage block, explicitly diverging from the
+  broader "all non-Cancelled" population `getRoundPnL`'s own pre-existing
+  legacy fields still use.
+- **Voyage Profitability (Sprint 035, evolved further Sprint 036)**:
+  `getRoundPnL({roundId, voyageId})` — voyage set always resolved via
+  `Voyage.find({roundId})` (ADR-4), Voyage Cost/Other Voyage Cost
+  classification always via `ExpenseCategory.costClassification`
+  (`expenseTypeService.getCostClassificationMap()`), never a hardcoded
+  category name. Confirmed still true in the current code (line 185:
+  `const classificationMap = await expenseTypeService.getCostClassificationMap()`).
+- **Expense Module evolution (Sprint 036)**: scope
+  (Round/Voyage/Port) is always inferred from `roundId`/`voyageId`/
+  `portId`, never stored (`expense.service.js#deriveScope`). `portId`
+  must equal the voyage's own `polId`/`podId` (current schema
+  limitation, not a permanent rule). Confirmed applied correctly inside
+  `getRoundPnL`'s Voyage Cost per-port grouping (`reports.service.js`
+  lines 237–243) — **but confirmed NOT applied anywhere in
+  `getExpenseReport`** (see section 3.4).
+
+---
+
+# 3. REPORT-BY-REPORT ANALYSIS
+
+## 3.1 Round Capacity Report (`capacity.service.js#computeRoundCapacity`,
+`reports.service.js#getRoundCapacityReport`)
+
+**Verified against current Booking Layer 1 / Layer 2 / Capacity Engine /
+voyage flow / onboard TEU / load-discharge logic / vessel capacity —
+matches, with one structural note:**
+
+- Booking statuses: `L1_STATUSES = L2_STATUSES =
+  ['Pending','Confirmed','Final Loading']` — **matches** the documented,
+  current, business-confirmed rule (claude.md Sprint 025/032: "Pending,
+  Confirmed, and Final Loading ALL count toward voyage capacity. Only
+  Cancelled and isDeleted=true are excluded"). No missing statuses.
+- TEU calculation: `resolveTEU(b.containerTypeId.size)` for Layer 2 (one
+  booking = one container, no quantity multiplication — correct per
+  Sprint 025), `m.totalTEU` (server-precomputed) for Layer 1 — **matches**
+  the documented formula. No duplicate counting found: each booking
+  contributes exactly one load event and one discharge event
+  (`l2Events`/`l1Events`), and the per-voyage aggregation sums those
+  events into `loadedTEU[i]`/`dischargedTEU[i]` exactly once per event.
+- Discharge-voyage resolution: `resolveDischargeIdx()` walks forward
+  from the booking's own load-voyage index (Sprint 028 Revision 3,
+  multi-voyage transit fix) — **matches** the documented, still-current
+  algorithm; a container loaded on voyage 1 and discharged on voyage 3
+  correctly occupies voyages 1, 2, and 3 in the onboard chain.
+  `loadedExact*` (Sprint 029) remains presentation-only and does not
+  feed the onboard chain — confirmed still true (comment + code at lines
+  243–266 match exactly).
+- Onboard/remaining capacity/voyage carry-over: `onboardStart[i] =
+  runningOnboard` (previous voyage's `onboardTEU`), `onboardTEU[i] =
+  onboardStart + loaded - discharged`, `remainingTEU = cap - onboardTEU`
+  — **matches** the documented cargo-flow model exactly, no drift found.
+- **Finding (structural, not an active bug):** voyage set is resolved
+  via `round.voyageIds || []` (`capacity.service.js` line 79) — the
+  same denormalized array Sprint 035's ADR-4 explicitly stopped trusting
+  for Voyage Profitability, in favor of `Voyage.find({roundId})`.
+  Cross-checked `voyage.service.js` — `Round.voyageIds` IS correctly
+  maintained today (`$push` on voyage create, line 164; `$pull` on
+  voyage delete, line 221), so this is **not currently producing wrong
+  data**. It is flagged because it is the exact class of risk Sprint 035
+  moved away from, and because it means Round Capacity Report and Voyage
+  Profitability Report could theoretically disagree on "which voyages
+  belong to this round" if that denormalized array is ever left
+  unsynced by a future code path that doesn't go through
+  `voyage.service.js`.
+- **Finding (gap, not a miscalculation):** no VGM figure exists anywhere
+  in the capacity payload. This appears to be intentional-by-design —
+  capacity is a **slot/TEU** metric (`vessel.capacity` is expressed in
+  TEU), and VGM is a **weight** metric with no documented relationship
+  to slot capacity anywhere in claude.md's Capacity Engine rules ("Vessel
+  capacity is measured in TEU, NOT by container count... Container TYPE
+  is COMPLETELY IGNORED"). Raised as an open business question, not
+  logged as a defect — see BUSINESS RULE VALIDATION.
+- `totalBookedUnits: totalL1Units + totalL2Units` (line 380) sums Layer
+  1's `totalUnits` (container-row count) with Layer 2's booking count —
+  both are, by construction, "number of physical containers," so this is
+  a consistent unit despite coming from two different field names. No
+  finding here.
+
+## 3.2 Voyage Performance Report (`reports.service.js#getVoyagePerformance`)
+
+**This report predates Sprint 032's dual-layer standard and has not
+been updated since.**
+
+- **Confirmed bug:** line 377, `$group` stage sums `totalQty: { $sum:
+  '$quantity' }` against the `bookings` collection. `Booking.quantity`
+  does not exist in `booking.model.js` (confirmed absent — removed
+  Sprint 025/026, replaced by the "one booking = one container" rule).
+  MongoDB's `$sum` on a missing field silently sums `0` for every
+  document, so `totalQty` (and the report's `totals.totalQty`) is
+  **always `0`**, regardless of how many bookings exist. Confirmed
+  **displayed to the user**: `VoyagePerformanceReport.jsx` line 168
+  renders it as `` `${fmtNum(totals.totalQty)} units` ``. This is the
+  exact same dead-field class Sprint 034 already found and removed from
+  Vessel Details ("a dead totalQty... was silently summing to 0 and was
+  never read anywhere") — except here it IS read and IS shown, so it is
+  actively misleading rather than harmlessly dead.
+- **Layer scope:** Layer 2 ONLY (`$lookup` targets `bookings` only, no
+  `manualbookings` lookup anywhere in this pipeline). No dual-layer
+  support exists at all today.
+- **Status scope:** every non-Cancelled booking counts
+  (`{ $ne: ['$status', 'Cancelled'] }`, line 371) — Pending, Confirmed,
+  and Final Loading are all included, with no way to filter down to
+  Final-Loading-only.
+- **Prompt's explicit question — "should this report support Layer 1
+  only / Layer 2 only / Combined / Final Loading only filters?"**
+  Answer, based on precedent already set elsewhere in this codebase:
+  **yes.** Sprint 032 established dual-layer as the standard for
+  booking-derived vessel/voyage statistics; Sprint 034 migrated the
+  Booking Report to the same dual-layer, merge-in-JS pattern
+  (`getBookingReport`, lines 428–514) specifically because a
+  Layer-2-only report was found to be an incomplete picture of "what's
+  happening on this voyage." Voyage Performance Report answering "how is
+  this voyage performing" with Layer-2-only data is the same gap Sprint
+  034 already closed for the Booking Report — this report simply hasn't
+  received the same treatment yet. A Final-Loading-only toggle is
+  additionally warranted for consistency with the now-established
+  "Final Loading = realized" revenue rule (see 3.3/3.5).
+
+## 3.3 Revenue Report (`reports.service.js#getRevenueReport`)
+
+**Prompt's explicit check: "Verify that Revenue Report uses ONLY
+operational bookings... revenue is calculated only from Layer 2, Status
+= Final Loading, if that is still the current business rule."**
+
+- **Confirmed: it is Layer 2 only** (`$lookup` targets `bookings` only,
+  same as Voyage Performance Report — no `manualbookings` anywhere).
+  This part is currently correct relative to the prompt's premise.
+- **Confirmed: it is NOT Final-Loading-only.** Line 535,
+  `{ $ne: ['$status', 'Cancelled'] }` — Pending and Confirmed bookings
+  are included in "Total Revenue" exactly like Final Loading ones. This
+  directly contradicts the business rule Sprint 033 established as the
+  system's own invoicing boundary ("Only Bookings with status ===
+  'Final Loading' can ever become a line item... this is the ENTIRE
+  reportable/invoiceable population for an agent") and the rule Sprint
+  034/035/036 both independently re-confirmed for their own revenue
+  calculations. **This is the report the prompt named as the reference
+  case, and it confirms the business rule has drifted out of this
+  specific report.**
+- **Confirmed second instance of the dead-`quantity` bug:** line 541,
+  identical `$sum: '$quantity'` pattern, always `0`, confirmed
+  **displayed**: `RevenueReport.jsx` line 165/185 renders `r.totalQty`/
+  `grandTotal.totalQty` in a "Units" column.
+- **Invoices/Payments:** this report never touches `Invoice` or
+  `Payment` at all — it sums raw `Booking.totalFreight`. Whether
+  "Revenue" should mean *booked* freight (current behavior) or
+  *invoiced*/*collected* freight (derived from `Invoice`/`Payment`) is a
+  genuine, unresolved business question this audit surfaces but does not
+  answer on its own authority — see BUSINESS RULE VALIDATION.
+- **Currency assumptions:** `Booking` has no `currency` field (confirmed
+  absent from the schema) — freight is implicitly in one operating
+  currency at the booking level, so summing `totalFreight` without a
+  currency dimension is **not a bug** for this report specifically
+  (unlike the old pre-Sprint-035 Round P&L, which mixed multi-currency
+  `Expense.currency` totals — a different, already-superseded problem).
+  However, `Invoice.currency` is its own, independently-settable field
+  (confirmed in `invoice.model.js` line 40) — if Revenue Report is ever
+  changed to derive from Invoice/Payment data (per the open question
+  above), currency handling would need to be revisited at that time.
+
+## 3.4 Expense Report (`reports.service.js#getExpenseReport`)
+
+**Prompt's explicit check: "Review against Sprint 036... verify full
+support for Round/Voyage/Port Expenses, grouping, totals, filters,
+compatibility with Voyage Profitability."**
+
+- **Confirmed: no Port scope support of any kind.**
+  - No `portId` query filter (`getExpenseReport`'s destructured params —
+    `category, expenseTypeId, roundId, voyageId, dateFrom, dateTo,
+    currency` — `portId` is absent).
+  - No `.populate('portId', ...)` on the `Expense.find()` query (line
+    585–591) — confirmed by direct comparison with `getRoundPnL`, which
+    DOES populate `portId` (line 196).
+  - No computed `scope` field on returned rows (unlike
+    `expense.service.js`'s `deriveScope()`/`withScope()`, which the base
+    Expense CRUD endpoints now always apply — `getExpenseReport` builds
+    its own separate query and bypasses that entirely).
+  - Frontend confirmed consistent with this gap:
+    `ExpenseReport.jsx` line 164 renders only `e.port` (the legacy
+    free-text field) — never `e.portId?.name` — and there is no Scope
+    column at all (contrast with `ExpenseList.jsx`, which Sprint 036
+    already gave both).
+- **Grouping/totals:** `summaryMap` groups strictly by
+  `(category, currency)` (lines 596–603) — there is no Voyage
+  Cost/Other Voyage Cost classification dimension anywhere. This means
+  Expense Report and Voyage Profitability Report, looking at the exact
+  same underlying `Expense` documents, present two structurally
+  incompatible breakdowns: one by raw category+currency, the other by
+  business classification+scope. Not a calculation bug (both totals are
+  individually correct), but a **presentation and reconciliation gap** —
+  a user cannot cross-check "does Voyage Profitability's Voyage Cost
+  total match what Expense Report shows for the same round" without
+  manually re-deriving the classification mapping themselves.
+- **Filters:** category/expenseTypeId/round/voyage/date/currency filters
+  all still function correctly against the current schema (no dead
+  fields found here) — the gap is purely the missing Port dimension.
+- **Verdict: Expense Report requires the most substantial catch-up work
+  of any report in this audit** to reach parity with Sprint 036.
+
+## 3.5 Booking Report (`getBookingReport`) — audited for context/consistency
+even though not explicitly named in the prompt's module list, since it
+is the fifth "revenue-adjacent" data path and directly relevant to
+Section 5 (Cross Report Consistency).
+
+- Already dual-layer (Sprint 034), already excludes the dead
+  `quantity`/`totalSlots` fields entirely (confirmed absent from this
+  report's `$group`/mapping — Sprint 034 removed them here specifically).
+  No further issues found. This report is the one existing example of
+  what "caught up" looks like, and is the reference pattern the other
+  reports in this audit should be measured against.
+- **Note for Section 5:** its summary (`l2Summary.totalFreight +
+  l1Summary.totalFreight`, lines 507–511) still sums **all non-Cancelled
+  statuses**, not Final-Loading-only — by design, since this report's
+  purpose is "list every booking, whatever its status," not "report
+  realized revenue." This is a deliberate, correct divergence (a listing
+  report legitimately needs to show Pending/Confirmed rows too) and
+  should NOT be changed to Final-Loading-only — flagging this explicitly
+  so Sprint 038 does not mistake it for the same defect as 3.2/3.3.
+
+## 3.6 Voyage Profitability Report (`getRoundPnL`) — audited for
+consistency with its own sibling reports, since Sections 3.2/3.3 above
+directly reference it as the "correct" precedent.
+
+- Confirmed the new Sprint 035/036 fields (`voyages[].revenue`,
+  `summary`) correctly use Layer 2 + Final Loading only (ADR-2) — this
+  is the "correct" reference implementation cited throughout this audit.
+- **Finding:** the SAME response also still contains the pre-Sprint-035
+  legacy top-level fields (`totalRevenue`, `l1Revenue`, `l2Revenue`,
+  `bookingCount`, `totalQuantity`) which use the OLDER "any non-Cancelled
+  status, L1+L2 combined" definition (lines 104–160) — i.e. **one API
+  response currently contains two different, non-reconciled "total
+  revenue" figures** (`data.totalRevenue` vs. `data.summary.totalRevenue`).
+  This was a deliberate, explicitly-documented backward-compatibility
+  decision at the time of Sprint 035 (code comment: "kept below,
+  unchanged, for backward compatibility") — not a new defect — but it is
+  now confirmed to be **actively rendered on the same page**:
+  `RoundPnlReport.jsx`'s "Round Details" grid still shows
+  `data.totalQuantity` (fed by the SAME dead-`quantity`-field bug as
+  3.2/3.3 — `getRoundPnL`'s legacy `revenueAgg`, line 110, is a THIRD
+  occurrence of `$sum: '$quantity'`) directly above the new Voyage
+  Profitability summary cards. A user viewing this single page sees a
+  "Total Units" figure that is always 0, next to a real, correct VGM/TEU
+  figure two sections below.
+- This is the clearest, most concrete illustration of Section 5's
+  cross-report finding: it happens **within a single report's own
+  payload**, not just between separate reports.
+
+---
+
+# 4. BUSINESS RULE VALIDATION
+
+| Rule | Source of truth | Currently followed by |
+|---|---|---|
+| Capacity counts Pending+Confirmed+Final Loading, both layers | claude.md Sprint 025/032 | ✅ Round Capacity Report |
+| TEU derived from container size only, size bucketing separate from `resolveTEU()` | Sprint 022/034 | ✅ everywhere `resolveTEU()` is called |
+| Revenue = Layer 2, Final Loading ONLY | Sprint 033 (Invoice eligibility), reconfirmed Sprint 034/035/036 | ✅ `getBookingRevenueDetails`, `getRoundPnL`'s new fields — ❌ `getVoyagePerformance`, `getRevenueReport`, `getRoundPnL`'s own legacy fields |
+| Voyage Cost/Other Voyage Cost classification is config-driven, never a hardcoded category name | Sprint 035 governing business rule | ✅ `getRoundPnL` — ⚠️ N/A elsewhere (no other report attempts this classification at all, including Expense Report, which arguably should) |
+| Expense scope inferred from roundId/voyageId/portId, Port validated against voyage's own POL/POD | Sprint 036 | ✅ `expense.service.js`, `getRoundPnL` — ❌ `getExpenseReport` (doesn't touch portId at all) |
+| `Booking.quantity` does not exist; TEU/units never derived from it | Sprint 025/026 | ❌ `getVoyagePerformance`, `getRevenueReport`, `getRoundPnL` legacy block (all three still reference it) |
+
+**Open business questions this audit surfaces but does not resolve**
+(genuinely require a business decision, not an architecture call):
+1. Should Round Capacity Report additionally expose a per-voyage VGM
+   total, as a distinct weight-planning figure alongside (not replacing)
+   TEU-based slot capacity?
+2. Should "Revenue Report" mean booked freight (current behavior) or
+   invoiced/collected freight (derived from `Invoice`/`Payment`,
+   introduced Sprint 033 but never wired into this report)?
+3. Should Voyage Performance Report's booking-derived figures become
+   dual-layer (Layer 1 + Layer 2), and should it gain a Final-Loading-only
+   toggle, matching the precedent set by Booking Report (Sprint 034) and
+   Voyage Profitability (Sprint 035)?
+
+---
+
+# 5. DATA FLOW VALIDATION
+
+Traced each report's data source back to its origin collection(s) to
+confirm no report silently reads a field that no longer exists or a
+relationship that no longer matches the current schema:
+
+- `getRoundCapacityReport` → `capacity.service.js` → `Round`, `Voyage`,
+  `Booking`, `ManualBooking`, `Vessel` — all fields referenced
+  (`totalTEU`, `containerTypeId.size`, `status`, `polId`/`podId`)
+  confirmed present on their respective current schemas. **Clean.**
+- `getVoyagePerformance` → `Voyage`, `Booking` (via `$lookup`) — 4 of 5
+  referenced Booking fields exist (`totalFreight`, `isDeleted`,
+  `status`, `voyageId`); the 5th (`quantity`) does not. **Confirmed
+  broken field, rest clean.**
+- `getBookingReport` → `Booking`, `ManualBooking` — all referenced
+  fields exist on their current schemas (this report was already
+  cleaned up in Sprint 034). **Clean.**
+- `getRevenueReport` → `Voyage`, `Booking` (via `$lookup`) — same
+  pattern and same single broken field as `getVoyagePerformance`
+  (`quantity`). **Confirmed broken field, rest clean.**
+- `getExpenseReport` → `Expense`, `ExpenseType`, `Round`, `Voyage`,
+  `Agent` — all referenced fields exist; the gap here is a missing
+  relationship (`portId`), not a broken one. **Clean but incomplete.**
+- `getRoundPnL` → `Round`, `Voyage`, `Booking`, `ManualBooking`,
+  `Expense`, `ExpenseType`, `ExpenseCategory` (via
+  `expenseTypeService.getCostClassificationMap()`) — the Sprint 035/036
+  fields are fully clean; the legacy block shares the same broken
+  `quantity` field as the two reports above. **Confirmed broken field
+  (legacy block only), Sprint 035/036 fields clean.**
+- `getBookingRevenueDetails` → `Booking` (Layer 2 only, by design) —
+  all referenced fields exist, including `vgm` (confirmed present on
+  `booking.model.js`, stored in kg — the same unit fact `getRoundPnL`'s
+  Sprint 036 VGM conversion already accounts for). **Clean.**
+
+---
+
+# 6. CROSS MODULE CONSISTENCY REVIEW
+
+Checked whether the same concept is computed the same way everywhere it
+appears:
+
+- **Booking Status inclusion for "capacity/planning" purposes**
+  (Pending+Confirmed+Final Loading, Cancelled/deleted excluded):
+  consistent everywhere it's used — Capacity Engine (both layers),
+  ManualBooking's own capacity contribution rule. **Consistent.**
+- **Booking Status inclusion for "revenue" purposes**: **inconsistent**
+  — Final-Loading-only in `getBookingRevenueDetails`/`getRoundPnL`'s new
+  fields vs. any-non-Cancelled in `getVoyagePerformance`/
+  `getRevenueReport`/`getRoundPnL`'s legacy fields. This is Section 3's
+  central finding, restated here as the cross-cutting rule it actually
+  is.
+- **TEU**: `resolveTEU()` is the single, unmodified source everywhere
+  TEU is computed (Capacity Engine, Voyage Profitability,
+  Booking Revenue Details) — **consistent.** The one deliberately
+  separate concept, `classifyRevenueSizeBucket()` (Sprint 034's 20/40
+  Qty bucketing), is explicitly documented as answering a different
+  question and is not miscited as TEU anywhere. **Consistent by design.**
+- **VGM**: present and computed the same way (raw sum of
+  `Booking.vgm`, Layer 2 only) in `getBookingRevenueDetails` and
+  `getRoundPnL`'s new fields — the only two places VGM appears.
+  `getBookingRevenueDetails` reports it in kg (its `ReportStatCard`
+  sub-label says `"kg"` — confirmed in `BookingRevenueDetailsReport.jsx`);
+  `getRoundPnL` converts to MT before returning it (Sprint 036 Decision
+  1's explicit unit requirement). **This is a real, confirmed
+  inconsistency**: the same underlying field (`Booking.vgm`) is
+  presented in two different units by two different reports with no
+  visual distinction beyond a small sub-label, risking a user
+  misreading one figure as the other's unit.
+- **Revenue**: see above — inconsistent.
+- **Expenses**: category+currency grouping is consistent between
+  `getExpenseReport` and `getRoundPnL`'s legacy `expenseBreakdown`
+  block (both group the same way) — but `getRoundPnL`'s NEW Voyage
+  Cost/Other Voyage Cost classification grouping has no counterpart in
+  `getExpenseReport` at all. **Partially consistent** (the old grouping
+  matches; the new one has no sibling to be consistent with).
+- **Capacity**: single source (`capacity.service.js`), consumed
+  identically by `getRoundCapacityReport` and the Vessel Details page
+  (`vessel.service.js`, confirmed by claude.md Sprint 032's own
+  documented dual-layer alignment work) — **consistent.**
+- **Round totals / Voyage totals / Port totals**: Round-level voyage-set
+  resolution differs between Capacity Engine (`Round.voyageIds`) and
+  Voyage Profitability (`Voyage.find({roundId})`) — see 3.1's finding.
+  Port-level totals exist only in `getRoundPnL`'s Voyage Cost breakdown
+  today; no other report has a port dimension to compare against (only
+  `getExpenseReport` could grow one, per 3.4's gap).
+
+---
+
+# 7. REQUIRED CHANGES
+
+Numbered for direct carry-over into a future implementation sprint (not
+this one):
+
+1. **Fix the dead `quantity` field** in `getVoyagePerformance`,
+   `getRevenueReport`, and `getRoundPnL`'s legacy `revenueAgg` — replace
+   `$sum: '$quantity'` with either removal of the field (matching
+   Sprint 034's precedent for Vessel Stats/Booking Report) or a
+   replacement with `$sum: 1` (booking count) if a "units" figure is
+   still wanted, per business decision.
+2. **Resolve the Revenue definition inconsistency** — decide, as a
+   business rule, whether `getVoyagePerformance` and `getRevenueReport`
+   should be realigned to Layer-2-Final-Loading-only (matching Sprint
+   033/034/035/036's established rule), and whether `getRoundPnL`'s
+   legacy top-level fields should be deprecated/removed now that the new
+   `summary` fields supersede them.
+3. **Bring Expense Report to Sprint 036 parity** — add `portId` filter +
+   populate + Scope column (reusing `expense.service.js#deriveScope()`),
+   and consider adding a Voyage Cost/Other Voyage Cost classification
+   column so it can be reconciled against Voyage Profitability's
+   numbers.
+4. **Harmonize round-voyage-set resolution** — migrate
+   `capacity.service.js#computeRoundCapacity` from `round.voyageIds` to
+   `Voyage.find({roundId})`, matching Sprint 035 ADR-4, for
+   defense-in-depth even though no active drift was found today.
+5. **Reconcile the VGM unit display** between `getBookingRevenueDetails`
+   (kg) and `getRoundPnL` (MT) — either standardize on one unit for both
+   reports, or make the unit label significantly more prominent in both
+   UIs so it cannot be misread.
+6. **(Business decision, not architecture)** whether Round Capacity
+   Report should gain a VGM figure, and whether Revenue Report should
+   eventually derive from Invoice/Payment data instead of raw Booking
+   freight.
+
+None of the above is implemented in this sprint — this list exists so a
+future implementation sprint (e.g. Sprint 038) has a concrete, cited
+starting point.
+
+---
+
+# 8. ARCHITECTURE DECISIONS (ADR)
+
+**ADR-1 — This audit produces no code changes.** Per explicit
+instruction, Sprint 037 is a documentation-only deliverable; every
+"Required Change" in Section 7 is a candidate for a FUTURE sprint's
+Backend/Frontend/API Impact sections, not this one's.
+
+**ADR-2 — Findings are graded by evidence, not suspicion.** Every
+finding above cites the specific file, line, or model field it was
+confirmed against. Two items considered during this audit were
+deliberately NOT flagged as findings after verification: (a)
+`Booking`'s lack of a `currency` field, confirmed to be consistent with
+the "single operating currency" architecture rather than a gap; (b)
+`getBookingReport`'s inclusion of non-Final-Loading bookings, confirmed
+to be a deliberate, correct design for a listing report rather than a
+revenue-definition violation.
+
+**ADR-3 — The dead-`quantity`-field bug and the Revenue-definition
+inconsistency are treated as two SEPARATE findings**, even though they
+co-occur in `getRoundPnL`'s legacy block, because fixing one does not
+fix the other: removing `$sum:'$quantity'` corrects the units figure,
+but the surrounding revenue population (any-non-Cancelled vs.
+Final-Loading-only) is an independent business-rule question that
+requires its own decision.
+
+---
+
+# 9. BACKEND IMPACT (for a future implementation sprint)
+
+- `reports.service.js#getVoyagePerformance`, `#getRevenueReport`,
+  `#getRoundPnL` (legacy block only) — `quantity` field removal.
+- `reports.service.js#getVoyagePerformance`, `#getRevenueReport` —
+  potential Final-Loading-only + dual-layer support, pending business
+  decision.
+- `reports.service.js#getExpenseReport` — `portId` filter, populate,
+  scope computation reuse (`expense.service.js#deriveScope`), potential
+  classification grouping.
+- `capacity.service.js#computeRoundCapacity` — voyage-set resolution
+  change (`Round.voyageIds` → `Voyage.find({roundId})`).
+- No change anticipated to `teuResolver.js`, `booking.model.js`,
+  `manualBooking.model.js`, `expense.model.js`, `invoice.model.js`,
+  `payment.model.js`, or any Sprint ≤ 036 capacity/classification logic
+  itself — every finding above is a consumer-side gap, not a source-of-
+  truth defect.
+
+---
+
+# 10. FRONTEND IMPACT (for a future implementation sprint)
+
+- `VoyagePerformanceReport.jsx`, `RevenueReport.jsx` — remove or
+  reinterpret the "Units" column depending on the Section 7 Item 1/2
+  decision; potential Layer/Status filter controls.
+- `ExpenseReport.jsx` — Port filter, Scope column, `portId.name`
+  display (reusing the exact `ExpenseList.jsx` Sprint 036 pattern).
+- `RoundPnlReport.jsx` — potential removal/relabeling of the legacy
+  "Total Units" field in the Round Details grid once Section 7 Item 2 is
+  decided.
+- `BookingRevenueDetailsReport.jsx` and/or `RoundPnlReport.jsx` — VGM
+  unit-label clarity fix (Section 7 Item 5).
+
+---
+
+# 11. API IMPACT (for a future implementation sprint)
+
+- No route additions/removals anticipated — every fix identified is
+  either a response-field correction (`quantity`/`totalQty` removal) or
+  an additive filter (`portId` on `GET /reports/expenses`), matching
+  this codebase's established pattern of extending endpoints in place
+  rather than adding new ones (Sprint 035 ADR-1's precedent).
+- `GET /reports/round-pnl`'s legacy top-level fields
+  (`totalRevenue`/`l1Revenue`/`l2Revenue`/`bookingCount`/
+  `totalQuantity`) are a backward-compatibility surface — any change to
+  or removal of them is an API-breaking change for whatever currently
+  reads them (confirmed: `RoundPnlReport.jsx`'s Round Details grid and
+  legacy expense-totals section) and would need its own migration plan
+  in whichever sprint acts on Section 7 Item 2.
+
+---
+
+# 12. RISKS
+
+1. **Silent trust in a currently-correct-but-fragile invariant**
+   (`Round.voyageIds` staying in sync with actual `Voyage` documents) —
+   confirmed correct today, but nothing prevents a future code path from
+   mutating voyages without going through `voyage.service.js`'s
+   push/pull logic.
+2. **User-facing trust erosion** — a "Total Units: 0" or "Units: 0"
+   figure sitting next to otherwise-correct numbers on three different
+   report pages is the kind of visible defect that damages confidence in
+   every other number on the same page, even the correct ones.
+3. **Deciding the Revenue-definition question wrong in either direction
+   has real consequences** — narrowing `getRevenueReport`/
+   `getVoyagePerformance` to Final-Loading-only could make historical
+   comparisons (e.g. "revenue trend over the last 6 rounds") look like a
+   discontinuity if anyone was relying on the broader figure; NOT
+   narrowing them leaves the inconsistency with Sprint 033/034/035/036's
+   established rule unresolved. This decision needs explicit business
+   sign-off, not a unilateral architecture call.
+4. **VGM unit mismatch (kg vs. MT) is a real, if currently small,
+   safety-adjacent data-quality risk** — VGM feeds real-world container
+   weight-safety decisions; a report silently switching units between kg
+   and MT is exactly the kind of thing that causes a costly real-world
+   mistake if a user copies a number from one report into a decision
+   that assumed the other report's unit.
+
+---
+
+# 13. ACCEPTANCE CRITERIA (for THIS sprint — the audit itself)
+
+1. Every reporting module named in the prompt (Round Capacity, Voyage
+   Performance, Revenue, Expense) has been read in its current, actual
+   state — not assumed from memory or from prior sprint documentation.
+2. Every finding is backed by a specific file/line/field citation.
+3. Every finding is classified as either a confirmed defect, a
+   confirmed business-rule inconsistency, a confirmed feature gap, or an
+   open business question requiring a decision this audit does not make
+   unilaterally.
+4. No code, migration, or patch was written or modified as part of this
+   sprint.
+5. The document identifies a concrete, prioritized punch list (Section
+   7) usable as the direct input to a future implementation sprint,
+   without requiring that sprint to re-audit from scratch.
+
+---
+
+# 14. OUT OF SCOPE
+
+1. Implementing any of the fixes listed in Section 7 — this is a
+   planning/audit sprint only, per explicit instruction.
+2. Resolving the three open business questions (Section 4) — these
+   require a business decision, not an architecture team decision, and
+   are surfaced here, not answered.
+3. Auditing non-reporting modules (Auth, RBAC, Dashboard, Export,
+   Users/Roles, Audit Log) — the prompt scoped this sprint to reporting
+   modules specifically; Dashboard and Export are explicitly named as
+   waiting on this audit's outcome, not part of it.
+4. Any change to `capacity.service.js`'s cargo-flow algorithm itself,
+   `teuResolver.js`'s TEU rules, or any Sprint ≤ 036 classification
+   logic — all confirmed correct and explicitly out of scope for
+   modification even in a future implementation sprint, since no defect
+   was found in any of them.
+5. Deciding whether Revenue Report should eventually derive from
+   Invoice/Payment data — flagged as a business question in Section 4,
+   not resolved or designed here.
+
+---
+
+END OF AUDIT — Sprint 037. No code was written or modified. Awaiting
+review and approval before any implementation sprint (Sprint 038 or
+later) acts on Section 7's punch list.

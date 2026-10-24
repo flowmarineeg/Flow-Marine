@@ -1,0 +1,352 @@
+# Sprint 045 — Discharge Import: Actual Operational Outcome After Final
+# Loading, Feeding the Capacity Engine's Real Onboard State
+Status: ✅ IMPLEMENTED. All decisions locked and shipped — see "8. IMPLEMENTED"
+at the end of this file for exactly what was built and where.
+
+This is a full rewrite of Sprint 045 after your detailed business-flow
+spec (given directly, superseding this document's own earlier draft,
+which had assumed a Round-scoped, no-capacity-impact design — both
+assumptions were wrong and are corrected below). Every architectural
+claim below was re-verified against the actual current source.
+
+---
+
+# 1. VERIFYING YOUR BUSINESS FLOW AGAINST THE CURRENT ARCHITECTURE
+
+## 1.1 Confirmed correct, as you described
+
+- **Layer 1 = Estimated Booking (`ManualBooking`), Layer 2 = Operational
+  Booking (`Booking`)** — confirmed, unchanged terminology from Sprint 023/
+  042.
+- **Final Loading import already creates/updates the operational booking
+  and confirms final container details** — confirmed,
+  `bookingImport.service.js`'s `importType==='finalLoading'` branch
+  (lines 465-522): creates-or-updates via containerNumber match, then
+  sets `status:'Final Loading'` on every imported container and cancels
+  every OTHER booking for that agent in the round not present in the
+  file. **This sprint does not touch this branch at all** (§7 confirms).
+- **Capacity Engine today depends on Estimated (Layer 1) + Final Loading
+  (Layer 2)** — confirmed, `capacity.service.js#computeRoundCapacity`
+  reads `L1_STATUSES`/`L2_STATUSES` (`Pending, Confirmed, Final Loading`
+  for both layers) with no discharge-confirmation concept at all today.
+
+## 1.2 One factual correction, confirmed by reading `booking.model.js`
+## directly
+
+Your business flow mentions matching on "Container Number, BOL, POD,
+etc." — **there is no BOL (Bill of Lading) field anywhere on the Booking
+schema.** The existing, actual matching key (used by both `'booking'`
+and `'finalLoading'` import types today) is `containerNumber` alone
+(normalized via `.trim().toUpperCase()`), scoped to Agent + a voyage set.
+This document uses containerNumber as the sole match key, per what
+actually exists — POD is used as a secondary CROSS-CHECK against the
+selected voyage (§3.2), not an independent match key.
+
+## 1.3 The two things your spec changes that my own first draft got wrong
+
+- **Voyage is REQUIRED for the Discharge import**, not Round+Agent alone
+  (my first draft wrongly assumed Round+Agent, matching the existing
+  `'booking'`/`'finalLoading'` pattern — your spec is explicit: Agent,
+  Round, **Voyage**, Import Type, File).
+- **The Capacity Engine DOES need to change** — confirmed possible, and
+  scoped precisely, by reading `capacity.service.js` directly (§5). My
+  first draft wrongly assumed this had to stay fully independent.
+
+---
+
+# 2. NEW DATA: Booking gains a discharge-outcome field (Layer 2 ONLY)
+
+```js
+// booking.model.js — additive only
+dischargeStatus: { type: String, enum: ['Discharged', 'Remaining'], default: null },
+dischargedAt:    { type: Date, default: null },
+```
+`default: null` = "not yet assessed" (no discharge import has run for
+this booking's voyage yet) — distinct from both `'Discharged'` and
+`'Remaining'`, so a booking whose voyage simply hasn't arrived yet is
+never wrongly shown in either new tab (§6).
+
+**Layer 1 (`ManualBooking`) is NOT touched** — it has no `containerNumber`
+and no physical-container identity for a real-world discharge event to
+attach to; the business flow's own vocabulary ("Estimated" vs
+"Operational") already draws this line, consistent with every prior
+Layer 1/2 sprint.
+
+---
+
+# 3. NEW IMPORT TYPE: `'discharge'`
+
+## 3.1 Import Settings — Agent, Round, Voyage (required), Import Type,
+## File
+
+`BookingImport.jsx` gains `'discharge'` as a third Import Type option.
+Unlike `'booking'`/`'finalLoading'` (Round+Agent only, no Voyage field),
+selecting `'discharge'` reveals a **required Voyage selector**, cascading
+from the selected Round exactly like every other Round→Voyage cascade
+already in this codebase (`ExpenseForm.jsx`, `TrackingForm.jsx`,
+`RoundPnlReport.jsx`, etc.) — no new UI pattern invented.
+
+Same Excel template as Final Loading (`EXCEL_COLUMN_MAP`, unchanged) —
+confirmed reusable since the Discharge List EXPORT's own columns
+(§1, Sprint 027) already mirror the Final Loading template almost
+exactly. In practice the exact file already submitted for Final Loading,
+or the Discharge List Export's own output, can be re-uploaded here
+unmodified.
+
+## 3.2 Preview validation — voyage-membership check (your point 3)
+
+For each row, resolve the matching Booking by `containerNumber` (existing
+normalization/matching logic, unchanged), scoped to **the selected Voyage
++ Agent** specifically — not the whole Round. Three outcomes per row:
+- **Match found, on the selected voyage, `status==='Final Loading'`** →
+  valid, will be processed (§3.3).
+- **Match found, but on a DIFFERENT voyage within the same Round** →
+  **invalid row**, reported before import: "Container {X} belongs to
+  voyage {other voyage number}, not the selected voyage {selected voyage
+  number}." This is the "rows belong to another voyage" case from your
+  spec — surfaced in the preview exactly like every other invalid-row
+  case already in this screen (red row, listed in the "Issues" column,
+  never silently skipped).
+- **No match anywhere in the Round for this Agent** → invalid row: "No
+  Final Loading booking found for this container."
+- **Match found but its status is not `'Final Loading'`** (e.g. already
+  Cancelled) → invalid row: "Booking exists but is not Final Loading —
+  cannot record a discharge outcome for it."
+
+Additionally (your spec: "matching must be based on the voyage's actual
+POL/POD together with the booking matching logic already used") — if the
+row's own POL/POD text (present in the shared template) does not match
+the SELECTED voyage's actual POL/POD, that is also flagged as an invalid
+row, not silently corrected — since Voyage is an explicit, mandatory
+selection here (unlike Round-scoped imports where per-row voyage
+resolution is the norm), a text mismatch means the row is describing a
+different physical movement than the one the admin explicitly chose.
+
+## 3.3 Save — match-only, no bookings ever created
+
+Confirmed per your point 4: **Discharge import never creates a Booking.**
+On save, for the selected Voyage + Agent:
+- Every row's matched Booking (found in the uploaded file) →
+  `dischargeStatus:'Discharged', dischargedAt: now`.
+- Every OTHER Final Loading Booking for this Agent, on THIS SAME VOYAGE,
+  NOT present in the uploaded file → `dischargeStatus:'Remaining'` (your
+  point 5 — "expected to discharge on that voyage but not found ...
+  become Remaining"). This is a reconciliation sweep scoped to the
+  single selected voyage — narrower than Final Loading's whole-Round
+  sweep, and its outcome is `'Remaining'`, never `'Cancelled'` — a
+  Remaining booking's `status` field is completely untouched, it stays
+  `'Final Loading'` forever; only the new `dischargeStatus` field
+  changes.
+- **Re-running a discharge import for the same voyage is not blocked**
+  — it re-assesses every Final Loading booking on that voyage against
+  the newly uploaded file each time (a booking previously `'Remaining'`
+  that now appears in a corrected file becomes `'Discharged'`, and vice
+  versa) — same "always reflects the latest upload" principle the
+  existing `'finalLoading'` reconciliation already follows. Decided
+  default, not separately asked, since it mirrors existing behavior.
+- No booking field OTHER than `dischargeStatus`/`dischargedAt` is ever
+  written by this import type — `freightRate`, `commodity`, `shipper`,
+  etc. stay exactly as Final Loading left them.
+
+`invalidateRoundCache(roundId)` is called at the end, same as every
+other import type — the capacity engine's cache must reflect the new
+discharge outcome immediately (§5 depends on this).
+
+---
+
+# 4. NEW BOOKING LIST VIEWS: "Discharged" / "Remaining" tabs
+
+Two new top-level tabs in `BookingList.jsx`, alongside "Estimated
+Bookings" / "Operational Bookings" (Layer 2 only — confirmed per your
+point 6, "additional operational views"):
+- **Discharged** — `dischargeStatus: 'Discharged'`.
+- **Remaining** — `dischargeStatus: 'Remaining'`.
+Both reuse the exact same filter bar already on the Operational tab
+(Round → Voyage cascade, Agent, Status), confirmed per your point 6
+("filtering exactly like the existing Operational Booking tab").
+`booking.service.js#list()` gains an additive `dischargeStatus` query
+param — same pagination/filter shape as today, no change to any other
+consumer of that function.
+
+---
+
+# 5. CAPACITY ENGINE — precise, minimal change (your point 7)
+
+## 5.1 Exactly what changes, traced against the real code
+
+`capacity.service.js#computeRoundCapacity`, Step C (building `l2Events`,
+lines ~142-181), currently does, for every Layer 2 booking:
+```js
+const dischargeIdx = resolveDischargeIdx(loadIdx, b.podId); // planned POD match
+l2Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu, source:'l2', exactSegment });
+```
+Step E then unconditionally does `dischargedTEU[ev.dischargeVoyageIdx] +=
+ev.teu` for every event, which is what "removes" a booking's TEU from
+the running onboard total at its planned POD voyage.
+
+**The single change**: `dischargeIdx` (the resolved, planned discharge
+voyage) is still always computed exactly as today — nothing about
+`resolveDischargeIdx`'s forward-walk logic changes. What changes is
+whether Step E is allowed to actually decrement `dischargedTEU` there:
+- `b.dischargeStatus === 'Remaining'` → **the TEU decrement at
+  `dischargeIdx` is suppressed** — the container did not actually come
+  off the vessel there, so it must keep counting as onboard through
+  every subsequent voyage in the round (your point 7: "Remaining
+  containers stay onboard and continue consuming capacity"). The TEU
+  amount is instead added to a NEW, separate `remainingOnboardTEU[i]`
+  array at that same `dischargeIdx` — purely for the warning display
+  (§5.2), never feeding back into `onboardTEU`/`remainingTEU` math.
+- `b.dischargeStatus === 'Discharged'` **or `null` (not yet assessed —
+  decided, confirmed above)** → behaves EXACTLY as today, no change:
+  the TEU decrements at `dischargeIdx` normally. A round that has never
+  used the Discharge import feature computes byte-for-byte identical
+  capacity numbers to before this sprint.
+
+**The `onboardStart[n] = onboardTEU[n-1]` recurrence itself, the
+`resolveDischargeIdx` forward-walk, `teuResolver.js`, and Layer 1's own
+`l1Events` are completely untouched** — matching your explicit
+instruction "the capacity calculation itself should NOT be rewritten,
+only the source of the actual discharge event changes."
+
+## 5.2 New, additive, presentation-adjacent field: `remainingOnboardTEU`
+
+Same category as Sprint 038's `capacityBeforeLoading` and Sprint 029's
+`loadedExact*` — computed alongside the real chain, exposed per voyage,
+never fed back into it. Each voyage row in the `computeRoundCapacity`
+payload gains:
+```js
+remainingOnboardTEU: number  // TEU still physically onboard past its
+                              // expected discharge point at this voyage
+                              // (dischargeStatus:'Remaining' bookings)
+```
+Frontend (`CapacitySegmentTable.jsx`, `VoyageCapacityCard.jsx`,
+`CapacityTimeline.jsx`, `RoundCapacityReport.jsx`) renders a red
+highlight/badge on any voyage where `remainingOnboardTEU > 0` — your
+point 7's explicit "operational warning" — e.g. "⚠ 2 TEU remaining
+onboard past expected discharge." A new warning code (e.g.
+`REMAINING_ONBOARD_PAST_DISCHARGE`) is added to the existing
+`warnings[]` array too, following the same pattern as `VOYAGE_OVERBOOKED`
+etc., so it surfaces in `CapacityWarnings.jsx` the same way every other
+capacity warning already does.
+
+---
+
+# 6. WHAT DOES NOT CHANGE
+
+- **Final Loading import** (`importType==='finalLoading'`) — completely
+  unchanged, confirmed per your point 1/8.
+- **`'booking'` import type** — completely unchanged.
+- **The existing Discharge List EXPORT** (Sprint 027,
+  `exportDischargeList`) — untouched; stays Voyage+Agent scoped, still
+  shows current Final Loading bookings regardless of `dischargeStatus`.
+  Not revisited in this sprint.
+- **Invoice eligibility** — still `status==='Final Loading'` only;
+  `dischargeStatus` is never an invoicing gate. A `'Remaining'` booking
+  is exactly as invoiceable as a `'Discharged'` one.
+- **`resolveDischargeIdx`, `teuResolver.js`, the onboard recurrence
+  formula, Layer 1 (`l1Events`)** — byte-for-byte unchanged (§5.1).
+- **RBAC** — `'discharge'` import reuses the existing `bookings` module +
+  `'import'` action, same guard as `'booking'`/`'finalLoading'` — no new
+  permission entry needed.
+
+---
+
+# 7. ACCEPTANCE CRITERIA
+
+- [ ] A round that never uses the Discharge import computes IDENTICAL
+      capacity numbers to before this sprint (regression check on
+      `resolveDischargeIdx`/onboard math for the not-yet-assessed case).
+- [ ] Discharge import never creates a Booking — every unmatched row is
+      a reported, non-importable invalid row with a clear reason.
+- [ ] A row whose container matches a booking on a DIFFERENT voyage in
+      the same Round is flagged before import, not silently processed.
+- [ ] After a successful discharge import for Voyage V + Agent A: every
+      Final Loading booking for A on V is EITHER `'Discharged'`
+      (in the file) OR `'Remaining'` (not in the file) — never left
+      `null` once V has been processed for A.
+    - [ ] Bookings for OTHER agents, or on OTHER voyages, are untouched.
+- [ ] Capacity Engine: a `'Remaining'` booking's TEU is excluded from
+      `dischargedTEU` at its planned voyage and continues counting in
+      `onboardTEU` for every later voyage in the round; a `'Discharged'`
+      or not-yet-assessed booking's TEU behaves exactly as today.
+- [ ] `remainingOnboardTEU > 0` renders a red warning on the affected
+      voyage in every capacity display component named in §5.2.
+- [ ] "Discharged"/"Remaining" tabs in `BookingList.jsx` filter correctly
+      and share the Operational tab's existing Round/Voyage/Agent filter
+      bar.
+- [ ] Final Loading import, the existing Discharge List export, and
+      Invoice eligibility are all provably unchanged.
+
+---
+
+# 8. IMPLEMENTED
+
+All items above are done, `npm run build` (frontend) and `node --check`
+(every touched backend file) verified clean after each step.
+
+Backend:
+  booking.model.js         — dischargeStatus ('Discharged'|'Remaining'|null,
+                              default null), dischargedAt. Additive only,
+                              `status` field itself untouched.
+  bookingImport.service.js — previewDischargeImport({rows,agentId,voyageId})
+                              + saveDischargeImport({rows,agentId,voyageId,
+                              createdBy}), fully separate from
+                              previewImport/saveImport (untouched). Voyage-
+                              membership check against the row's own
+                              POL/POD text; cross-voyage/cross-status
+                              matches reported as errors, never silently
+                              processed. Save: Booking.updateMany matched
+                              rows -> Discharged; Booking.updateMany
+                              {voyageId,agentId,status:'Final Loading',
+                              _id:$nin matched} -> Remaining (voyage-scoped,
+                              narrower than Final Loading's round-wide
+                              sweep). Calls invalidateRoundCache().
+  bookingImport.controller.js — preview/save branch on
+                              importType==='discharge' to the functions
+                              above; every other importType path unchanged.
+  booking.service.js#list  — additive `dischargeStatus` query param.
+  booking.controller.js#list — passes dischargeStatus through from
+                              req.query.
+  capacity.service.js      — L2 event carries `stuckRemaining` (true when
+                              dischargeStatus==='Remaining'); Step E
+                              branches: stuckRemaining TEU goes to a new
+                              `remainingOnboardTEU[]` array instead of
+                              `dischargedTEU[]`, so it keeps counting in
+                              `onboardTEU` at every later voyage — the
+                              onboard recurrence itself was NOT touched.
+                              New warning `REMAINING_ONBOARD_PAST_DISCHARGE`
+                              + `remainingOnboardTEU` on each voyage row.
+                              `computeVesselActiveCapacity`/
+                              `computeVoyagePreview` inherit this for free
+                              (both call computeRoundCapacity internally).
+
+Frontend:
+  BookingImport.jsx         — `voyageId` state + required Voyage selector
+                              (discharge only, cascades from Round);
+                              `importType` gains 'discharge'; own simpler
+                              preview table (#, Status, Container No,
+                              Booking No, POL, POD, Issues); result card
+                              shows discharged/remainingCount/failed +
+                              red callout when remainingCount > 0.
+  BookingList.jsx            — "Discharged"/"Remaining" tabs added next to
+                              "Operational Bookings"; all three share one
+                              query/table, scoped by dischargeStatus; new
+                              "Discharge" status-badge column on the table.
+  CapacitySegmentTable.jsx   — row tinted red + "⚠ N TEU remaining onboard"
+                              note in the Discharged cell when
+                              `remainingOnboardTEU > 0`.
+  CapacityTimeline.jsx       — red "⚠ N TEU remaining" note under the leg
+                              bar when that voyage has remainingOnboardTEU.
+  VoyageCapacityCard.jsx     — red border/bg + a "Remaining Onboard" stat
+                              when remainingOnboardTEU > 0; own-voyage
+                              REMAINING_ONBOARD_PAST_DISCHARGE warning
+                              already renders inline (reuses the existing
+                              ownWarnings filter).
+  CapacityWarnings.jsx       — icon entry for
+                              REMAINING_ONBOARD_PAST_DISCHARGE.
+
+Confirmed unchanged: previewImport/saveImport (Final Loading + Booking
+import types), DischargeListExportModal/export-discharge-list endpoint,
+invoice eligibility query (still Booking.status==='Final Loading' only,
+does not read dischargeStatus), the onboard/remaining/utilisation
+recurrence and resolveDischargeIdx forward-walk in capacity.service.js.

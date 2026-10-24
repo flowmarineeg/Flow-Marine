@@ -1,0 +1,176 @@
+================================================================================
+SPRINT 005 — LOCATION MASTER (Country → City → Port → Terminal)
+================================================================================
+
+GOAL:
+  Build the hierarchical location system. All four levels (Country, City,
+  Port, Terminal) must be manageable. Cascading dropdowns must work.
+  The reusable <LocationSelect> component must be built and ready for use
+  in all subsequent modules (routes, bookings, tracking, etc.).
+
+--------------------------------------------------------------------------------
+MODULES: locations (countries, cities, ports, terminals)
+--------------------------------------------------------------------------------
+
+DATABASE TASKS:
+  [ ] Create /src/modules/locations/country.model.js
+        Fields: name(unique), code(unique, ISO 2-letter),
+                isDeleted, createdBy, updatedBy, timestamps
+        Indexes: name(unique), code(unique)
+
+  [ ] Create /src/modules/locations/city.model.js
+        Fields: name, countryId(ref:countries, required),
+                isDeleted, createdBy, updatedBy, timestamps
+        Indexes: name+countryId (compound unique), countryId
+
+  [ ] Create /src/modules/locations/port.model.js
+        Fields: name, code(UNLOCODE, optional), cityId(ref:cities, required),
+                countryId(ref:countries, required),
+                isDeleted, createdBy, updatedBy, timestamps
+        Indexes: name+cityId (compound unique), cityId, countryId
+
+  [ ] Create /src/modules/locations/terminal.model.js
+        Fields: name, portId(ref:ports, required),
+                isDeleted, createdBy, updatedBy, timestamps
+        Indexes: name+portId (compound unique), portId
+
+BACKEND TASKS:
+
+  [ ] Create location.service.js with functions:
+        Countries:
+          - listCountries({ search })
+          - createCountry(data): check name+code unique
+          - updateCountry(id, data)
+          - deleteCountry(id): block if cities exist
+        Cities:
+          - listCities({ countryId, search })
+          - createCity(data): check name+countryId unique
+          - updateCity(id, data)
+          - deleteCity(id): block if ports exist
+        Ports:
+          - listPorts({ cityId, countryId, search })
+          - createPort(data): check name+cityId unique
+          - updatePort(id, data)
+          - deletePort(id): block if terminals OR routeLegs exist
+        Terminals:
+          - listTerminals({ portId, search })
+          - createTerminal(data): check name+portId unique
+          - updateTerminal(id, data)
+          - deleteTerminal(id): block if routeLegs reference it
+
+  [ ] Create location.controller.js
+        All country/city/port/terminal CRUD under single controller file
+        Separate handler functions per level
+
+  [ ] Create location.validation.js
+        - Country: name required max 100, code required 2-letter alpha
+        - City: name required max 100, countryId required valid ObjectId
+        - Port: name required max 100, cityId required, countryId required
+        - Terminal: name required max 100, portId required
+
+  [ ] Create location.routes.js
+        GET  /locations/countries
+        POST /locations/countries
+        PUT  /locations/countries/:id
+        DELETE /locations/countries/:id
+        GET  /locations/cities?countryId=
+        POST /locations/cities
+        PUT  /locations/cities/:id
+        DELETE /locations/cities/:id
+        GET  /locations/ports?cityId=&countryId=
+        POST /locations/ports
+        PUT  /locations/ports/:id
+        DELETE /locations/ports/:id
+        GET  /locations/terminals?portId=
+        POST /locations/terminals
+        PUT  /locations/terminals/:id
+        DELETE /locations/terminals/:id
+  [ ] Register in server.js with auth + rbac('locations')
+
+FRONTEND TASKS:
+
+  Services:
+  [ ] Create /src/services/locations.service.js
+        - getCountries(search)
+        - getCities(countryId, search)
+        - getPorts(cityId, search)
+        - getTerminals(portId, search)
+        - CRUD for each level
+
+  Reusable Component — LocationSelect:
+  [ ] Create /src/components/forms/LocationSelect.jsx
+        Props:
+          - value: { countryId, cityId, portId, terminalId }
+          - onChange: (value) => void
+          - showTerminal: Boolean (default true — optional field)
+          - required: Boolean
+          - disabled: Boolean
+        Behavior:
+          - Country dropdown: always shown, loads all countries
+          - City dropdown: shown after country selected, filtered by countryId
+          - Port dropdown: shown after city selected, filtered by cityId
+          - Terminal dropdown: shown after port selected, filtered by portId, optional
+          - Selecting a parent clears all children selections
+          - Uses React Query for caching dropdown data
+        This component is reused in: RouteLegs, Booking, Tracking
+
+  Location Management Page:
+  [ ] Create /src/modules/locations/CountryTable.jsx
+        Table: Name, Code, Actions (Edit, Delete)
+        Inline edit modal or side panel
+  [ ] Create /src/modules/locations/CityTable.jsx
+        Table: Name, Country, Actions
+        Filter by country
+  [ ] Create /src/modules/locations/PortTable.jsx
+        Table: Name, Code, City, Country, Actions
+        Filter by country, then city
+  [ ] Create /src/modules/locations/TerminalTable.jsx
+        Table: Name, Port, Actions
+        Filter by port
+  [ ] Create /src/modules/locations/LocationForm.jsx
+        Generic form used for all levels
+        Renders appropriate parent selector based on level
+  [ ] Create /src/app/(dashboard)/locations/page.jsx
+        Tabbed interface: Countries | Cities | Ports | Terminals
+        Each tab renders the appropriate table component
+
+  Add to Sidebar:
+  [ ] Add "Locations" under Masters section
+
+VALIDATION TASKS:
+  [ ] Country code: exactly 2 uppercase alpha characters
+  [ ] City requires valid countryId
+  [ ] Port requires valid cityId and countryId (consistent)
+  [ ] Terminal requires valid portId
+  [ ] Compound uniqueness enforced server-side with friendly error
+  [ ] Deletion blocked with message explaining which records reference it
+
+--------------------------------------------------------------------------------
+DELIVERABLES
+--------------------------------------------------------------------------------
+  - All 4 location levels manageable (CRUD)
+  - Cascading: selecting country filters cities, city filters ports, etc.
+  - <LocationSelect> reusable component built and tested in isolation
+  - Deletion blocked if child records exist
+  - Audit log covers all location mutations
+
+--------------------------------------------------------------------------------
+COMPLETION CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Countries: create, edit, delete (blocked if cities exist)
+  [ ] Cities: create, edit, delete (blocked if ports exist), filtered by country
+  [ ] Ports: create, edit, delete (blocked if terminals/legs exist), filtered by city
+  [ ] Terminals: create, edit, delete, filtered by port
+  [ ] <LocationSelect> renders all 4 levels with correct cascade behavior
+  [ ] Clearing parent clears child selections
+  [ ] Duplicate names within same parent are blocked
+  [ ] Location tabs on management page all work
+
+--------------------------------------------------------------------------------
+DEPENDENCIES:
+  Sprint 002 (auth), Sprint 001 (environment)
+
+ESTIMATED COMPLEXITY: Medium
+  (Cascade logic requires careful state management in the shared component)
+
+================================================================================

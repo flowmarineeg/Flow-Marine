@@ -1,0 +1,672 @@
+================================================================================
+SYSTEM REPORT — Logistics & Shipping SaaS
+================================================================================
+Last Updated: Sprint 046 Complete | Sprint 041 still planning-only, NOT implemented
+Status: PRODUCTION-READY — Sprints 001-036, 038-040 & 042-046 shipped, 037
+        audit-only, 041 planning approved but NOT yet implemented (see Section 10)
+Stack: MERN (MongoDB + Express + Next.js 15 + Node.js)
+Root:  D:\web-desgin\freelance\logistics
+Branch: main (merged from version2, fast-forward, 2026-07-24)
+================================================================================
+
+NOTE ON THIS DOCUMENT: this file was last substantially rewritten at Sprint 020
+and had not been touched through Sprints 021-039 despite 19 further sprints of
+real, shipped work. It was brought current through Sprint 041 in one revision,
+and this revision brings it current through Sprint 046 (5 further sprints:
+042-046). For full per-sprint detail/ADRs, see claude.md (Section 3 sprint
+table + per-sprint sections) and sprints/0XX-sprint.txt. This file stays a
+high-level current-state snapshot — it does not restate every ADR claude.md
+already covers.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. EXECUTIVE SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Full shipping company operations ERP. Core system (Sprints 001-020) has been
+followed by 26 further sprints (021-046, of which 041 is still planning-only)
+that: split Bookings into two parallel layers (Layer 1 Manual / Layer 2
+Operational) with a per-voyage TEU capacity engine; rebuilt the
+Invoice/Payment system around multi-booking invoices with explicit payment
+allocation AND (Sprint 046) an admin manual status override; added an Agent
+Financial Account statement; modernized the Booking-derived reports onto a
+single, consistent "Layer 2 + Final Loading = realized revenue" rule; gave
+the Expense module a real Round/Voyage/Port scope; rebuilt the Dashboard as a
+widget/section architecture that reuses report logic instead of duplicating
+it; brought the Bulk Export module back in sync with every schema change
+since Sprint 021; standardized a system-wide required-field/error-toast UX
+convention (Sprint 042); and extended the booking lifecycle past Final
+Loading with a Discharge import that the Capacity Engine now reads back
+(Sprint 045).
+
+Completion:    41/46 sprints shipped, 1 audit-only (037), 1 planning-approved
+               but not yet implemented (041)
+Active Bugs:   None blocking. Sprint 041 (still not yet implemented) has
+               identified a real RBAC information-disclosure gap and 3
+               missing frontend page guards — see Section 10.
+Deployment:    Docker-ready (Dockerfile + docker-compose.yml), unchanged since Sprint 020
+Auth:          httpOnly cookie JWT (unchanged since Sprint 020)
+Performance:   In-memory cache for user/permission/dashboard/capacity lookups.
+               getAgentFinancialAccount / getVesselStats remain UNCACHED
+               (Sprint 041 finding, still not yet fixed as of Sprint 046).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. COMPLETED FEATURES (by era)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CORE ERP + RBAC + PRODUCTION HARDENING (Sprints 001-020)
+✅ Auth (httpOnly cookie JWT), RBAC (5 roles, cached permissions), Masters
+  (Vessels/Agents/Locations/Container Types/Expense Types/Services+Routes)
+✅ Rounds (auto voyage generation), Manual Voyage Control
+✅ Booking CRUD + Excel import + Final Loading reconciliation
+✅ Expense logging (authenticated attachments), Invoice lifecycle + PDF export
+✅ Append-only Tracking, immutable Audit Log
+✅ Original Live Dashboard (single page, SuperAdmin only) + 5 aggregation reports
+✅ Excel/ZIP export (12 modules)
+✅ Security/perf hardening: in-memory TTL cache, gzip, rate limiting, Sharp
+  image compression, compound DB indexes, Docker deployment
+
+BOOKING LAYER 1/2 + CAPACITY ENGINE (Sprints 021-032)
+✅ Vessel Particulars (13 new fields: manager/loa/beam/tonnage/bunker capacities/etc.)
+✅ containerNumber established as Booking's PRIMARY match key (Sprint 021)
+✅ ManualBooking (Layer 1, commercial reservation, cargoRows[], no containerNumber)
+  introduced alongside the existing Booking (Layer 2, operational, one
+  booking = one container) — Sprint 023
+✅ Dynamic per-leg / per-voyage TEU Capacity Engine (capacity.service.js),
+  onboard/discharge cargo-flow chain, multi-voyage transit fix (Sprint 028),
+  exact-segment "Loaded" display fix (Sprint 029)
+✅ Layer 2 freight model corrected, quantity field REMOVED (one booking = one
+  container, Sprint 025/026); Import redesigned around Round-scoped,
+  multi-voyage resolution (Sprint 031) — Container Number is the sole
+  match key, POL/POD always server-derived from the resolved Voyage (Sprint 030)
+✅ Discharge List export (Sprint 027)
+✅ Vessel Details KPI standard: every booking-derived stat combines Layer 1 +
+  Layer 2 (Sprint 032) — same rule the Capacity Engine already used
+
+INVOICE & AGENT FINANCIAL SYSTEM (Sprint 033)
+✅ Invoice restructured to header + lineItems[] (Booking/Voyage/Round types),
+  eligibility = Final Loading bookings ONLY
+✅ Explicit per-booking Payment.allocations[] (no proportional/estimated split)
+✅ Agent Financial Account (Round→Voyage→Booking statement tree + KPIs)
+✅ One-sided Booking↔Invoice ownership (Invoice.lineItems only, no
+  Booking.invoiceId field, ever)
+
+REPORTING MODERNIZATION (Sprints 034-038)
+✅ Booking Report → dual-layer (L1+L2, merge-in-JS), dead quantity/totalSlots removed
+✅ Booking Revenue Details (NEW) — pricing-group (Agent+Commodity+POL+POD+
+  ContainerType+FreightRate) revenue report, Layer 2 Final Loading only,
+  rate never averaged
+✅ Voyage Profitability Report (Round P&L evolved in place, Sprint 035) —
+  Round+Voyage scope, Revenue/Voyage Cost/Other Voyage Cost/Summary, Bunker
+  Cost reserved-only
+✅ Expense Module Port-Level Costing (Sprint 036) — Expense.portId
+  (Round/Voyage/Port scope, inferred via deriveScope(), never stored)
+✅ Sprint 037 audit (no code) found: dead quantity field in 3 reports,
+  Revenue-definition drift across 3 reports, Expense Report missing Sprint
+  036 awareness, Round Capacity Report's round.voyageIds vs
+  Voyage.find({roundId}) inconsistency, VGM kg-vs-MT mismatch
+✅ Sprint 038 fixed all of the above except the round.voyageIds
+  inconsistency (deliberately deferred — "reuse the Capacity Engine, do not
+  redesign it") and rebuilt Round Capacity Report as one card per voyage
+  (VoyageCapacityCard.jsx)
+
+DASHBOARD REBUILD (Sprint 039)
+✅ Monolithic dashboard page → DashboardFilterContext + 6 Sections
+  (Operations/Commercial/Financial/Bookings/Performance/Alerts) + independent
+  Widgets, each owning its own query/loading state
+✅ Two-tier data rule: Tier 1 (simple counts) stays in dashboard.service.js;
+  Tier 2 (anything with a business rule) reuses the exact existing report/
+  service function — Dashboard runs ZERO parallel aggregations of its own
+✅ Baseline correctness fixes: revenue30d/monthlyTrend/revByService narrowed
+  to Final Loading (was Confirmed/any-non-Cancelled); totalBookedTEU (dead
+  field) → totalLoadedTEU; totalExpenses now a real sum, not a bare count
+✅ Quick Actions widget (New Booking/Expense/Invoice/Round, Import Bookings)
+
+EXPORT MODULE UPDATE (Sprint 040)
+✅ Schema-drift fixes: Vessel Particulars now exported, Voyage etp/isManual,
+  Booking containerNumber/vgm/dg/imdgCode/containerStatus/remarks added,
+  dead `quantity` column removed, Expense portId+scope, ExpenseType
+  costClassification, Invoice orphanedCount
+✅ NEW `manualBookings` export module (Layer 1 — was never exportable before)
+✅ Date Range filter actually implemented (was UI-claimed but non-functional)
+  for expenses/invoices/rounds/auditLogs
+✅ Export Info metadata worksheet added to every generated .xlsx (Export
+  Name/Generated At/Generated By/Applied Filters/Record Count)
+⬜ buildZipStream still runs sequentially — flagged by Sprint 041, not yet fixed
+
+SYSTEM-WIDE UX + OPERATIONAL LIFECYCLE (Sprints 042-046)
+✅ Booking Import template moved server-side (ExcelJS) with colored
+  required(red)/optional(yellow) header cells; one authoritative column +
+  required-flag list shared by the template and the on-page guide card
+✅ System-wide field convention: one red asterisk for required fields, no
+  marker for optional (every `(optional)`/`(opt)` variant removed)
+✅ Shared showErrorToast() (title by action type + backend message + any
+  per-field validation errors) now used by all ~30 mutation sites
+✅ Round → Active cascades its first Scheduled voyage to Departed
+  (not reversible, no TrackingHistory entry)
+✅ Voyages tab rebuilt as grouped-by-Round sections + a Delete action
+✅ Voyage display order corrected to physical vessel flow (display-only —
+  Voyage.sequence and the Capacity Engine's own calculation untouched),
+  one shared sort function reused by the Voyage tab, Round Details, and
+  every Capacity Engine table (Sprint 043)
+✅ Voyage/Round invoices auto-include every eligible Final Loading booking
+  (manual checkbox selection removed); new BookingsSummaryCard (count/
+  revenue/per-container-type) reused by invoice creation AND the Agent
+  Financial Account's Bookings + Rounds tabs, replacing flat per-booking
+  tables everywhere except drilling into a specific Invoice (Sprint 044)
+✅ Discharge import (NEW importType, Voyage required, match-only, creates
+  no bookings) records each Final Loading booking's real operational
+  outcome — Discharged or Remaining — on its own voyage; two new Booking
+  List tabs; Capacity Engine now diverts a "Remaining" booking's TEU into
+  a presentation-only remainingOnboardTEU[] instead of dischargedTEU[], so
+  it keeps counting onboard at later voyages, with a new red-highlighted
+  REMAINING_ONBOARD_PAST_DISCHARGE warning — the onboard/discharge
+  calculation itself was explicitly NOT rewritten (Sprint 045)
+✅ Invoice status gained an admin manual-override escape hatch: a new
+  per-role invoices:override permission lets its holder (or SuperAdmin)
+  bypass the paidAmount/Paid|Cancelled lock entirely and force status to
+  any value — the payment-driven recalcInvoiceStatus() engine and the
+  default whitelist for everyone else are completely unchanged (Sprint 046)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. MODULE STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MODULE              STATUS    NOTES
+──────────────────────────────────────────────────────────────────────────────
+Auth                ✅ Done   httpOnly cookie JWT, /auth/me rehydration, rate limited
+Users               ✅ Done   CRUD, role assignment, invite flow
+Roles               ✅ Done   Permission grid per module + a new "Override" toggle
+                              column (Sprint 046, invoices-only in practice);
+                              GET /permissions/:roleId has NO caller-scoping
+                              check (Sprint 041 finding, not yet fixed —
+                              see Section 10)
+RBAC                ✅ Done   Cached, per-module per-action, SuperAdmin bypass.
+                              23/23 backend modules confirmed route-gated
+                              (Sprint 041 audit) — 3 frontend pages
+                              (roles/[id], agents/[id], agents/new) confirmed
+                              missing <PageGuard>, not yet fixed. New
+                              invoices:override action (Sprint 046); import/
+                              export actions (Sprint019) still have no UI
+                              toggle — confirmed pre-existing gap, unrelated
+                              to Sprint 041, not fixed by Sprint 046 either
+Vessels             ✅ Done   Full CRUD + detail stats page. getVesselStats
+                              UNCACHED (Sprint 041 finding)
+Agents              ✅ Done   contacts[] array; Agent Financial Account
+                              (Sprint 033) replaces the old edit-only detail page.
+                              getAgentFinancialAccount UNCACHED (Sprint 041 finding)
+Locations           ✅ Done   4-level cascade hierarchy
+Container Types      ✅ Done   Code/size/type
+Expense Types        ✅ Done   name/category + costClassification (Sprint 035) —
+                              config-driven Voyage Cost / Other Voyage Cost split
+Services            ✅ Done   Service + Route (5-column leg editor with agent)
+Rounds              ✅ Done   Auto voyage generation, status transitions
+Voyages             ✅ Done   Auto + manual create, ETP, voyageCode, isManual, delete.
+                              Voyages tab grouped-by-Round + Delete action (Sprint 042);
+                              display order corrected to physical vessel flow across
+                              every view, display-only (Sprint 043)
+Bookings            ✅ Done   TWO parallel layers: Layer 1 ManualBooking (commercial
+                              reservation, cargoRows[]) + Layer 2 Booking (operational,
+                              one booking = one container, containerNumber primary
+                              key). Round-scoped multi-voyage import (Sprint 031).
+                              Layer 2 gained dischargeStatus/dischargedAt + a new
+                              'discharge' import type + Discharged/Remaining List
+                              tabs (Sprint 045) — Layer 1 untouched by this
+Capacity Engine     ✅ Done   Voyage-anchored TEU cargo-flow chain, multi-voyage
+                              transit fix, exact-segment display fix. Still resolves
+                              round's voyages via round.voyageIds (Sprint 037/041
+                              finding, deliberately deferred, not a bug today).
+                              Sprint 045: reads Booking.dischargeStatus back —
+                              'Remaining' TEU diverted into remainingOnboardTEU[]
+                              (presentation + onboard-carry-forward only), the
+                              onboard/discharge recurrence itself unchanged
+Expenses            ✅ Done   Round/Voyage/Port scope (Sprint 036), inferred not
+                              stored. Redundant {voyageId:1} index flagged (Sprint 041)
+Invoices            ✅ Done   Header+lineItems[] (Sprint 033), multi-booking, explicit
+                              Payment.allocations[], PDF export. Voyage/Round scope
+                              now auto-includes every eligible booking + shows a
+                              BookingsSummaryCard instead of a checkbox table
+                              (Sprint 044). New invoices:override permission lets a
+                              granted role/SuperAdmin bypass the paidAmount/Paid|
+                              Cancelled lock and force status to any value —
+                              recalcInvoiceStatus() itself unchanged (Sprint 046)
+Payments            ✅ Done   Explicit per-booking allocation, void-only correction.
+                              Void action gated by POST→'create' mapping (Sprint 041
+                              flags as an open decision, not a bug)
+Tracking            ✅ Done   Append-only, full list view with filters
+Dashboard           ✅ Done   Rebuilt Sprint 039: 6 sections, independent widgets,
+                              shared filter bar, Quick Actions. SuperAdmin only
+                              (role identity, unchanged)
+Reports             ✅ Done   9 reports total: Round Capacity (voyage-card layout,
+                              Sprint 038), Voyage Performance (dual-layer, Sprint 038),
+                              Revenue (Layer2+Final Loading only, Sprint 038), Expenses
+                              (Port scope + classification, Sprint 038), Bookings
+                              (dual-layer, Sprint 034), Voyage Profitability/Round P&L
+                              (Sprint 035/036), Booking Revenue Details (Sprint 034)
+Export              ✅ Done   13 modules (added manualBookings, Sprint 040), Export
+                              Info metadata sheet, Date Range filters. ZIP export
+                              still sequential (Sprint 041 finding, not yet fixed)
+Audit Log           ✅ Done   Immutable, fire-and-forget write
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. CURRENT ARCHITECTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Browser (Next.js 15 App Router)
+  │ axios withCredentials:true → httpOnly cookie sent automatically
+  ▼
+Express API (Node.js port 5000)
+  │ compression(gzip) → cors → cookieParser → body parsers
+  │ auth.js (cookie first, Bearer fallback) → in-memory cache [user 60s]
+  │ rbac.js → in-memory cache [permission 120s]
+  │ auditLogger.js (fire-and-forget via res.on finish)
+  │ Route handlers → Service layer → Mongoose → MongoDB Atlas
+  │
+  ├── Capacity Engine (capacity.service.js) — 60s cache, per-round, dual-layer
+  ├── Reports layer (reports.service.js) — no caching of its own; report
+  │     endpoints are called on-demand (enabled:false + refetch())
+  ├── Dashboard (dashboard.service.js) — 90s cache (Tier 1 counts) +
+  │     reuses report/capacity functions directly for Tier 2 KPIs
+  ├── Export (export.service.js) — direct Mongoose queries per module,
+  │     ExcelJS workbook + Export Info metadata sheet, Archiver ZIP
+  ├── Image uploads: Multer → Sharp (JPEG/PNG compress to max 1920px)
+  ├── File serving: GET /expenses/:id/attachment (auth required, no public route)
+  ├── PDF export: PDFKit → buffer → Content-Disposition attachment
+  └── Excel import: SheetJS (client-side parse) → JSON → preview API → save API
+
+Frontend data layer:
+  React Query v5 (QueryClient in useState, staleTime 60s default)
+  → Axios service files (@/services/*)
+  → Shared hooks in @/hooks/ (dropdown data, staleTime 5-10min)
+  Reports: enabled:false + refetch()
+  Dashboard: DashboardFilterContext (shared filter state) → Sections →
+    independent Widgets, each with its own useQuery — no page-wide blocking
+    fetch (Sprint 039)
+  Modal: createPortal → document.body (layout uses overflow:clip)
+  Charts: Chart.js v4, targeted registration, useMemo on data, chart.update()
+
+Auth flow: unchanged since Sprint 020 (see claude.md Section 6).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. BUSINESS WORKFLOWS (current)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+See system-flow.txt for detailed per-flow documentation (F-01 onward).
+
+── SETUP ──
+  Locations → Vessels → Agents → Container Types → Expense Types (+ cost
+  classification) → Services + Routes
+
+── OPERATIONS (dual booking layer) ──
+  Round (auto-generates voyages) → Voyages (edit dates/status, manual add)
+  → Bookings:
+      Layer 1 (ManualBooking) — commercial reservation, multi-row cargoRows[]
+      Layer 2 (Booking) — operational, one booking = one container,
+        containerNumber primary key, Excel import (Round-scoped, multi-voyage
+        resolution)
+  → Expenses (Round, Voyage, or Port scope — Sprint 036)
+  → Invoices (multi-booking, Final Loading eligible only, explicit Payment
+    allocation)
+  → Tracking (append-only position history)
+
+── FINAL LOADING IMPORT ──
+  Excel → SheetJS client parse → preview (Round-scoped voyage resolution)
+  → save (bulkWrite) → saved rows = 'Final Loading'; all other bookings for
+  that agent across the ENTIRE Round (not just one voyage) not in the
+  manifest → 'Cancelled'. Any already-invoiced line item gets flagged
+  `orphaned: true` on the Invoice, never silently.
+
+── INVOICE / PAYMENT ──
+  Create invoice (Booking/Voyage/Round type) from eligible Final Loading
+  bookings → record Payment with explicit per-booking allocations[] →
+  invoice status auto-derived (Issued/Partially Paid/Paid/Overdue) →
+  void (not edit) to correct a payment
+
+── REPORTING ──
+  9 reports, run-on-demand: Round Capacity (per-voyage cards), Voyage
+  Performance (L1/L2/combined + status filter), Revenue (L2+Final Loading),
+  Expenses (Round/Voyage/Port + classification), Bookings (dual-layer),
+  Voyage Profitability/Round P&L (Round+Voyage scope), Booking Revenue
+  Details (pricing-group)
+
+── DASHBOARD (SuperAdmin only) ──
+  6 sections, independent widgets, shared filter bar, Quick Actions — every
+  Tier-2 KPI reuses an existing report/service function, never a duplicate
+  aggregation
+
+── EXPORT ──
+  13 modules (Excel), multi-module ZIP, Export Info metadata sheet on every
+  file, Date Range filter on 4 modules
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. DATABASE STATE (current collections, key fields — additive since Sprint 020)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+users, roles, countries/cities/ports/terminals, containertypes,
+expensecategories → unchanged since Sprint 020 (see claude.md Section 6 RBAC
+table for the current role list).
+permissions    → actions{} gained `override` (Boolean, default false, Sprint
+                 046) — invoices-only in practice, additive, no migration
+                 (absent key on old docs reads as falsy)
+
+vessels        → + manager, loa, beam, summerDraft, grossTonnage, netTonnage,
+                 suezGT, suezNT, totalBunkerCapacity, vlsfoCapacity,
+                 mdoCapacity, fwCapacity, charterStartDate, charterEndDate
+                 (Sprint 021 Vessel Particulars)
+agents         → unchanged structurally; financial data now served via
+                 getAgentFinancialAccount (Sprint 033), not stored on Agent
+expensetypes   → name, category(free String) — category now also resolves to
+                 a costClassification via ExpenseCategory (Sprint 035)
+expensecategories → + costClassification ('Voyage Cost'|'Other Voyage Cost')
+services, routes, routelegs → unchanged since Sprint 020
+rounds         → unchanged (voyageIds[] denormalized array — still the
+                 source Capacity Engine trusts; Voyage Profitability/Sprint
+                 035 instead resolves via Voyage.find({roundId}))
+voyages        → voyageNumber, roundId, serviceId, polId, podId, sequence,
+                 etd, eta, etp, atd, ata, status, voyageCode, isManual(bool)
+                 [NO isDeleted — hard delete] — unchanged since Sprint 021
+manualbookings → (Sprint 023, Layer 1) bookingNumber(MB-000001), voyageId,
+                 agentId, cargoRows[]{containerTypeId,commodity,vgm,...},
+                 dg(bool)+dgValue(free text), totalFreight/totalTEU/totalUnits
+                 (server-computed), status, remarks, isDeleted
+bookings       → (Layer 2) bookingNumber(BK-000001), voyageId, agentId,
+                 containerNumber(PRIMARY MATCH KEY, required, indexed,
+                 uppercase), polId, podId (server-derived from voyage, NOT
+                 client-editable), containerTypeId, containerStatus
+                 (Full|Empty), dg(bool), imdgCode, vgm, freightRate,
+                 totalFreight, commodity, remarks, status, isDeleted
+                 [NO quantity field — removed Sprint 025/026]
+                 + dischargeStatus ('Discharged'|'Remaining'|null, default
+                 null, Sprint 045), dischargedAt (Date, default null) —
+                 additive, independent of `status`, set ONLY by the
+                 'discharge' import type
+                 INDEXES: {voyageId,status,isDeleted}, {agentId,status,isDeleted}
+expenses       → roundId XOR voyageId XOR (voyageId+portId) — Port is a
+                 refinement of Voyage scope, not a 4th field.
+                 + portId (ref Port, default null, Sprint 036) — scope is
+                 INFERRED via deriveScope(), never stored.
+                 Legacy `port` free-text field kept, unmodified, legacy-only.
+                 INDEXES: {voyageId,portId} (compound) + a now-redundant
+                 standalone {voyageId:1} — Sprint 041 flags removal
+invoices       → (Sprint 033) invoiceNumber(INV-000001), invoiceType
+                 ('Booking'|'Voyage'|'Round'), roundId/voyageId (per type),
+                 agentId, lineItems[]{bookingId,bookingNumber,containerNumber,
+                 voyageNumber,roundNumber,polName,podName,shipper,consignee,
+                 commodity,freightAmount,orphaned,orphanedAt,orphanedReason}
+                 (SNAPSHOT fields, never re-read live), paidAmount(derived),
+                 status(Draft/Issued/Partially Paid/Paid/Overdue/Cancelled)
+                 Multikey index: {'lineItems.bookingId':1}
+                 [NO invoiceId field ever added to Booking — one-sided
+                 ownership by design]
+payments       → (Sprint 033) invoiceId, paymentDate, method, reference,
+                 allocations[]{bookingId,amount} (explicit, never
+                 proportional), amount(=sum of allocations), isVoided,
+                 voidedAt, voidedBy, voidReason
+                 [never edited — void + new payment to correct]
+trackinghistories, auditlogs, counters → unchanged since Sprint 020
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. API STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+See claude.md Section 12 (API Quick Reference) for the current, annotated
+endpoint list including every Sprint 035-040 change. Summary of what changed
+since Sprint 020, by sprint:
+
+  Sprint 021-032: containerNumber added to Booking; POL/POD server-derived
+    (no longer client-editable); Round→Voyage cascading filters; capacity
+    endpoints (/capacity/round/:roundId, /capacity/vessel/:vesselId/active,
+    /capacity/preview) added Sprint 022
+  Sprint 033: /agents/:id/financial-account, /invoices/eligible-bookings,
+    /invoices/:id/payments (GET/POST), /invoices/:id/payments/:id/void,
+    /payments?agentId=
+  Sprint 034: /reports/booking-revenue-details (new); /reports/bookings
+    became dual-layer
+  Sprint 035/036: GET /reports/round-pnl gained optional ?voyageId=;
+    POST/PUT /expenses accepts portId
+  Sprint 038: GET /reports/voyage-performance gained bookingSource/
+    bookingStatus; GET /reports/revenue narrowed its own population;
+    GET /reports/expenses gained ?portId=; GET /reports/round-capacity
+    payload gained capacityBeforeLoading (additive)
+  Sprint 039: GET /dashboard/port-activity (new), GET /dashboard/missing-
+    final-loading (new); GET /dashboard/stats and /dashboard/fleet-
+    utilisation corrected in place (same routes)
+  Sprint 040: POST /export/excel, /export/zip unchanged in shape but now
+    cover 13 modules and return a workbook with an extra metadata sheet
+  Sprint 042: GET /bookings/import/template (new), GET /bookings/import/
+    template-columns (new)
+  Sprint 044: GET /invoices/eligible-bookings and GET /agents/:id/
+    financial-account rows gained a containerType field
+  Sprint 045: POST /bookings/import/preview and /save gained importType=
+    'discharge' (Voyage required in the body for this type only); GET
+    /bookings gained ?dischargeStatus=
+  Sprint 046: PUT /invoices/:id — when the caller has invoices:override
+    (or is SuperAdmin), the paidAmount/Paid|Cancelled lock and the narrow
+    status whitelist are both skipped; everyone else: unchanged
+
+No route was removed at any point in this history. Every change above is
+either a new, additive query param or a genuinely new, additive route — no
+report/dashboard/export endpoint was ever redesigned as a breaking change.
+
+All responses: {success, data, message, pagination?} — unchanged since Sprint 018.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. UI STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Pages from Sprint 020 remain valid except where superseded below:
+
+CHANGED / REBUILT:
+  /dashboard                ← Sprint 039: full rebuild, Sections/Widgets tree,
+                               DashboardFilterBar, Quick Actions
+  /reports/round-capacity   ← Sprint 038: VoyageCapacityCard.jsx (one card per
+                               voyage) replaces CapacitySegmentTable on this
+                               page only
+  /reports/round-pnl        ← Sprint 035/036: "Voyage Profitability" framing,
+                               Round+Voyage scope selector, VGM (MT) column
+  /reports/voyage-performance ← Sprint 038: Booking Source + Booking Status
+                               filter groups
+  /reports/revenue          ← Sprint 038: Units column removed, subtitle
+                               states Layer-2/Final-Loading scope explicitly
+  /reports/expenses         ← Sprint 038: Port filter, Scope column, "By
+                               Classification" summary block
+  /agents/[id]               ← Sprint 033: Agent Financial Account (7-tab
+                               statement) replaces the old edit-only page.
+                               Sprint 041 finding: no <PageGuard> (not yet fixed)
+  /roles/[id]                ← Sprint 041 finding: no <PageGuard> (not yet fixed)
+  /agents/new                ← Sprint 041 finding: no <PageGuard> (not yet fixed)
+  /export                   ← Sprint 040: Manual Bookings tile (13th module),
+                               working Date Range filter, Export Info sheet
+  /bookings                 ← Sprint 023/032: Operational/Manual tab strip.
+                               Sprint 045: + Discharged/Remaining tabs
+  /bookings/import          ← Sprint 042: server-generated colored template,
+                               guide card fed from the backend. Sprint 045:
+                               + 'discharge' import type, required Voyage
+                               selector, its own simpler preview table
+  /voyages                  ← Sprint 042: grouped-by-Round layout + Delete
+                               action. Sprint 043: physical-flow display order
+  /invoices/new, /invoices/[id] ← Sprint 044: Voyage/Round scope auto-includes
+                               every eligible booking + BookingsSummaryCard
+                               (checkbox table removed). Sprint 046: status
+                               field freely editable + pink banner when the
+                               caller has invoices:override
+  /agents/[id]               ← Sprint 044: Bookings tab + Rounds tab's
+                               Voyage-level bookings both use BookingsSummaryCard
+                               instead of a flat per-booking table
+  /roles/[id]                ← Sprint 046: new "Override" toggle column
+                               (still missing <PageGuard>, Sprint 041 finding)
+
+NEW COMPONENTS (cumulative, Sprints 021-046):
+  ExpenseForm.jsx            ← Round→Voyage→Port 3-way scope selector (Sprint 036)
+  VoyageCapacityCard.jsx     ← per-voyage capacity card (Sprint 038); gained a
+                               red "Remaining Onboard" stat (Sprint 045)
+  DashboardFilterContext/Bar, QuickActionsWidget, Section/Widget tree
+                             (Sprint 039, see claude.md Section 5)
+  AgentFinancialAccount.jsx  ← 7-tab Round→Voyage→Booking statement (Sprint 033);
+                               Bookings/Rounds tabs use BookingsSummaryCard (Sprint 044)
+  PasswordInput.jsx, ConfirmModal.jsx ← Sprint 020, unchanged since
+  utils/errorToast.jsx, utils/voyageDisplayOrder.js, components/ui/
+    BookingsSummaryCard.jsx  ← Sprints 042-044, see claude.md Section 5
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. DEMO CREDENTIALS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+admin@logistics.com    / Admin@123456  → SuperAdmin (dashboard + all modules)
+ops@logistics.com      / Demo@123456   → Operations Manager
+finance@logistics.com  / Demo@123456   → Finance Officer
+tracking@logistics.com / Demo@123456   → Tracking Officer
+viewer@logistics.com   / Demo@123456   → Viewer (read-only)
+
+Run: npm run seed (idempotent — always syncs passwords from .env)
+NOTE: Seed never auto-runs from server. Manual only.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. KNOWN ISSUES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ACTIVE — confirmed by Sprint 041 audit, PLANNING APPROVED BUT NOT YET FIXED:
+  1. (HIGH) GET /permissions/:roleId has no check that the requested roleId
+     is the caller's own — any authenticated user can read any OTHER role's
+     complete permission matrix.
+  2. (HIGH) roles/[id]/page.jsx has no <PageGuard> — compounds #1, lets any
+     authenticated user VIEW (not save) any role's permission matrix by URL.
+  3. (MEDIUM) agents/[id]/page.jsx has no <PageGuard> — Agent Financial
+     Account (revenue/invoices/payments) renders regardless of `agents`
+     read permission (backend endpoint itself is still correctly RBAC'd).
+  4. (LOW-MEDIUM) agents/new/page.jsx has no <PageGuard> — form renders
+     regardless of `agents` create permission (backend POST still blocked).
+  5. (LOW) Payment void is gated by POST→'create' on `invoices`, not
+     update/delete — open business decision, not asserted as wrong.
+  6. getAgentFinancialAccount / getVesselStats have NO caching, unlike every
+     other computation of comparable cost.
+  7. expense.model.js has a redundant standalone {voyageId:1} index.
+  8. export.service.js#buildZipStream fetches modules sequentially, not in
+     parallel.
+  Full detail, ADRs, and the required fix approach for each: sprints/041-sprint.txt.
+
+ACTIVE — deliberate, documented, NOT considered bugs:
+  9. Round Capacity Report / Capacity Engine still resolves a round's
+     voyages via round.voyageIds, not Voyage.find({roundId}) — flagged by
+     Sprint 037, deliberately deferred by Sprint 038 ("reuse the Capacity
+     Engine, do not redesign it"). Currently correct (voyage.service.js
+     keeps the array in sync), just structurally inconsistent with Sprint
+     035's own newer precedent.
+ 10. getRoundPnL's legacy top-level fields (totalRevenue/l1Revenue/
+     l2Revenue/bookingCount/totalQuantity, incl. one remaining dead
+     `$sum:'$quantity'`) are kept alongside the new summary/voyages[]
+     fields for backward compatibility — two "total revenue" figures
+     coexist in one payload by design, not by oversight.
+ 11. `import`/`export` permission actions (Sprint019) still have NO toggle
+     in PermissionMatrix.jsx — grantable only by writing directly to the
+     Permission collection. Confirmed while building Sprint 046; unrelated
+     to Sprint 041's list and not fixed by Sprint 046's own new toggle.
+ 12. An invoice status forced via Sprint 046's admin override can be
+     silently overwritten by the next payment create/void on that
+     invoice — recalcInvoiceStatus() has no concept of "set on purpose"
+     and was deliberately left untouched. An override is a point-in-time
+     correction, not a sticky flag — by design, not a bug.
+
+RESOLVED (for reference, cumulative through Sprint 046):
+  ✅ preserveNullAndEmpty → preserveNullAndEmptyArrays (all pipelines)
+  ✅ Dead $sum:'$quantity' in getVoyagePerformance/getRevenueReport (Sprint 038)
+  ✅ getFleetUtilisation's totalBookedTEU (nonexistent field) → totalLoadedTEU
+     (Sprint 039)
+  ✅ Dashboard revenue figures using stale Confirmed/any-non-Cancelled
+     population (Sprint 039)
+  ✅ VGM shown in kg in one report, MT in another (Sprint 038 — standardized
+     on MT everywhere)
+  ✅ Bulk Export missing containerNumber, Vessel Particulars, Expense
+     portId/scope, Layer 1 export entirely (Sprint 040)
+  ✅ Round Capacity Report's 3 stale field references (peakSegmentIndex/
+     totalBookedTEU/segments.length — none existed on the current payload,
+     Sprint 038)
+  (See docs/system-report.txt Sprint-020-era section, preserved in git
+  history, for everything resolved prior to Sprint 020.)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. PROJECT HEALTH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Completion:      41/46 sprints shipped, 1 audit-only, 1 planning-approved-
+                 not-yet-implemented (041)
+Stability:       No blocking bugs. 4 confirmed RBAC/perf gaps still awaiting
+                 implementation (Section 10, items 1-8) — untouched by 042-046
+Security:        httpOnly cookie auth, rate limiting, no public file
+                 exposure, RBAC on all 23 backend modules (route-level
+                 confirmed complete by Sprint 041 audit) — 3 frontend page
+                 guards and 1 backend authorization scoping check still
+                 open (Section 10). New in Sprint 046: a per-role
+                 invoices:override grant — deliberate elevated capability,
+                 not a gap, but genuinely new attack surface to be aware of
+Performance:     In-memory cache (user/permission/dashboard/capacity),
+                 gzip, compound indexes — Agent Financial Account and
+                 Vessel Stats remain the two most expensive uncached reads
+Code Quality:    Consistent patterns across 26 further sprints; every
+                 architecture decision traceable to a specific sprints/0XX
+                 doc; "reuse existing architecture, never duplicate a
+                 business rule" enforced explicitly since Sprint 037 —
+                 Sprint 045's Capacity Engine change (one new array, zero
+                 changes to the existing recurrence) is the clearest
+                 recent example
+Documentation:   claude.md + this file + system-flow.txt + sprints/STATUS.md
+                 + sprints/0XX-sprint.txt (035-046) all current as of this
+                 revision
+Deployment:      Docker-ready, unchanged since Sprint 020
+Data Integrity:  Auto-numbers atomic, totalFreight server-computed,
+                 tracking immutable, Invoice/Payment reconciliation
+                 transaction-guarded (Sprint 033)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. IMPLEMENTATION RULES (cumulative)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Rules 1-20 are unchanged since Sprint 020 — see claude.md Section 6 for the
+full, current list. Added since:
+
+21. Booking (Layer 2): containerNumber is the PRIMARY match key everywhere
+    (import, Final Loading reconciliation) — never voyageId+POL/POD text.
+22. POL/POD on both booking layers are ALWAYS server-derived from the
+    resolved Voyage — never client-editable, never stored independently
+    of the voyage they came from.
+23. Expense scope (Round/Voyage/Port) is ALWAYS inferred via
+    expense.service.js#deriveScope() — never stored as its own field.
+24. "Revenue" (a business term) means Layer 2, status = 'Final Loading'
+    ONLY, everywhere except: (a) listing reports (Booking Report) that
+    intentionally show every status, and (b) getRoundPnL's own legacy
+    fields (kept for backward compatibility, not a template to copy).
+25. Any KPI/number a Report or Service function already computes must be
+    reused by the Dashboard, never recomputed by a second, parallel
+    aggregation (Sprint 039's central rule).
+26. VGM is always displayed in MT (metric tons) in every report — convert
+    at the report layer (÷1000), never change Booking.vgm's own storage unit.
+27. Required fields get exactly one red asterisk (text-red-400); optional
+    fields get no marker at all — no "(optional)"/"(opt)" text anywhere
+    (Sprint 042, system-wide).
+28. Every mutation's onError handler uses the shared showErrorToast(error,
+    actionType) — never a bespoke flat-string toast.error() call (Sprint 042).
+29. Booking.dischargeStatus is independent of Booking.status — set ONLY by
+    the 'discharge' import type, never changes `status` itself, and is
+    read by the Capacity Engine as a presentation/onboard-carry-forward
+    input only, never by rewriting the onboard/discharge recurrence
+    (Sprint 045).
+30. invoices:override is an ADDITIVE capability on top of the base
+    rbac('invoices') route gate, never a replacement for it — a caller
+    with zero invoices:update rights still cannot reach PUT /invoices/:id
+    at all, override or not (Sprint 046).
+
+================================================================================
+END OF SYSTEM REPORT
+41/46 sprints shipped | 037 audit-only | 041 planning approved, not implemented
+================================================================================

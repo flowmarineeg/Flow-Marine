@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import PageGuard from '@/components/ui/PageGuard';
 import PageHeader from '@/components/ui/PageHeader';
-import InvoiceForm from '@/modules/invoices/InvoiceForm';
+import InvoiceWizardV2 from '@/modules/invoices/InvoiceWizardV2';
 
 function NewInvoiceContent() {
   const router = useRouter();
@@ -20,7 +20,7 @@ function NewInvoiceContent() {
         <span className="text-sm font-medium text-gray-700">New Invoice</span>
       </div>
       <PageHeader title="New Invoice" subtitle="Invoice a Booking, Voyage, or Round of Final Loading bookings" />
-      <InvoiceForm />
+      <InvoiceWizardV2 />
     </div>
   );
 }

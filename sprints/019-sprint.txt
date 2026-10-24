@@ -1,0 +1,455 @@
+================================================================================
+SPRINT 019 — RBAC CONSISTENCY AUDIT & ENFORCEMENT
+================================================================================
+
+STATUS: ✅ Complete
+
+GOAL:
+  Make RBAC 100% consistent across the entire system — backend and frontend.
+  No new features. No workflow changes. Pure security and consistency hardening.
+
+  The audit revealed two critical unprotected endpoints, zero page-level route
+  guards on the frontend, sidebar visibility gaps, missing permission actions,
+  and several UI components ignoring permission state entirely.
+
+================================================================================
+AUDIT FINDINGS
+================================================================================
+
+CRITICAL (no RBAC at all):
+  - GET /dashboard/stats    → auth only, any authenticated user
+  - POST /export/excel      → auth only, any authenticated user
+  - POST /export/zip        → auth only, any authenticated user
+
+HIGH:
+  - No frontend page-level guards — layout.jsx only checked isAuthenticated
+  - Sidebar used isHidden() only, not can(module,'read')
+  - Booking import used rbac('bookings') → create, not a dedicated import action
+  - Final Loading import (which cancels other bookings) never checked update+delete
+  - dashboard not in MODULES[] — no permission docs could be created for it
+  - export module in MODULES[] but never enforced on its own routes
+
+MEDIUM:
+  - BookingList Edit button hid for Cancelled but NOT for Final Loading
+  - Export buttons in VesselList (inline) and ExportButton component
+    never checked can('export','read') or can(module,'export')
+  - BookingList Import button visible to users without import permission
+  - All detail/sub pages (/:id, /new, /edit) had no guard
+
+================================================================================
+PART 1 — BACKEND CHANGES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+1A. config/constants.js
+────────────────────────────────────────────────────────────────────────────────
+
+  ADDED: 'dashboard' to MODULES[] array
+  (was missing — made it impossible to configure dashboard permissions in roles)
+
+────────────────────────────────────────────────────────────────────────────────
+1B. modules/permissions/permission.model.js
+────────────────────────────────────────────────────────────────────────────────
+
+  ADDED to actionSchema:
+    import: { type: Boolean, default: false }  // booking bulk import
+    export: { type: Boolean, default: false }  // per-module export
+
+  These two actions now sit alongside create/read/update/delete/view/hidden.
+  Existing docs default both to false — migration needed on live DBs.
+
+────────────────────────────────────────────────────────────────────────────────
+1C. middleware/rbac.js
+────────────────────────────────────────────────────────────────────────────────
+
+  ADDED: optional actionOverride parameter
+    rbac(module)               → derives action from HTTP method (existing)
+    rbac(module, 'import')     → forces 'import' action check (new)
+    rbac('bookings', 'import') → used on import endpoints
+
+  The HTTP method map (GET→read, POST→create, etc.) is unchanged.
+  actionOverride simply overrides that derivation when provided.
+
+────────────────────────────────────────────────────────────────────────────────
+1D. config/seed.js
+────────────────────────────────────────────────────────────────────────────────
+
+  UPDATED: allActions and readOnlyActions now include import and export fields.
+
+  REBUILT role permission assignments:
+
+  SuperAdmin:
+    All modules → allActions (import:true, export:true everywhere)
+
+  Operations Manager:
+    rounds, voyages, tracking, services, routes → full CRUD + export
+    bookings → full CRUD + import:true + export:true
+    export module → read:true, export:true
+    others → readOnly (export granted on vessels, agents, rounds, voyages,
+              bookings, tracking, services)
+
+  Finance Officer:
+    expenses, invoices → full CRUD, import:false, export:true
+    reports → read:true, export:true
+    export module → read:true, export:true
+    others → readOnly
+
+  Tracking Officer:
+    tracking → full CRUD, import:false (tracking is append-only by design)
+    export module → readOnly (no export)
+    others → readOnly
+
+  Viewer:
+    All modules → readOnly (no import, no export, no CRUD)
+
+────────────────────────────────────────────────────────────────────────────────
+1E. modules/dashboard/dashboard.routes.js
+────────────────────────────────────────────────────────────────────────────────
+
+  ADDED: rbac('dashboard') middleware to GET /stats
+  Was: auth only
+  Now: auth + rbac('dashboard')
+
+────────────────────────────────────────────────────────────────────────────────
+1F. modules/export/export.routes.js
+────────────────────────────────────────────────────────────────────────────────
+
+  ADDED: rbac('export') to both POST /excel and POST /zip
+  ADDED: checkModuleExportPermission middleware (inline in routes file)
+
+  checkModuleExportPermission:
+    - SuperAdmin bypasses
+    - Reads roleId from req.user
+    - Extracts requested module(s) from req.body.module (excel)
+      or req.body.exports[].module (zip)
+    - For each module: checks Permission.actions.export === true
+    - If any module denied → 403 with { denied: [...moduleNames] }
+    - All pass → next()
+
+  This closes the gap where a user could export any module's data
+  regardless of their per-module permissions.
+
+────────────────────────────────────────────────────────────────────────────────
+1G. modules/bookings/booking.routes.js
+────────────────────────────────────────────────────────────────────────────────
+
+  CHANGED: POST /import/preview
+    was: rbac('bookings')           → derived action = 'create'
+    now: rbac('bookings', 'import') → explicit 'import' action
+
+  CHANGED: POST /import/save
+    was: rbac('bookings')           → derived action = 'create'
+    now: rbac('bookings', 'import') + inline finalLoading guard
+
+  finalLoading guard (inline middleware on save route):
+    If req.body.importType === 'finalLoading' AND user is not SuperAdmin:
+      - Load Permission doc for roleId + module 'bookings'
+      - Check actions.update === true AND actions.delete === true
+      - If either false → 403 "Final Loading import requires update and
+        delete permissions on bookings"
+      - Otherwise → next()
+
+    Rationale: Final Loading reconciliation cancels all non-matching
+    voyage bookings (effectively a bulk delete + bulk status update),
+    so it legitimately requires both update and delete permissions,
+    not just import.
+
+================================================================================
+PART 2 — FRONTEND CHANGES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+2A. context/PermissionContext.jsx
+────────────────────────────────────────────────────────────────────────────────
+
+  ADDED: permissionsLoaded state (bool, default false)
+  ADDED: SuperAdmin fast-path
+    → if isAuthenticated && user.roleId.isSystem: set permissionsLoaded=true
+       immediately, skip API fetch (SuperAdmin has no Permission docs in DB)
+  UPDATED: fetch success/error both set permissionsLoaded=true
+  UPDATED: logout/unauthenticated path resets permissionsLoaded=false
+  UPDATED: context value now includes permissionsLoaded
+
+  Purpose: PageGuard needs to know when permissions are loaded before
+  deciding to allow or deny. Without this flag, it would flash "Access
+  Denied" for a moment even for authorized users during initial load.
+
+────────────────────────────────────────────────────────────────────────────────
+2B. components/ui/Can.jsx  (NEW FILE)
+────────────────────────────────────────────────────────────────────────────────
+
+  Inline RBAC guard component.
+  Renders children only when can(module, action) === true.
+  Optional fallback prop for the denied case (default: null).
+
+  Usage:
+    <Can module="bookings" action="create">
+      <Button>+ New Booking</Button>
+    </Can>
+
+    <Can module="vessels" action="delete" fallback={<span>—</span>}>
+      <DeleteButton />
+    </Can>
+
+────────────────────────────────────────────────────────────────────────────────
+2C. components/ui/PageGuard.jsx  (NEW FILE)
+────────────────────────────────────────────────────────────────────────────────
+
+  Page-level RBAC guard.
+  Waits for permissionsLoaded (shows spinner while loading).
+  If isHidden(module) OR !can(module, action) → renders Access Denied block.
+  Otherwise renders children.
+
+  Default action: 'read'
+  Access Denied block:
+    - Red circle with warning icon
+    - "Access Denied" heading
+    - "You don't have permission to view this section. Contact your
+      administrator to request access."
+
+  Usage:
+    <PageGuard module="users">          → requires read
+    <PageGuard module="vessels" action="update"> → requires update (edit pages)
+    <PageGuard module="bookings" action="create"> → requires create (new pages)
+    <PageGuard module="bookings" action="import"> → requires import
+
+────────────────────────────────────────────────────────────────────────────────
+2D. components/layout/Sidebar.jsx
+────────────────────────────────────────────────────────────────────────────────
+
+  CHANGED: Nav item visibility condition
+    was: if (module && isHidden(module)) return null
+    now: if (module && (isHidden(module) || !can(module, 'read'))) return null
+
+  CHANGED: Dashboard nav entry
+    was: module: null   (always visible)
+    now: module: 'dashboard'  (now respects RBAC like every other module)
+
+  ADDED: can destructured from usePermission()
+
+────────────────────────────────────────────────────────────────────────────────
+2E. components/ui/ExportButton.jsx
+────────────────────────────────────────────────────────────────────────────────
+
+  ADDED: usePermission() hook
+  ADDED: Early return null if !can('export','read') || !can(module,'export')
+
+  The component now hides itself entirely when the user lacks export
+  permission on either the export module or the specific data module.
+  No changes to button UI or export logic.
+
+────────────────────────────────────────────────────────────────────────────────
+2F. modules/vessels/VesselList.jsx
+────────────────────────────────────────────────────────────────────────────────
+
+  CHANGED: Inline Export buttons (this list uses custom export, not ExportButton)
+    Wrapped both "Export" and "Export N selected" buttons in:
+    {(can('export','read') && can('vessels','export')) && (...)}
+
+────────────────────────────────────────────────────────────────────────────────
+2G. modules/bookings/BookingList.jsx
+────────────────────────────────────────────────────────────────────────────────
+
+  CHANGED: Import button
+    was: always shown if can('bookings','create')
+    now: additionally requires can('bookings','import')
+
+  CHANGED: Edit button condition
+    was: can('bookings','update') && status !== 'Cancelled'
+    now: can('bookings','update') && status !== 'Cancelled'
+                                  && status !== 'Final Loading'
+
+    Final Loading bookings are locked server-side — the UI now matches.
+
+────────────────────────────────────────────────────────────────────────────────
+2H. modules/reports/ReportsHub.jsx  (NEW FILE — extracted from page.jsx)
+────────────────────────────────────────────────────────────────────────────────
+
+  The reports hub (5 report cards) was previously inline in page.jsx.
+  Extracted to a proper module component so the page.jsx can be a thin
+  wrapper with PageGuard like all other pages.
+  Content is identical — no visual or functional changes.
+
+────────────────────────────────────────────────────────────────────────────────
+2I. All pages under (dashboard)/ — PageGuard applied
+────────────────────────────────────────────────────────────────────────────────
+
+  Every page.jsx now wraps its module component in <PageGuard module="x">.
+  Detail pages use action="read" (default).
+  Create/new pages use action="create".
+  Edit pages use action="update".
+  Import page uses action="import".
+
+  PAGES UPDATED:
+    /dashboard              → PageGuard module="dashboard"
+    /vessels                → PageGuard module="vessels"
+    /vessels/new            → PageGuard module="vessels" action="create"
+    /vessels/[id]           → PageGuard module="vessels"
+    /vessels/[id]/edit      → PageGuard module="vessels" action="update"
+    /agents                 → PageGuard module="agents"
+    /locations              → PageGuard module="locations"
+    /container-types        → PageGuard module="containerTypes"
+    /expense-types          → PageGuard module="expenseTypes"
+    /services               → PageGuard module="services"
+    /services/[id]          → PageGuard module="services"
+    /rounds                 → PageGuard module="rounds"
+    /rounds/[id]            → PageGuard module="rounds"
+    /voyages                → PageGuard module="voyages"
+    /bookings               → PageGuard module="bookings"
+    /bookings/import        → PageGuard module="bookings" action="import"
+    /bookings/[id]          → PageGuard module="bookings"
+    /expenses               → PageGuard module="expenses"
+    /expenses/new           → PageGuard module="expenses" action="create"
+    /expenses/[id]          → PageGuard module="expenses"
+    /invoices               → PageGuard module="invoices"
+    /invoices/new           → PageGuard module="invoices" action="create"
+    /invoices/[id]          → PageGuard module="invoices"
+    /tracking               → PageGuard module="tracking"
+    /reports                → PageGuard module="reports"
+    /reports/round-pnl      → PageGuard module="reports"
+    /reports/voyage-perf    → PageGuard module="reports"
+    /reports/bookings       → PageGuard module="reports"
+    /reports/revenue        → PageGuard module="reports"
+    /reports/expenses       → PageGuard module="reports"
+    /export                 → PageGuard module="export"
+    /users                  → PageGuard module="users"
+    /roles                  → PageGuard module="roles"
+    /audit-logs             → PageGuard module="auditLogs"
+    /audit-logs/[id]        → PageGuard module="auditLogs"
+
+================================================================================
+FILES CHANGED SUMMARY
+================================================================================
+
+BACKEND (7 files):
+  backend/src/config/constants.js                        (dashboard in MODULES)
+  backend/src/config/seed.js                             (rebuilt permissions)
+  backend/src/middleware/rbac.js                         (actionOverride param)
+  backend/src/modules/permissions/permission.model.js   (import+export actions)
+  backend/src/modules/dashboard/dashboard.routes.js     (rbac added)
+  backend/src/modules/export/export.routes.js           (rbac + module check)
+  backend/src/modules/bookings/booking.routes.js        (import action + FL guard)
+
+FRONTEND (33 files):
+  frontend/src/utils/constants.js                        (dashboard in MODULES)
+  frontend/src/context/PermissionContext.jsx             (permissionsLoaded flag)
+  frontend/src/components/ui/Can.jsx                    (NEW)
+  frontend/src/components/ui/PageGuard.jsx              (NEW)
+  frontend/src/components/ui/ExportButton.jsx           (permission-gated)
+  frontend/src/components/layout/Sidebar.jsx            (can() check + dashboard)
+  frontend/src/modules/vessels/VesselList.jsx           (export gated)
+  frontend/src/modules/bookings/BookingList.jsx         (import gated + FL edit)
+  frontend/src/modules/reports/ReportsHub.jsx           (NEW — extracted)
+  frontend/src/app/(dashboard)/dashboard/page.jsx       (PageGuard)
+  frontend/src/app/(dashboard)/vessels/page.jsx         (PageGuard)
+  frontend/src/app/(dashboard)/vessels/new/page.jsx     (PageGuard create)
+  frontend/src/app/(dashboard)/vessels/[id]/page.jsx    (PageGuard)
+  frontend/src/app/(dashboard)/vessels/[id]/edit/page.jsx (PageGuard update)
+  frontend/src/app/(dashboard)/agents/page.jsx          (PageGuard)
+  frontend/src/app/(dashboard)/locations/page.jsx       (PageGuard)
+  frontend/src/app/(dashboard)/container-types/page.jsx (PageGuard)
+  frontend/src/app/(dashboard)/expense-types/page.jsx   (PageGuard)
+  frontend/src/app/(dashboard)/services/page.jsx        (PageGuard)
+  frontend/src/app/(dashboard)/services/[id]/page.jsx   (PageGuard)
+  frontend/src/app/(dashboard)/rounds/page.jsx          (PageGuard)
+  frontend/src/app/(dashboard)/rounds/[id]/page.jsx     (PageGuard)
+  frontend/src/app/(dashboard)/voyages/page.jsx         (PageGuard)
+  frontend/src/app/(dashboard)/bookings/page.jsx        (PageGuard)
+  frontend/src/app/(dashboard)/bookings/import/page.jsx (PageGuard import)
+  frontend/src/app/(dashboard)/bookings/[id]/page.jsx   (PageGuard)
+  frontend/src/app/(dashboard)/expenses/page.jsx        (PageGuard)
+  frontend/src/app/(dashboard)/expenses/new/page.jsx    (PageGuard create)
+  frontend/src/app/(dashboard)/expenses/[id]/page.jsx   (PageGuard)
+  frontend/src/app/(dashboard)/invoices/page.jsx        (PageGuard)
+  frontend/src/app/(dashboard)/invoices/new/page.jsx    (PageGuard create)
+  frontend/src/app/(dashboard)/invoices/[id]/page.jsx   (PageGuard)
+  frontend/src/app/(dashboard)/tracking/page.jsx        (PageGuard)
+  frontend/src/app/(dashboard)/reports/page.jsx         (PageGuard)
+  frontend/src/app/(dashboard)/reports/round-pnl/page.jsx        (PageGuard)
+  frontend/src/app/(dashboard)/reports/voyage-performance/page.jsx(PageGuard)
+  frontend/src/app/(dashboard)/reports/bookings/page.jsx          (PageGuard)
+  frontend/src/app/(dashboard)/reports/revenue/page.jsx           (PageGuard)
+  frontend/src/app/(dashboard)/reports/expenses/page.jsx          (PageGuard)
+  frontend/src/app/(dashboard)/export/page.jsx          (PageGuard)
+  frontend/src/app/(dashboard)/users/page.jsx           (PageGuard)
+  frontend/src/app/(dashboard)/roles/page.jsx           (PageGuard)
+  frontend/src/app/(dashboard)/audit-logs/page.jsx      (PageGuard)
+  frontend/src/app/(dashboard)/audit-logs/[id]/page.jsx (PageGuard)
+
+================================================================================
+NEW PATTERNS — NEVER BREAK
+================================================================================
+
+  1. rbac(module, actionOverride)
+     Use for any endpoint where the HTTP method doesn't map to the right action.
+     Example: POST /import/preview → rbac('bookings', 'import')
+
+  2. Every new page.jsx MUST wrap content in <PageGuard module="x">
+     Detail pages: default action="read"
+     Create pages: action="create"
+     Edit pages:   action="update"
+     Import pages: action="import"
+
+  3. Every export button MUST check:
+     can('export', 'read') && can(module, 'export')
+     Use <ExportButton> (already enforces this) for consistency.
+     Inline export buttons must add the same guard manually.
+
+  4. permissionsLoaded from PermissionContext
+     Wait for this before making permission decisions in components.
+     PageGuard handles this automatically — use PageGuard on all pages.
+
+================================================================================
+LIVE DB MIGRATION NOTE
+================================================================================
+
+  The seed is idempotent (upsertOne = insert-if-not-exists).
+  Existing permission documents will NOT be updated by re-running seed.
+
+  For a live database, run a one-time migration:
+    1. Add import:false, export:false to all existing Permission docs
+       db.permissions.updateMany({}, { $set: { 'actions.import': false,
+                                               'actions.export': false } })
+
+    2. Create missing 'dashboard' Permission doc for each role:
+       For each role, insert Permission { module: 'dashboard', actions: {...} }
+       matching the role's intended access level.
+
+    3. Grant import:true on bookings for Operations Manager
+    4. Grant export:true on relevant modules per role (per seed logic above)
+
+================================================================================
+TESTING CHECKLIST
+================================================================================
+
+  Backend:
+  [ ] GET  /dashboard/stats → 403 for unauthenticated
+  [ ] GET  /dashboard/stats → 403 for role with dashboard:read=false
+  [ ] GET  /dashboard/stats → 200 for role with dashboard:read=true
+  [ ] POST /export/excel    → 403 for role with export:read=false
+  [ ] POST /export/excel    → 403 for role with export:read=true but
+                              module 'bookings' export:false
+  [ ] POST /export/excel    → 200 for role with both permissions
+  [ ] POST /bookings/import/preview → 403 for role with import:false
+  [ ] POST /bookings/import/save (finalLoading) → 403 for role without
+      update+delete on bookings
+  [ ] POST /bookings/import/save (booking mode) → does NOT check update+delete
+
+  Frontend:
+  [ ] Viewer: sidebar shows only permitted modules
+  [ ] Viewer: direct URL to /users → Access Denied block
+  [ ] Viewer: direct URL to /reports → Access Denied block (no reports perm)
+  [ ] Ops Manager: /bookings/import accessible
+  [ ] Tracking Officer: /bookings/import → Access Denied
+  [ ] Finance: /expenses/new accessible, /bookings → read-only (no New button)
+  [ ] Export button invisible for Viewer on all list pages
+  [ ] Export button visible for Ops Manager on bookings list
+  [ ] BookingList: Final Loading row → no Edit button
+  [ ] BookingList: Cancelled row → no Edit button
+  [ ] BookingList: Pending/Confirmed row → Edit button visible (if update perm)
+  [ ] Dashboard visible in sidebar for all roles with dashboard:read=true
+  [ ] Dashboard not in sidebar for roles with dashboard:read=false or hidden
+
+================================================================================
+END OF SPRINT 019
+================================================================================

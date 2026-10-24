@@ -1,0 +1,131 @@
+================================================================================
+SPRINT 009 — EXPENSES & INVOICES
+================================================================================
+
+STATUS: ✅ COMPLETE
+
+GOAL:
+  Build Expense and Invoice modules. Expenses can be linked to a Round or
+  Voyage and may have a file attachment. Invoices are linked to Bookings
+  and have a strict status lifecycle. Both get auto-generated numbers.
+
+--------------------------------------------------------------------------------
+MODULES: expenses, invoices
+--------------------------------------------------------------------------------
+
+DATABASE TASKS:
+  [x] Create /src/modules/expenses/expense.model.js
+        Fields: roundId(nullable), voyageId(nullable), expenseTypeId(required),
+                agentId(optional), port, amount, currency, expenseDate,
+                description, attachmentUrl, attachmentOriginalName,
+                createdBy, updatedBy, timestamps
+        Note: No isDeleted — expenses use hard delete (removes file too)
+
+  [x] Create /src/modules/invoices/invoice.model.js
+        Fields: invoiceNumber(unique), bookingId, agentId, invoiceDate, dueDate,
+                amount, currency, status(enum INVOICE_STATUS), notes,
+                isDeleted, deletedAt, createdBy, updatedBy, timestamps
+
+BACKEND TASKS:
+
+  Upload Middleware:
+  [x] /src/middleware/upload.js already present — exports uploadExpense
+        diskStorage to /uploads/expenses/, file filter (JPEG/PNG/PDF), 10MB limit
+
+  Expense Module:
+  [x] Create /src/modules/expenses/expense.service.js
+        - list: filter by roundId, voyageId, expenseTypeId, currency, date range
+        - getById: full populate
+        - create: validates exactly one of roundId/voyageId set; handles file
+        - update: deletes old file from disk if new upload provided
+        - hardDelete: deletes file from disk, removes document from DB
+
+  [x] Create /src/modules/expenses/expense.controller.js
+  [x] Create /src/modules/expenses/expense.validation.js
+  [x] Create /src/modules/expenses/expense.routes.js
+        POST/PUT use Multer middleware with graceful error handling
+        Routes: GET list, GET :id, POST, PUT :id, DELETE :id
+
+  Invoice Module:
+  [x] Create /src/modules/invoices/invoice.service.js
+        - list: filter by bookingId, agentId, status, date range
+        - getById
+        - create: autoNumber INV-000001, validate dueDate >= invoiceDate,
+          auto-fill agentId from booking.agentId if not provided
+        - update: block if Paid; enforce transitions
+          Draft→Issued/Cancelled, Issued→Paid/Overdue/Cancelled, Overdue→Paid/Cancelled
+        - softDelete: block if Paid
+
+  [x] Create /src/modules/invoices/invoice.controller.js
+  [x] Create /src/modules/invoices/invoice.validation.js
+  [x] Create /src/modules/invoices/invoice.routes.js
+
+  [x] Both registered in server.js under Sprint 009
+  [x] autoNumber 'invoice' key already existed → INV-000001
+
+FRONTEND TASKS:
+  [x] Create /src/services/expenses.service.js
+        Uses multipart/form-data for create/update (file uploads)
+  [x] Create /src/services/invoices.service.js
+
+  [x] Create /src/modules/expenses/ExpenseForm.jsx
+        - Round/Voyage toggle (pill buttons) controls which ID field shows
+        - Expense type + agent dropdowns, amount, currency, date (max=today)
+        - File input with client-side type/size validation (10MB, PDF/JPEG/PNG)
+        - Edit mode shows current attachment link + "replacing" hint
+        - Submits as FormData (multipart)
+
+  [x] Create /src/modules/expenses/ExpenseList.jsx
+        - Filters: expense type, currency text input, date range
+        - Paperclip icon for attachments → opens file in new tab
+        - Round (teal) / Voyage (purple) mono badge to distinguish link type
+        - Hard delete with ConfirmDialog
+
+  [x] Create /src/modules/invoices/InvoiceForm.jsx
+        - Booking dropdown (Cancelled bookings excluded)
+        - On booking select: auto-fills agentId + amount from booking.totalFreight
+        - Booking summary strip (booking no, status, freight, shipper, consignee)
+        - Status dropdown shows only valid next transitions
+        - Paid invoice: green banner + all fields disabled
+        - bookingId locked in edit mode
+
+  [x] Create /src/modules/invoices/InvoiceList.jsx
+        - Filters: agent, status, date range
+        - Due date highlighted red if overdue and not Paid
+        - Edit disabled for Paid invoices (shows "View only")
+        - Delete disabled for Paid invoices
+
+  Pages:
+  [x] /expenses/page.jsx → ExpenseList
+  [x] /expenses/new/page.jsx → ExpenseForm (create)
+  [x] /expenses/[id]/page.jsx → ExpenseForm (edit)
+  [x] /invoices/page.jsx → InvoiceList
+  [x] /invoices/new/page.jsx → InvoiceForm (create)
+  [x] /invoices/[id]/page.jsx → InvoiceForm (edit)
+
+  Sidebar: [x] "Expenses" and "Invoices" already present in Operations section
+
+NOTES:
+  - Expense uses HARD DELETE (file + document removed)
+  - Invoice uses SOFT DELETE (isDeleted flag)
+  - File deletion on expense update is best-effort (never blocks save)
+  - autoNumber 'invoice' was already in autoNumber.js
+  - Sprint 010 (Tracking & Audit Log) has no dependencies on this sprint
+
+--------------------------------------------------------------------------------
+COMPLETION CHECKLIST
+--------------------------------------------------------------------------------
+  [x] Expense creates with roundId only — works
+  [x] Expense creates with voyageId only — works
+  [x] Expense with both roundId AND voyageId — blocked server-side
+  [x] File uploads saved to /uploads/expenses/ on server
+  [x] Attachment link in list opens/downloads file
+  [x] Uploading new file on edit deletes old file from disk
+  [x] Invoice number auto-generates as INV-000001
+  [x] Agent auto-fills from booking selection
+  [x] dueDate before invoiceDate — blocked server-side + UI enforced
+  [x] Paid invoice cannot be edited or deleted
+  [x] Status transitions work correctly for invoices
+  [x] All mutations appear in audit log
+
+================================================================================

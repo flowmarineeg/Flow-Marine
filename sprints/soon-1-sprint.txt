@@ -1,0 +1,464 @@
+# Sprint 041 — RBAC Enforcement Audit, Performance & Caching Review, Bug Sweep
+Status: 🟡 PLANNING — awaiting approval. NO CODE WAS WRITTEN OR
+MODIFIED. This document is the result of a full-codebase audit across
+three axes: (1) RBAC — does every route, page, and action actually
+respect the permission system; (2) Performance/Caching — where is the
+system doing unnecessary work, missing caching, or at risk of
+overloading the server/DB as data grows; (3) Bugs — any remaining
+defects across modules not already caught by Sprints 037/038's dead-
+field sweeps. Every finding below cites the exact file/line it was
+confirmed against.
+
+---
+
+# 1. EXECUTIVE SUMMARY
+
+**RBAC:** The backend enforcement layer is in excellent shape — all 23
+backend modules were checked route-by-route, and every single route is
+gated by `rbac(module[, action])` (either per-route or via a
+router-level `router.use(rbac(...))`), with the HTTP-method → action
+mapping (`GET→read, POST→create, PUT/PATCH→update, DELETE→delete`)
+applied consistently. However, this audit found **one confirmed
+information-disclosure gap and three confirmed frontend page-guard
+gaps**:
+1. **`GET /permissions/:roleId` has no authorization check beyond being
+   logged in** (`permission.routes.js` line 15, `permission.controller.js`
+   `getByRoleId`) — it returns the complete permission matrix for
+   **any** role ID passed in the URL, not just the caller's own role.
+   Any authenticated user of any role can read every other role's full
+   RBAC configuration.
+2. **`roles/[id]/page.jsx` has no `PageGuard`** — any authenticated user
+   who navigates directly to `/roles/<any-role-id>` can view (though not
+   save) that role's full permission matrix, compounding finding #1.
+3. **`agents/[id]/page.jsx` has no `PageGuard`** — the Agent Financial
+   Account (revenue, invoices, payments) renders for any authenticated
+   user who navigates directly to the URL, regardless of `agents` read
+   permission.
+4. **`agents/new/page.jsx` has no `PageGuard`** — the New Agent form
+   renders for any authenticated user regardless of `agents` create
+   permission (the backend `POST /agents` still correctly blocks the
+   actual submit).
+
+**Performance & Caching:** the existing caching architecture (90s
+dashboard stats, 60s capacity engine, 120s permissions, 60s user
+lookup) is sound and was extended correctly through Sprint 039. This
+audit found the two heaviest, most expensive-to-compute read paths in
+the system — `agent.service.js#getAgentFinancialAccount` (a full
+Round→Voyage→Booking statement tree) and
+`vessel.service.js#getVesselStats` — have **no caching at all**, unlike
+every other computation of comparable cost in the system (capacity
+engine, dashboard stats). It also found one redundant Mongoose index
+(`Expense`), one bulk-export operation that runs sequentially where it
+could run in parallel, and confirmed the frontend's existing React
+Query defaults (`staleTime: 60s`, `retry: 1`, no window-focus refetch)
+are already a reasonable, low-load configuration requiring no change.
+
+**Bugs:** a full sweep for the two known bug classes already found and
+fixed in Sprints 037/038 (dead `$sum:'$quantity'` fields, invalid
+`preserveNullAndEmpty` typos) found **no new, previously-unfixed
+instances** anywhere in the codebase — the one remaining occurrence
+(`reports.service.js` line 111, inside `getRoundPnL`'s legacy
+backward-compatibility block) was already identified and deliberately
+left in place by Sprint 038 for backward compatibility, not missed.
+This audit did surface one smaller, real correctness nuance: the
+Payment "void" action (`POST /invoices/:id/payments/:paymentId/void`)
+is gated by the `create` permission on `invoices` (the default mapping
+for any `POST`), not `update`/`delete` — worth a decision, not
+necessarily a bug.
+
+---
+
+# 2. RBAC AUDIT — FINDINGS
+
+## 2.1 Backend route coverage (confirmed thorough, no gaps)
+Every `*.routes.js` file across all 23 backend modules was read in
+full. Every route is gated by `rbac(module)` or `rbac(module,
+actionOverride)`, either per-route or via a router-level
+`router.use(rbac(module))` (used by `locations` and `reports`).
+Special actions (`import`, `export`) correctly use the `actionOverride`
+parameter (`bookings/import/preview`, `bookings/import/save`,
+`bookings/export/discharge-list`, `export/excel`, `export/zip`).
+Deliberately-public routes (`auth/login`, `auth/forgot-password`,
+`auth/reset-password`, `users/accept-invite`) are correctly outside the
+`auth` middleware entirely, by design, and carry no RBAC concern since
+no user session exists yet. **No route was found missing an RBAC
+check.**
+
+## 2.2 Confirmed finding — `GET /permissions/:roleId` (HIGH)
+`permission.routes.js`:
+```js
+// GET is self-service — any authenticated user must be able to fetch their own
+// role's permissions. Protecting this with rbac('roles') causes a chicken-and-egg
+// deadlock...
+router.get('/:roleId',  ctrl.getByRoleId);
+```
+The comment's stated intent — "fetch their OWN role's permissions" — is
+correct and the `PermissionContext.jsx` frontend caller does exactly
+that (`api.get('/permissions/${user.roleId._id}')`, always the caller's
+own ID). But `permission.controller.js#getByRoleId` /
+`permission.service.js#getByRoleId` never check that `req.params.roleId`
+actually equals the caller's own `roleId` — the route accepts **any**
+roleId string and returns that role's full permission document
+(every module × every action). Combined with finding 2.3 below, this
+means any logged-in user (e.g. a Tracking Officer) can read the
+complete authorization configuration of SuperAdmin, Finance Officer,
+Operations Manager, or any other role by simply changing the URL/ID.
+
+## 2.3 Confirmed finding — `roles/[id]/page.jsx` has no PageGuard (HIGH)
+```jsx
+// frontend/src/app/(dashboard)/roles/[id]/page.jsx — verbatim, in full:
+'use client';
+import { use } from 'react';
+import PermissionMatrix from '@/modules/roles/PermissionMatrix';
+export default function RolePermissionsPage({ params }) {
+  const { id } = use(params);
+  return <PermissionMatrix roleId={id} />;
+}
+```
+No `PageGuard`, no `can('roles','read')` check of any kind. Combined
+with 2.2, any authenticated user navigating directly to this URL for
+any role ID sees that role's complete, live permission matrix rendered
+in the UI. The `PUT` (save) is still correctly protected
+server-side by `rbac('roles')`, so no one can **change** another role's
+permissions this way — only **view** them, but that view itself is
+sensitive configuration data no role except an admin-level one should
+see.
+
+## 2.4 Confirmed finding — `agents/[id]/page.jsx` has no PageGuard (MEDIUM)
+```jsx
+// verbatim:
+export default function AgentDetailPage({ params }) {
+  const { id } = use(params);
+  const [mode, setMode] = useState('statement');
+  ...
+  return <AgentFinancialAccount id={id} onEdit={() => setMode('edit')} />;
+}
+```
+No `PageGuard` wraps either the statement view or the edit-mode
+`AgentForm`. The backend endpoint
+(`GET /agents/:id/financial-account`) does correctly enforce
+`rbac('agents')`, so the underlying financial data itself cannot be
+fetched by an unauthorized role — but the page shell, loading states,
+and UI layout render regardless, inconsistent with the sibling `/agents`
+list page, which correctly uses `<PageGuard module="agents">`.
+
+## 2.5 Confirmed finding — `agents/new/page.jsx` has no PageGuard (LOW-MEDIUM)
+```jsx
+// verbatim, in full:
+export default function NewAgentPage() { return <AgentForm />; }
+```
+No `PageGuard`. `POST /agents` is correctly gated by `rbac('agents')`
+server-side, so no unauthorized agent can actually be created — but the
+form itself renders for anyone, unlike every other "New X" page in the
+system (`vessels/new`, `expenses/new`, `invoices/new`, all confirmed
+using `<PageGuard module="X" action="create">`).
+
+## 2.6 Confirmed, minor — Payment void action-mapping (LOW, decision not bug)
+```js
+// invoice.routes.js
+router.post('/:id/payments/:paymentId/void', rbac('invoices'), audit('invoices'), validatePaymentVoid, paymentCtrl.voidPayment);
+```
+No `actionOverride` is passed, so `rbac`'s default `POST → 'create'`
+mapping applies — voiding a payment requires only `create` permission
+on `invoices`, not `update` or `delete`. This is defensible (recording
+and voiding a payment could reasonably be considered the same
+"manage payments" privilege level) but is a design choice that was
+never explicitly made — flagged for a decision, not asserted as wrong.
+
+## 2.7 Confirmed correct, not a gap
+- `PermissionContext.jsx`/`Sidebar.jsx`/`PageGuard.jsx` all correctly
+  implement `can()`/`isHidden()` and SuperAdmin bypass consistently.
+- Every other page.jsx (~40 files reviewed) correctly wraps its module
+  component in `<PageGuard module="...">`, including all 6 Report
+  pages, all list pages, and every other detail/edit page.
+- Dashboard's `isSuperAdmin`-by-role-identity enforcement (not
+  `PageGuard`) is confirmed intentional and documented (claude.md
+  Section 6) — not a gap.
+- The backend's `rbac('dashboard')` on both dashboard routes correctly
+  double-enforces this via the `hidden:true` flag already seeded for
+  non-SuperAdmin roles on the `dashboard` module.
+
+---
+
+# 3. PERFORMANCE & CACHING AUDIT — FINDINGS
+
+## 3.1 Confirmed — two of the heaviest computations in the system are
+uncached
+`cache.js` (the shared TTL cache) is used in exactly 6 files:
+`dashboard.service.js` (90s), `capacity.service.js` (60s),
+`permission.service.js`/`rbac.js` (120s), `user.service.js`/`auth.js`
+(60s). Confirmed **absent** from:
+- `agent.service.js#getAgentFinancialAccount` — builds a full
+  Round→Voyage→Booking statement tree (bounded to the agent's most
+  recent 20 rounds per claude.md) plus KPI aggregates, on every single
+  page load of an Agent's detail page, with no TTL cache at all.
+- `vessel.service.js#getVesselStats` — the Vessel Detail page's dual-
+  layer (L1+L2) booking/revenue/agent aggregation (Sprint 032), also
+  uncached.
+Both are read far more often than they're written (an Agent/Vessel's
+underlying bookings don't change every second, but their detail pages
+may be opened repeatedly during a work session) — exactly the profile
+the existing cache pattern (capacity engine, dashboard) was already
+built for.
+
+## 3.2 Confirmed — one redundant Mongoose index
+`expense.model.js`:
+```js
+expenseSchema.index({ voyageId: 1 });
+expenseSchema.index({ voyageId: 1, portId: 1 });
+```
+The second (compound) index already serves any query that filters on
+`voyageId` alone (MongoDB can use a compound index's leading prefix) —
+the standalone `{voyageId:1}` index adds write overhead (every
+insert/update maintains it) with zero query benefit. Confirmed by
+reading the full index list — every other model's indexes were checked
+and no other redundant pair was found.
+
+## 3.3 Confirmed — bulk ZIP export runs sequentially, could parallelize
+`export.service.js#buildZipStream`:
+```js
+for (const item of exportList) {
+  const { buffer, filename } = await exportSingle(item.module, ...);
+  archive.append(Buffer.from(buffer), { name: filename });
+}
+```
+Each module's data-fetch + Excel-buffer-build is awaited one at a time
+before starting the next. For a bulk export of many modules (the
+`ExportPanel.jsx` "Select All" case, now 13 modules since Sprint 040),
+this means N sequential DB round-trips where they could run
+concurrently via `Promise.all` and be appended to the archive in
+whatever order they resolve — a genuine latency reduction opportunity
+for the single slowest current user-facing bulk operation in the
+system.
+
+## 3.4 Confirmed correct, no change needed
+- Frontend React Query defaults (`Providers.jsx`: `staleTime: 60_000`,
+  `retry: 1`, `refetchOnWindowFocus: false`) are already a sound,
+  low-server-load configuration.
+- Dashboard widgets (Sprint 039) correctly share query keys
+  (`'dash-stats-tier1'`, `'dash-fleet-utilisation'`) across multiple
+  independent widget components — React Query dedupes these into a
+  single network request regardless of how many widgets mount with the
+  same key, confirmed by design in the Sprint 039 implementation.
+- Mongoose index coverage across all other models (`Booking`,
+  `ManualBooking`, `Voyage`, `Round`, `Invoice`, `Payment`, `Agent`,
+  `Vessel`, `AuditLog`, location models) was reviewed field-by-field
+  against each service's actual query patterns — no other missing or
+  redundant index was found.
+- No N+1 query pattern (a DB call inside a loop with no batching) was
+  found in any `*.service.js` file — the one loop-with-DB-call pattern
+  that exists (`payment.service.js#create`'s per-allocation balance
+  re-check inside a Mongoose transaction) is a small, bounded (typically
+  1-5 allocations), correctness-required sequential check inside a
+  single session — not a performance defect.
+- `capacity.service.js`'s per-round computation (used by both the
+  Round Capacity Report and the Dashboard's Fleet Utilisation widget)
+  already uses `Promise.allSettled` across rounds, not a sequential
+  loop — confirmed already parallel.
+
+## 3.5 Minor note — duplicate `refetchInterval` declarations on the
+same query key
+`OperationsWidgets.jsx` (`FleetUtilisationWidget`) and
+`AlertsWidgets.jsx` (`CapacityWarningsWidget`) both declare
+`refetchInterval: 60_000` on the same `['dash-fleet-utilisation']`
+query key. React Query dedupes the underlying network request
+regardless, so this causes no extra server load — flagged only as a
+minor code-clarity note (the interval only needs declaring once,
+wherever the query is first mounted), not a performance defect.
+
+---
+
+# 4. BUG SWEEP — FINDINGS
+
+- **No new instances** of the two known, previously-fixed bug classes
+  (dead `$sum:'$quantity'` aggregation field; invalid
+  `preserveNullAndEmpty` — missing the required `Arrays` suffix) were
+  found anywhere in the codebase. A full-text search confirms the only
+  remaining `$sum:'$quantity'` is `reports.service.js` line 111, inside
+  `getRoundPnL`'s explicitly-preserved legacy block (Sprint 038 already
+  documented this exact line as intentionally kept for backward
+  compatibility, not missed).
+- **Section 2.6** (Payment void action-mapping) is the one genuine new
+  correctness nuance surfaced by this sweep — restated here as a
+  cross-reference, not a separate bug.
+- **Section 3.2** (redundant Expense index) is a performance nuance,
+  not a correctness bug — restated here as a cross-reference only.
+
+---
+
+# 5. ARCHITECTURE DECISIONS (ADR)
+
+**ADR-1 — Fix `GET /permissions/:roleId` by restricting non-admin
+callers to their own role, not by removing the self-service exception
+entirely.** The chicken-and-egg problem the original comment describes
+(a non-admin user's own `PermissionContext` must be able to fetch their
+own role's permissions before any `rbac('roles')` check could even be
+evaluated against their own not-yet-loaded permission map) is real and
+must be preserved. The fix is additive: allow the request through
+without `rbac('roles')` ONLY when `req.params.roleId` equals the
+caller's own `roleId` (or the caller is SuperAdmin); otherwise require
+`rbac('roles')` exactly like the existing `PUT` route already does.
+This preserves the exact self-service behavior every non-admin user
+currently depends on while closing the any-other-role disclosure gap.
+
+**ADR-2 — All four RBAC gaps (Section 2.2-2.5) are fixed the same
+way: adding the already-existing `PageGuard`/route-check patterns,
+never inventing a new authorization mechanism.** `roles/[id]/page.jsx`
+gains `<PageGuard module="roles">` (matching `roles/page.jsx`'s own
+convention); `agents/[id]/page.jsx` and `agents/new/page.jsx` gain
+`<PageGuard module="agents">` / `<PageGuard module="agents"
+action="create">` respectively (matching every other detail/new page's
+existing convention, e.g. `vessels/[id]/page.jsx`,
+`vessels/new/page.jsx`). No new component, no new backend middleware
+shape.
+
+**ADR-3 — `getAgentFinancialAccount`/`getVesselStats` caching reuses
+the exact `cache.js` TTL pattern already proven by
+`capacity.service.js`/`dashboard.service.js`, not a new caching
+mechanism.** Cache key convention: `agent:financial:<agentId>`,
+`vessel:stats:<vesselId>`, TTL recommended at 60-90s (matching the
+existing capacity/dashboard TTLs, since both computations read from the
+same booking/invoice/payment data that changes at a similar cadence).
+Invalidation follows the exact pattern `user.service.js`/
+`permission.service.js` already use: the relevant mutation paths
+(Booking/ManualBooking/Invoice/Payment create-update-delete affecting
+that agent; Booking/ManualBooking/Expense affecting that vessel's
+rounds) call `cache.del(...)` or `cache.delByPrefix(...)` after saving,
+mirroring `capacity.service.js#invalidateRoundCache`'s own established
+call-site convention.
+
+**ADR-4 — The redundant Expense index and the sequential ZIP export
+are both fixed as isolated, single-purpose changes, not bundled into a
+larger Export/Expense refactor.** Removing
+`expenseSchema.index({voyageId:1})` is a one-line deletion.
+Parallelizing `buildZipStream`'s per-module fetch is a
+`Promise.all`-based rewrite of one function's internals — the ZIP
+assembly/streaming behavior and response contract are unchanged.
+
+**ADR-5 — The Payment void action-mapping (Section 2.6) is flagged as
+an open question for business/product sign-off, not unilaterally
+changed by this sprint.** Two options: (a) leave as-is (voiding is
+already gated behind the same `invoices` module's `create` action,
+which every role that can record a payment already has); (b) add an
+explicit `actionOverride` (e.g. `rbac('invoices', 'delete')` or a new
+`'void'` action key) so voiding requires a strictly higher privilege
+than recording. This sprint does not decide between them.
+
+---
+
+# 6. BACKEND IMPACT
+
+1. `permission.controller.js#getByRoleId` / `permission.service.js` —
+   add the self-or-admin check described in ADR-1.
+2. `agent.service.js#getAgentFinancialAccount` — wrap in the `cache.js`
+   TTL pattern (ADR-3); add invalidation calls at every mutation path
+   that changes an agent's bookings/invoices/payments.
+3. `vessel.service.js#getVesselStats` — same caching treatment for the
+   vessel's own rounds/bookings/expenses.
+4. `expense.model.js` — remove the redundant
+   `expenseSchema.index({voyageId:1})` line.
+5. `export.service.js#buildZipStream` — parallelize the per-module
+   fetch loop via `Promise.all`, then append results to the archive in
+   settled order.
+6. **No changes** to `capacity.service.js`, `reports.service.js`'s
+   calculation logic, `rbac.js`'s core method-to-action mapping, or any
+   other route file — every other module's RBAC/caching/index
+   coverage is already confirmed correct.
+
+---
+
+# 7. FRONTEND IMPACT
+
+1. `roles/[id]/page.jsx` — wrap in `<PageGuard module="roles">`.
+2. `agents/[id]/page.jsx` — wrap in `<PageGuard module="agents">`.
+3. `agents/new/page.jsx` — wrap in `<PageGuard module="agents"
+   action="create">`.
+4. **No other frontend change required** — every other page already
+   has the correct guard; `Sidebar.jsx`/`PermissionContext.jsx`/
+   `PageGuard.jsx` are already correct and unchanged.
+
+---
+
+# 8. RISKS
+
+1. **The `GET /permissions/:roleId` fix must be tested against the
+   exact self-service case it's designed to preserve** — a non-admin
+   user's own `PermissionContext` load on every page navigation — to
+   confirm the "own role" comparison doesn't accidentally reintroduce
+   the chicken-and-egg deadlock the original design avoided.
+2. **Caching `getAgentFinancialAccount`/`getVesselStats` introduces a
+   staleness window** (60-90s, matching existing patterns) — a payment
+   recorded or booking updated moments ago may not immediately appear
+   on that Agent/Vessel's page without a manual refresh past the TTL.
+   This is the same, already-accepted tradeoff the capacity engine and
+   dashboard already make.
+3. **Cache invalidation for two new cache keys means two new sets of
+   call sites to get right** (every Booking/ManualBooking/Invoice/
+   Payment/Expense mutation that affects a cached Agent or Vessel) —
+   missing one call site would mean stale data surviving past a
+   mutation until the TTL naturally expires; low severity (bounded by
+   the TTL itself) but requires careful review during implementation.
+4. **Parallelizing the ZIP export's per-module fetch** increases
+   peak concurrent DB load for one request (N modules' queries firing
+   at once instead of one at a time) — acceptable given N is at most 13
+   (Sprint 040) and every individual query is already fast, but worth
+   confirming under a "Select All" bulk export during implementation.
+
+---
+
+# 9. ACCEPTANCE CRITERIA
+
+1. `GET /permissions/:roleId` returns 200 for a non-admin user
+   requesting their OWN roleId (unchanged behavior) and 403 for any
+   other roleId (new behavior), while SuperAdmin/`rbac('roles')`-holding
+   users can still fetch any role's permissions.
+2. Navigating directly to `/roles/<id>`, `/agents/<id>`, or
+   `/agents/new` as a role lacking the relevant permission shows the
+   same "Access Denied" `PageGuard` block every other protected page
+   already shows — never the underlying form/statement UI.
+3. `getAgentFinancialAccount`/`getVesselStats` responses are
+   byte-identical whether served from cache or freshly computed for the
+   same inputs — verified by comparing a cached vs. cache-cleared
+   response.
+4. A mutation affecting an Agent's or Vessel's cached data (e.g.
+   recording a payment, creating a booking) is reflected on that
+   Agent's/Vessel's page within one page reload once the corresponding
+   cache-invalidation call site fires — not only after the TTL expires.
+5. `expense.model.js` has no two indexes where one is a strict prefix
+   of the other.
+6. A "Select All" bulk ZIP export completes in less time than before
+   (or at minimum, no slower), verified by timing a same-module-set
+   export before and after the `Promise.all` change.
+7. No existing RBAC-protected route or page that was already correctly
+   gated changes behavior.
+
+---
+
+# 10. OUT OF SCOPE
+
+1. **Any code, migration, or patch** — this is a planning/audit sprint
+   only, per the same pattern established by Sprints 037/039/040; wait
+   for approval before implementation.
+2. **Deciding the Payment void action-mapping question (ADR-5)** —
+   flagged for business/product sign-off, not resolved unilaterally.
+3. **Introducing a new caching library, Redis, or any infrastructure
+   change** — every fix reuses the existing in-process `cache.js` TTL
+   map, per claude.md's own "Forbidden: ...Redis" rule, unchanged by
+   this sprint.
+4. **Re-auditing modules whose RBAC/caching/index coverage this sprint
+   already confirmed correct** (all report endpoints, all Sprint
+   ≤ 040 export/dashboard/reporting work, capacity engine, every other
+   page.jsx already using `PageGuard` correctly).
+5. **Any change to the RBAC permission SCHEMA itself** (the
+   `{create,read,update,delete,import,export,view,hidden}` action set)
+   — this sprint only closes enforcement gaps around the existing
+   schema, it does not add new action types.
+6. **Rate limiting or DDoS protection beyond the existing auth-route
+   limiter** — out of scope; this sprint's "not overloading the server"
+   concern is addressed via caching/indexing/parallelization, not new
+   request-throttling infrastructure.
+
+---
+
+END OF AUDIT — Sprint 041. No code was written or modified. Awaiting
+approval before any implementation begins.

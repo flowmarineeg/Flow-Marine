@@ -36,7 +36,7 @@ export default function AgentForm({ id = null }) {
   });
 
   const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm({
-    defaultValues: { agentCode: '', agentName: '', country: '', city: '', port: '', address: '', status: 'Active', contacts: [] },
+    defaultValues: { agentCode: '', agentName: '', country: '', city: '', port: '', address: '', status: 'Active', contacts: [], partyType: 'Agent', roles: [], creditDays: '' },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'contacts' });
@@ -51,6 +51,9 @@ export default function AgentForm({ id = null }) {
         port:      agentData.port      || '',
         address:   agentData.address   || '',
         status:    agentData.status,
+        partyType: agentData.partyType || 'Agent',
+        roles:     agentData.roles || [],
+        creditDays: agentData.creditDays ?? '',
         contacts:  agentData.contacts?.length > 0 ? agentData.contacts : [],
       });
     }
@@ -61,6 +64,8 @@ export default function AgentForm({ id = null }) {
       const payload = {
         ...data,
         agentCode: data.agentCode?.trim() || null,
+        creditDays: data.creditDays === '' || data.creditDays == null ? null : Number(data.creditDays),
+        roles: Array.isArray(data.roles) ? data.roles : (data.roles ? [data.roles] : []),
         contacts: data.contacts || [],
       };
       return isEdit ? agentsService.update(id, payload) : agentsService.create(payload);
@@ -217,6 +222,30 @@ export default function AgentForm({ id = null }) {
             <select {...register('status')} className={`${ic(false)} cursor-pointer`}>
               {AGENT_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+          </div>
+        </SectionCard>
+
+        {/* Sprint 052 V2 - accounting profile */}
+        <SectionCard title="Accounting profile">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={lc}>Party type</label>
+              <select {...register('partyType')} className={`${ic(false)} cursor-pointer`}>
+                <option value="Agent">Agent</option>
+                <option value="DirectLine">Direct Line (invoices + statement only)</option>
+              </select>
+            </div>
+            <div>
+              <label className={lc}>Roles</label>
+              <div className="flex gap-4 pt-2 text-[13px]">
+                <label className="flex items-center gap-1.5"><input type="checkbox" value="Commercial" {...register('roles')} /> Commercial</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" value="Port" {...register('roles')} /> Port</label>
+              </div>
+            </div>
+            <div>
+              <label className={lc}>Credit days</label>
+              <input type="number" min="0" {...register('creditDays')} className={ic(false)} />
+            </div>
           </div>
         </SectionCard>
 

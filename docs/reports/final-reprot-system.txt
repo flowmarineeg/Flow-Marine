@@ -1,0 +1,488 @@
+================================================================================
+FINAL SYSTEM AUDIT REPORT
+Logistics & Shipping Operations SaaS — MERN Stack
+Audit Date: 2026-07-28
+Scope: Database schema, backend API design/controllers, RBAC, frontend API
+       integration + error handling, backend caching/latency, frontend UI
+       performance.
+Method: Six parallel deep-read audits (one per scope area) against the CURRENT
+        code on disk, cross-referenced against CLAUDE.md's documented state.
+        Every finding below was verified by reading the actual file/line, not
+        assumed from documentation. Findings already known and deliberately
+        deferred (Sprint 041 backlog) are labeled "CONFIRMED PRE-EXISTING" and
+        are not re-litigated as new problems.
+================================================================================
+
+--------------------------------------------------------------------------------
+0. HEADLINE RESULT
+--------------------------------------------------------------------------------
+The system is in good shape overall — response-shape conventions, RBAC route
+gating, transaction safety on money paths, and index design are consistently
+applied across ~21 backend modules and ~40+ frontend pages. No critical
+security holes, no data-corruption-capable bugs, and no crash-capable gaps
+were found. The real issues are:
+
+  (a) ONE genuine documentation/implementation mismatch — two dashboard
+      endpoints CLAUDE.md documents as shipped in Sprint 039 do not exist in
+      code at all (found independently by two separate audits — see §5).
+  (b) A handful of React Query cache-invalidation gaps that leave the UI
+      showing stale data after a mutation, until the default 60s staleTime
+      lapses (§4).
+  (c) Two known-uncached, moderately expensive detail-page reads that were
+      already flagged in Sprint 041 planning and still aren't fixed (§6).
+  (d) A few small, easily-fixed frontend performance issues, the worst being
+      unmemoized filtering in the Booking Import preview table (§7).
+
+No new RBAC security holes were found beyond the two already known and
+tracked in CLAUDE.md / sprints/041-sprint.txt.
+
+--------------------------------------------------------------------------------
+1. PRIORITIZED ACTION LIST (fix in this order)
+--------------------------------------------------------------------------------
+1. Resolve the dashboard endpoint doc/code mismatch (§5.1) — either implement
+   GET /dashboard/port-activity + /missing-final-loading for real, or correct
+   CLAUDE.md/sprints docs to stop claiming they ship. Cheap either way, and
+   currently the single most misleading entry in the reference docs.
+2. Add React Query invalidation after Booking Import save (§4.1) — highest
+   user-visible impact of any finding: a successful bulk import currently
+   looks like it silently did nothing until data goes stale-refetches.
+3. Add React Query invalidation from Payment create/void to the Agent
+   Financial Account query, and from Booking mutations to vessel-stats /
+   round-capacity-report queries (§4.2, §4.3).
+4. Fix `export.service.js#buildZipStream` to fetch modules concurrently
+   (Promise.all) while still appending to the archive in original order
+   (§6.1) — safe, well-scoped, real latency win on the slowest export path.
+5. Add TTL caching to `vessel.service.js#getVesselStats` and
+   `agent.service.js#getAgentFinancialAccount` (§6.2) — same cache.js pattern
+   already used for capacity/dashboard/permissions/user, ~60-90s TTL.
+6. Memoize the Booking Import preview table's derived counts and per-row
+   rendering (§7.1) — fixes real keystroke-lag on large import files.
+7. Wrap `sortVoyagesForDisplay` calls in `VoyageList.jsx` and
+   `VesselDetail.jsx` in `useMemo` to match the pattern already used
+   correctly in `RoundVoyageList.jsx`/`RoundCapacityReport.jsx` (§7.2, §7.3).
+8. Small cleanups: dedupe `expense.model.js`'s redundant index (§2.1),
+   standardize `RouteEditor.jsx`'s error toast to `showErrorToast` (§4.4),
+   make `export.controller.js` use `responseHelper.js` like every other
+   controller (§3.2).
+
+Everything else in this report is lower-priority polish or an explicit
+"checked, found fine" confirmation — see the detail sections below.
+
+================================================================================
+2. DATABASE SCHEMA AUDIT (Mongoose models)
+================================================================================
+All ~24 model files read: agents, auditLogs, bookings (Booking +
+ManualBooking), containerTypes, counters, expenses, expenseTypes (+category),
+invoices (+ payment), locations (4 sub-types), permissions, roles, rounds,
+routes, services, tracking, users, vessels, voyages.
+
+FINDINGS (most severe first):
+
+2.1 [LOW] `expense.model.js:36` — redundant standalone `{voyageId:1}` index,
+    already subsumed by the compound `{voyageId:1,portId:1}` index at line 37.
+    CONFIRMED PRE-EXISTING (Sprint 041 item #7, still not fixed). One-line
+    deletion, no behavior change.
+
+2.2 [MEDIUM, NEW] `booking.model.js` — `containerStatus` (enum Full/Empty) is
+    only hard-enforced as required in the Import path
+    (`bookingImport.service.js#validateRow`). The Mongoose schema default is
+    `null`, and `booking.validation.js` marks it optional on manual
+    create/update. Failure scenario: a manually-created Booking (not via
+    import) can persist with `containerStatus: null`, which several reports
+    and the Booking List's status-badge column assume is always Full/Empty.
+    Recommend either requiring it at the schema level or explicitly deciding
+    manual bookings are allowed to skip it (and defaulting downstream reads).
+
+2.3 [LOW, NEW] `vessel.model.js` — the "Chartered vessels require
+    charterStartDate/charterEndDate" rule lives only in `vessel.service.js`,
+    not as schema-level conditional validation. Low risk today (only one
+    write path exists), but latent: any future direct-write path (a script,
+    a migration, a second service) would silently bypass it.
+
+2.4 [LOW, NEW] `booking.model.js` — the Sprint 045 `dischargeStatus` field
+    has no supporting index. Not currently a problem since every discharge
+    query is scoped by voyageId/agentId first (which are indexed), but worth
+    a compound index if discharge-status-only queries appear later.
+
+CONFIRMED STILL OPEN (re-verified against today's code, not new):
+  - 2.1 above (Sprint 041 #7).
+CONFIRMED CORRECT (re-verified, worth stating so it's clear these were
+checked and are NOT bugs):
+  - `payment.service.js` still computes `Payment.amount` as the derived sum
+    of `allocations[]` — Sprint 033's no-proportional-allocation rule intact.
+  - `totalFreight` is stripped from client input and computed server-side in
+    both `booking.service.js` and `manualBooking.service.js` create/update —
+    no bypass found.
+  - Voyage hard-delete correctly `$pull`s from `Round.voyageIds`
+    (`voyage.service.js:227`) — no dangling reference despite Voyage having
+    no `isDeleted` (that omission is deliberate, per CLAUDE.md gotcha #2).
+  - No new instance found of the "field referenced in a service/report but
+    absent from its model" class of bug that Sprint 037/038 previously found
+    and fixed elsewhere.
+
+================================================================================
+3. BACKEND API DESIGN, CONTROLLERS, ERROR HANDLING
+================================================================================
+All `*.controller.js`/`*.service.js`/`*.routes.js` read across all 21
+modules, plus `middleware/*.js` and `server.js`.
+
+FINDINGS (most severe first):
+
+3.1 [HIGH, NEW] Two dashboard endpoints are documented as shipped but do not
+    exist in code at all. CLAUDE.md (Sprint 039 section) describes
+    `GET /dashboard/port-activity` and `GET /dashboard/missing-final-loading`,
+    backed by `dashboard.service.js#getPortActivity()` /
+    `#getVoyagesMissingFinalLoading()`. A full-repo grep for these route
+    strings and function names returns zero hits anywhere except CLAUDE.md
+    itself. `dashboard.routes.js` only registers `/stats` and
+    `/fleet-utilisation`; `dashboard.service.js` only exports
+    `getDashboardStats`/`getFleetUtilisation`. This was independently
+    confirmed by both the backend-API audit and the RBAC audit. It is
+    inventory drift (the doc describes intended/planned work as if it
+    shipped), NOT a deliberately-deferred item like the Sprint 041 list —
+    those are explicitly marked "not yet implemented" in the doc, this one
+    is marked "Complete." Any future work assuming these routes exist will
+    404. See action item #1.
+
+3.2 [MEDIUM] `export.controller.js` is the only controller in the codebase
+    that never imports `responseHelper.js` — every response is a raw
+    `res.status(x).json({success, message})` (lines 12, 15, 32, 44, 52, 55,
+    75, 76), omitting the `errors: []` array every other endpoint's error
+    response includes. Currently harmless (the frontend's `showErrorToast`
+    defensively checks for `errors` before using it), but it is the one
+    deviation from the system-wide `{success, data, message, pagination?}`
+    contract and will surprise the next consumer that assumes `errors`
+    always exists on an error response.
+
+3.3 [LOW] `export.service.js#buildZipStream` confirmed still sequential
+    (lines ~690-706: `for (const item of exportList) { await
+    exportSingle(...) }`). Matches CLAUDE.md's Sprint 041 claim exactly.
+    See §6.1 for the concrete, order-preserving fix.
+
+3.4 [INFO] `dashboard.service.js#getFleetUtilisation` calls
+    `computeRoundCapacity()` once per Active round via `Promise.allSettled`
+    (already parallel, not sequential — no bug). Noted only because it's the
+    dashboard's one "N calls" pattern; acceptable given Active-round counts
+    are small and each call is itself 60s-cached by the capacity engine.
+
+CHECKED, NO ISSUES FOUND (explicitly verified, not skipped):
+  - Response shape: every other controller (agents, auth, bookings,
+    capacity, invoices, payments, permissions, reports, roles, rounds,
+    tracking, users, vessels, voyages, locations) consistently uses
+    `responseHelper.js`.
+  - Error handling: no async controller missing try/catch or an equivalent
+    wrapper; the couple of controllers without try/catch (e.g.
+    `auth.controller.js#logout`) also have no `await`, so nothing can throw
+    unguarded.
+  - Route ordering: every `*.routes.js` file checked — all static/prefix
+    routes (`/manual`, `/import/*`, `/voyage-ports/:id`, `/export/
+    discharge-list`, `/round-ports/:id`, `/eligible-bookings`, `/:id/pdf`,
+    `/:id/payments`, `/:id/stats`, `/:id/attachment`) are registered before
+    the colliding `/:id` pattern. No new instance of the expense/invoice-
+    style shadowing bug found.
+  - Validation coverage: spot-checked expenseType categories, payment
+    create/void, booking/manual/expense/invoice CRUD — matching
+    express-validator chains everywhere. `capacity.controller.js
+    #previewCapacity` validates manually (no express-validator) but does
+    check its required fields — a style difference, not a gap.
+  - N+1 queries: `agent.service.js`, `vessel.service.js`,
+    `reports.service.js`, `dashboard.service.js` all batch via `$in` /
+    aggregation pipelines — no per-row query loops found anywhere.
+  - Transactions: `invoice.service.js#create()` and
+    `payment.service.js#create()`/`voidPayment()` all correctly use
+    `mongoose.startSession()` + `session.withTransaction()`, with the
+    booking-claim re-check re-verified INSIDE the transaction, matching the
+    Sprint 033 spec exactly. `recalcInvoiceStatus()` correctly threads the
+    session through.
+  - Missing awaits: none found. `invalidateRoundCache()` calls are
+    synchronous (in-memory Map, no promise) so their lack of `await` is
+    correct, not a bug.
+
+CONFIRMED STILL OPEN per CLAUDE.md (re-verified directly, not new):
+  - `GET /permissions/:roleId` has no self-or-admin check
+    (`permission.routes.js` line 15).
+  - `export.service.js#buildZipStream` still sequential.
+  - `getAgentFinancialAccount` / `getVesselStats` confirmed still uncached.
+
+================================================================================
+4. RBAC AUDIT (route coverage, permission model, PageGuard coverage)
+================================================================================
+Every route in every `*.routes.js` was enumerated and checked for an
+`rbac()` (or explicitly-exempt) gate; every `app/(dashboard)/**/[id]/
+page.jsx` and `**/new/page.jsx` was checked for `<PageGuard>`.
+
+NEW FINDINGS:
+
+4.1 Same doc/code mismatch as §3.1 — the two missing dashboard endpoints
+    obviously have no RBAC exposure because they don't exist. Not a
+    vulnerability; listed here only because the RBAC audit independently
+    hit the same wall trying to verify their gating.
+
+4.2 No other unguarded route was found anywhere in the 21 route modules.
+    Every module calls `router.use(auth)` and every individual route carries
+    an `rbac('module'[, 'action'])` call, including the two real newer
+    endpoints (`GET /bookings/import/template` and `/template-columns`, both
+    `rbac('bookings','import')`).
+
+CONFIRMED PRE-EXISTING (re-verified against current code, not new):
+
+4.3 `GET /permissions/:roleId` (`permission.routes.js:15`) still has only
+    `auth`, no `rbac`, no ownership check comparing `req.params.roleId` to
+    the caller's own `req.user.roleId`. Any authenticated Viewer can read
+    any OTHER role's full permission matrix. Exactly as CLAUDE.md documents.
+
+4.4 Exactly three frontend pages still lack `<PageGuard>`:
+    `agents/[id]/page.jsx`, `agents/new/page.jsx`, `roles/[id]/page.jsx`.
+    Verified against all 42 `page.jsx` files under `app/(dashboard)/**` —
+    every other detail/new page uses the same convention (e.g.
+    `vessels/[id]/page.jsx` wraps in `<PageGuard module="vessels">`). The
+    only other pages without it are `app/(dashboard)/page.jsx` (a pure
+    redirect, needs none) and `dashboard/page.jsx` (intentionally gated by
+    the `isSuperAdmin` role-identity check instead, per documented
+    convention — not a gap). Backend RBAC still blocks the underlying
+    writes; only the page shell/view renders unguarded.
+
+4.5 Payment void (`POST /invoices/:id/payments/:paymentId/void`) is still
+    gated only by the generic `'create'` action (POST's default mapping),
+    with no route-level override and no `hasPermission` check inside
+    `payment.controller.js#voidPayment`. A role granted `invoices:create`
+    but not `update`/`delete` can void payments. Still an open design
+    question per CLAUDE.md, not a newly-discovered defect.
+
+4.6 `rbac.hasPermission()` (the Sprint 046 programmatic helper) is used in
+    exactly one place — `invoice.controller.js#update()` — correctly,
+    additively, on top of the base route gate. No other controller needs
+    the same pattern today.
+
+4.7 SuperAdmin bypass cannot be spoofed: the JWT payload carries only
+    `{id}`; `req.user.roleId.isSystem` is always sourced from a fresh
+    `User.findOne(...).populate('roleId','name isSystem')` DB read (or the
+    60s `user:<id>` cache fed by that same read) — never from a
+    client-supplied claim. The only latent effect is up to 60s staleness
+    after a role/isSystem change, an accepted cache trade-off, not a spoof
+    vector.
+
+================================================================================
+5. FRONTEND API INTEGRATION + ERROR HANDLING
+================================================================================
+All 34 files using `useMutation` were checked for `onError` (showErrorToast
+usage) and `onSuccess` (query invalidation completeness).
+
+FINDINGS (ranked by user-visible impact):
+
+5.1 [HIGH] `BookingImport.jsx`'s save mutation invalidates NOTHING.
+    `useQueryClient` isn't even imported in this file. After a bulk
+    Booking / Final Loading / Discharge import — potentially hundreds of
+    rows created/updated/cancelled/discharged in one call — no
+    `invalidateQueries` fires for the Bookings list, Vessel Stats, or Round
+    Capacity Report queries. Symptom: a user completes an import, navigates
+    to Bookings (or a Vessel Detail / Round Capacity Report tab that's
+    already mounted), and sees pre-import data for up to 60s (default
+    staleTime) — reads as "the import silently failed."
+
+5.2 [MEDIUM-HIGH] `InvoicePaymentPanel.jsx`'s payment create/void mutations
+    correctly invalidate `['invoice-payments', id]`, `['invoice', id]`, and
+    `['invoices']`, but never touch `['agent-financial-account', id]` (the
+    key used by `AgentFinancialAccount.jsx`). Symptom: record or void a
+    payment from Invoice Detail, then open that agent's Financial Account —
+    Total Paid / Remaining Balance still show the pre-payment figures until
+    the query naturally goes stale.
+
+5.3 [MEDIUM] Booking mutations (`BookingForm.jsx`, `ManualBookingForm.jsx`,
+    `BookingDetailCard.jsx`, `ManualBookingDetail.jsx`) invalidate only their
+    own booking list/detail queries — never `['vessel-stats', id]` or
+    `['round-capacity-report', roundId, ...]`. The backend's own
+    `invalidateRoundCache()` correctly clears the SERVER-side 60s cache, but
+    the React Query CLIENT cache is a separate layer that isn't told to
+    refetch. Symptom: create/cancel a booking, then switch to an
+    already-mounted Vessel Detail or Round Capacity Report tab — onboard/
+    remaining TEU and KPI totals stay stale.
+
+5.4 [LOW-MEDIUM] `RouteEditor.jsx` (frontend/src/modules/services/) is the
+    one remaining file among 34 `useMutation` sites whose `onError` was not
+    migrated to the shared `showErrorToast()` helper in Sprint 042 — it
+    still builds its own inline `toast.error(e.response?.data?.message ||
+    'Save failed')`. A validation failure with express-validator's
+    per-field `errors[]` array shows only a generic line instead of the
+    field-by-field list every other form now gets.
+
+CHECKED, NO ISSUES FOUND:
+  - Error boundaries: only `app/error.jsx` and `app/(dashboard)/error.jsx`
+    exist; no nested route segment has diverged enough to need its own —
+    cascading is still appropriate.
+  - `axios.js`'s 401-exemption list is accurate: `accept-invite` posts to a
+    genuinely public backend route whose failure mode is 400 (invalid/
+    expired token), never 401, so its absence from the exemption list is
+    currently inert, not a live bug.
+  - Spot-checked `ExpenseForm.jsx`, `InvoiceForm.jsx`, and BookingImport's
+    editable cells for string-vs-number payload mismatches — none found;
+    ExpenseForm's FormData/multipart usage is unavoidable given file
+    uploads, and BookingImport's string-typed manual edits are coerced
+    server-side by design.
+  - Loading/error state coverage: `ChartPrimitives.jsx` and every dashboard
+    widget checked correctly guard on `!data?.length` / `isLoading` before
+    rendering.
+
+================================================================================
+6. BACKEND CACHING AND API LATENCY
+================================================================================
+Explicit constraint honored: recommendations below are narrow — only what
+is expensive AND frequently hit AND safe to serve slightly stale. Several
+candidates were deliberately NOT recommended for caching; see below.
+
+6.1 [ACTIONABLE — do this] `export.service.js#buildZipStream` is confirmed
+    still sequential (`for...of` + `await exportSingle(...)`). This is safe
+    to parallelize on the FETCH side: each `exportSingle()` call builds its
+    own independent `ExcelJS.Workbook`/buffer with no shared state — only
+    `archive.append()` touches the shared ZIP stream, and entry order
+    depends only on append call order, not fetch-completion order. Safe
+    fix: `const results = await Promise.all(exportList.map(item =>
+    exportSingle(item.module, item.filters||{}, item.selectedIds||[],
+    generatedBy)))`, then a second, plain `for` loop calling
+    `archive.append(...)` over `results` in original order. This preserves
+    deterministic ZIP ordering while running all module fetches
+    concurrently — a real win since a ZIP export commonly spans 5-13
+    modules and is likely the single slowest request in the export
+    subsystem today.
+
+6.2 [ACTIONABLE — do this] `getVesselStats` (vessel.service.js) and
+    `getAgentFinancialAccount` (agent.service.js) are confirmed still
+    completely uncached (no `cache.` reference in either file).
+      - `getVesselStats` makes ~10 explicit DB round-trips (Round
+        find+populate, Round count, Voyage find+2 populates, Voyage count,
+        two Promise.all'd aggregates, Agent find, TrackingHistory
+        find+4 populates), plus an internal call into
+        `computeVesselActiveCapacity` → `computeRoundCapacity` (itself
+        already 60s-cached, so that part is cheap on a warm cache).
+      - `getAgentFinancialAccount` makes ~6-7 round-trips (findOne, Booking
+        find + nested populates, Invoice find, Payment aggregate, Invoice
+        aggregate, Payment aggregate).
+      Neither has an N+1 loop — both are already batch-shaped — but each is
+      expensive enough per hit (10-20 combined round-trips) on a
+      detail page that IS revisited during a session (Vessel Details, Agent
+      Financial Account) to justify the same TTL-cache pattern already used
+      for capacity/dashboard/permissions/user. Recommend:
+      `vessel:stats:<vesselId>`, ~60-90s TTL, invalidated wherever
+      `invalidateRoundCache` already fires for that vessel's rounds plus on
+      vessel update/delete; `agent:financial:<agentId>`, ~60-90s TTL,
+      invalidated on booking/invoice/payment mutations touching that agent.
+
+6.3 [EXPLICITLY AGAINST CACHING] `reports.service.js`'s five report
+    functions (getRoundPnL, getVoyagePerformance, getRevenueReport,
+    getExpenseReport, getBookingRevenueDetails) have zero caching today and
+    should STAY that way — these are `enabled:false` + manual-`refetch()`
+    report pages per CLAUDE.md's own documented pattern, hit occasionally
+    by Finance Officers on demand, not on every navigation. Adding a cache
+    layer here is unneeded complexity for negligible benefit.
+
+6.4 [EXPLICITLY AGAINST CACHING] `dashboard.service.js#getFleetUtilisation`
+    is also uncached at its own level, but it only loops Active rounds
+    calling the already-60s-cached `computeRoundCapacity()` per round — it
+    already inherits caching indirectly. A second cache layer here would be
+    redundant.
+
+6.5 [NO ACTION NEEDED] Cache invalidation coverage was checked across every
+    Sprint 042-046 addition: `saveDischargeImport` correctly calls
+    `invalidateRoundCache(voyage.roundId)`; Round's Active-cascade in
+    `round.service.js#update()` calls `invalidateRoundCache(id)` BEFORE
+    `cascadeFirstVoyageToDeparted` — safe, since the cache is lazily
+    repopulated on next read after the voyage's Departed status is already
+    persisted; `create()`'s direct-to-Active path cascades on a brand-new
+    round with no pre-existing cache entry, so no invalidation is needed
+    there either. No gap found.
+
+6.6 [NO ACTION NEEDED] Indexes are adequate for the hot query patterns
+    exercised by the above: `Booking`/`ManualBooking` both have
+    `{voyageId,status,isDeleted}` and `{agentId,status,isDeleted}` compound
+    indexes covering vessel-stats and agent-financial-account queries;
+    `Payment` has `{invoiceId,isVoided}`, `{agentId,paymentDate}`, and a
+    multikey `{'allocations.bookingId':1}`. No missing-index red flag found
+    on the report/dashboard/capacity hot paths specifically.
+
+SUMMARY RECOMMENDATION: cache exactly the two functions in §6.2, fix
+buildZipStream per §6.1, and add nothing else — the existing four-cache-key
+footprint (user/permissions/dashboard/capacity) plus these two new keys is
+the right amount of caching for this system's actual traffic shape.
+
+================================================================================
+7. FRONTEND UI PERFORMANCE
+================================================================================
+Large list/table pages, the Sprint 043 shared sort utility, dashboard
+widgets, and a few forms were audited for real (not theoretical) rendering
+cost at this system's realistic data volumes.
+
+FINDINGS (most noticeable-to-a-real-user first):
+
+7.1 [HIGH] `BookingImport.jsx` — typing in ANY preview-table cell re-renders
+    the entire import table and re-filters the whole array. `counts` (6-8
+    separate `.filter()` passes) and `saveableCount`/`needsVoyageCount` are
+    computed inline in the render body, not in `useMemo`. Every keystroke
+    in an `EditableCell` triggers `setPreview(newArray)` → full re-render →
+    those filters re-run over the full array, and every row re-renders
+    since no row is memoized. With a large import file (hundreds of rows,
+    13-19 input cells each), this is felt as input lag on every keystroke,
+    worsening as the file grows. The Sprint 042 `max-h-[65vh]` scroll cap
+    only bounds visible height, not DOM node count — 500+ rows means
+    thousands of reconciled input elements on any full re-render. Fix:
+    wrap `counts`/`saveableCount`/`needsVoyageCount` in
+    `useMemo([preview, importType])`; consider memoizing the row component.
+
+7.2 [MEDIUM] `VoyageList.jsx` line 136 — `sortVoyagesForDisplay(...)` (the
+    Sprint 043 shared utility) is called inline inside `.map()` on every
+    render, including when opening/closing the Edit or Delete-confirm
+    modal — neither of which changes the underlying voyage data. This
+    contrasts with `RoundVoyageList.jsx` and `RoundCapacityReport.jsx`,
+    which both correctly wrap the identical call in `useMemo` with tight
+    dependencies. Not catastrophic (an array sort, not a network call) but
+    a real, avoidable recomputation on every unrelated interaction on this
+    page.
+
+7.3 [LOW-MEDIUM] `VesselDetail.jsx` line 147 — same unmemoized
+    `sortVoyagesForDisplay` call, same fix, lower impact since this section
+    has no adjacent frequently-toggled modal state in the code reviewed.
+
+CHECKED, FOUND FINE (explicitly verified, not skipped):
+  - `BookingList.jsx`, `InvoiceList.jsx`, `TrackingList.jsx`,
+    `ExpenseList.jsx`: stable `_id` keys, server-side pagination (15-20
+    rows/page), no inline unbounded sort/filter/reduce. Clean.
+  - `BookingsSummaryCard.jsx` (Sprint 044): recomputes its breakdown via
+    `reduce`/`Map` fresh every render with no `useMemo`, but at realistic
+    volumes (bounded by the Agent Financial Account's own 20-round cap)
+    this is a non-issue — flagged for awareness only, not worth fixing.
+  - `AgentFinancialAccount.jsx`'s `VoyagesLedger`/`BookingsLedger`:
+    `flatMap` the rounds tree fresh per render, but the backend already
+    bounds the tree to 20 rounds — not a real hot path.
+  - `InvoiceForm.jsx`'s Sprint 044 auto-select `useEffect` (lines 216-220):
+    dependency array `[eligible, invoiceType]` is tight and correct, no
+    re-fire loop.
+  - Dashboard widgets (`PerformanceWidgets.jsx`, `AlertsWidgets.jsx`,
+    `OperationsWidgets.jsx`): all client-side grouping is properly
+    `useMemo`'d; `FleetUtilisationWidget`'s one unmemoized `reduce`/`filter`
+    operates only over the small active-rounds count — a non-issue.
+  - Chart.js targeted registration and the dashboard's `chart.update
+    ('none')` pattern: already optimized per CLAUDE.md, re-confirmed, not
+    re-flagged as a new item.
+
+================================================================================
+8. CROSS-CUTTING NOTES
+================================================================================
+- The single most valuable fix to make FIRST is §3.1/§4.1/§5.1's related
+  cluster: correcting the dashboard-endpoint documentation drift costs
+  nothing and prevents future wasted effort; the BookingImport
+  cache-invalidation gap is the highest-impact real bug (an operation that
+  silently LOOKS like it failed).
+- No finding in this report represents a security vulnerability beyond the
+  two already tracked in CLAUDE.md/sprints/041-sprint.txt (permissions
+  self-scope gap, PageGuard omissions). Those two remain open and are
+  reiterated here only for completeness, not as new discoveries.
+- No data-corruption-capable bug was found: money paths (Invoice/Payment
+  create/void) are transactionally safe; totalFreight/POL/POD server-
+  derivation rules are intact everywhere checked; capacity engine cache
+  invalidation is complete across all Sprint 042-046 additions.
+- This report does not re-implement any fix — it is an audit only, per the
+  request. Each numbered finding above is scoped precisely enough (file,
+  function/line, concrete failure scenario) to be picked up as a follow-up
+  task without further investigation.
+================================================================================
+END OF REPORT
+================================================================================

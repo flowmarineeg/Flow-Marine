@@ -1,5 +1,6 @@
 'use strict';
 
+const lock = require('../rounds/roundLock');
 const ExcelJS       = require('exceljs');
 const Booking       = require('./booking.model');
 const Voyage        = require('../voyages/voyage.model');
@@ -301,6 +302,7 @@ const previewImport = async ({ rows, agentId, roundId, importType }) => {
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => {
+  await lock.assertRoundOpen(roundId);
   if (!rows?.length) throw { status: 400, message: 'No rows to save' };
   if (!roundId)      throw { status: 400, message: 'Round is required' };
 
@@ -521,6 +523,7 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
 
   // Invalidate capacity cache — every voyage in this Round may have changed
   invalidateRoundCache(roundId);
+  require('../billing/bookingItem.service').scheduleSync({ roundId }); // Sprint051: Final Loading changes the invoiceable items
 
   return { created, updated, failed, markedFinalLoading, cancelled, total: saveable.length };
 };
@@ -626,6 +629,7 @@ const previewDischargeImport = async ({ rows, agentId, voyageId }) => {
 };
 
 const saveDischargeImport = async ({ rows, agentId, voyageId, createdBy }) => {
+  await lock.assertVoyageRoundOpen(voyageId);
   if (!rows?.length) throw { status: 400, message: 'No rows to save' };
   if (!agentId)      throw { status: 400, message: 'Agent is required' };
   if (!voyageId)     throw { status: 400, message: 'Voyage is required' };

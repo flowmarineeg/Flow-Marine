@@ -1,0 +1,278 @@
+# Sprint 029 — Capacity Engine: Exact-Segment "Loaded" Presentation Fix
+Status: ✅ IMPLEMENTED (approved and applied)
+Revision: 2 — corrected exact-segment matching rule (see §0)
+
+## 8. IMPLEMENTATION NOTES
+
+- Backend: `capacity.service.js` Steps C/D tag each event with `exactSegment`
+  (booking.polId/podId vs anchor voyage's polId/podId, per §0/§4.1 Revision
+  2). Step E adds `loadedExactTEU/L1/L2` accumulators and a `loadedExact:
+  { teu, layer1, layer2 }` field on each voyageRow. `loadedTEU`,
+  `dischargedTEU`, `onboardStart`, `onboardTEU`, `remainingTEU`,
+  `utilisationPct`, and all `totals.*` fields are untouched (verified by
+  inspection — no lines in Step E's existing arrays or Step F totals were
+  modified).
+- Frontend: `CapacitySegmentTable.jsx` "Loaded" `<td>` now reads
+  `v.loadedExact.teu` / `v.loadedExact.layer2` / `v.loadedExact.layer1`
+  instead of `v.loadedTEU` / `v.layer2.loadedTEU` / `v.layer1.loadedTEU`.
+  All other columns unchanged.
+- Scope decision on open question §7.3: `CapacityTimeline.jsx` was left
+  unchanged. The original request scoped this fix to "the Loaded column in
+  the Voyage Capacity table" — the port-based timeline is a different
+  visualization (per-port, not per-voyage-segment) and swapping its
+  `loadedTEU` reads to `loadedExact` would change its meaning in a way not
+  requested. `RoundCapacityReport.jsx` needed no changes — it only composes
+  `CapacityTimeline` and `CapacitySegmentTable`, both already covered.
+- `capacity.controller.js`, `capacity.routes.js`, `booking.model.js`,
+  `manualBooking.model.js`, `teuResolver.js`, `CapacityWarnings.jsx` — not
+  touched, as planned.
+
+---
+
+## 0. CORRECTION LOG
+
+Revision 2: the exact-segment aggregation must NOT be derived from
+`loadVoyageIdx === dischargeVoyageIdx` (an index-equality shortcut over the
+cargo-flow event resolution). It must be derived directly from the booking's
+own stored fields against the voyage's own port fields:
+
+```
+booking.polId == voyage.fromPort
+AND
+booking.podId == voyage.toPort
+```
+
+Reason: `loadVoyageIdx` only tells us which voyage the booking is anchored
+to (`booking.voyageId`), not that `booking.polId` actually equals that
+voyage's `fromPort` — the engine never validates that equality today, it
+just anchors on `voyageId`. Similarly `dischargeVoyageIdx === loadVoyageIdx`
+only tells us `resolveDischargeIdx`'s forward walk found the matching
+`toPort` at the same index as the anchor — a derived/algorithmic result, not
+a direct field comparison. The presentation must represent the literal
+voyage segment (POL → POD) as stored on the booking, independent of how the
+cargo-flow resolver walks the chain. §3 and §4.1 below are updated
+accordingly; all other sections are unchanged from Revision 1.
+
+---
+
+## 1. PROBLEM STATEMENT
+
+In the Voyage Capacity table (`CapacitySegmentTable.jsx`, used by `VesselDetail.jsx`
+and `RoundCapacityReport.jsx`), the **Loaded** column shows every booking whose
+`voyageId` matches the current voyage row — i.e. every booking anchored
+("loaded") on that voyage, regardless of the booking's own POD.
+
+Because a container can be loaded on voyage N but discharged several voyages
+later (multi-leg cargo), `loadedTEU[i]` in `capacity.service.js` intentionally
+aggregates ALL bookings loaded at voyage `i`, even when `booking.podId` !=
+`voyage[i].toPort`. This is correct for the cargo-flow chain (Onboard,
+Discharged, Remaining, Utilization all depend on this full "loaded here"
+figure), but it is misleading as a **display** value: a user reading the
+"Loaded" cell for voyage POL→POD sees TEU that may actually be destined for a
+different, later POD — i.e. bookings sharing the same POL but a different POD
+appear bundled into that voyage's Loaded number.
+
+## 2. REQUIRED BEHAVIOR
+
+The Loaded **column presentation only** must show TEU/bookings that satisfy
+the exact-segment rule:
+
+```
+booking.polId == voyage.fromPort
+AND
+booking.podId == voyage.toPort
+```
+
+Everything else — Start (onboardStart), Onboard (onboardTEU), Discharged
+(dischargedTEU), Remaining (remainingTEU), Utilization (utilisationPct) — is
+part of the cargo-flow chain and MUST NOT change. Those figures continue to
+be derived from the existing "loaded at this voyage regardless of final POD"
+event model, because the chain's onboard math depends on cargo that stays
+aboard across multiple legs.
+
+In short: we are adding a second, stricter aggregate for **display** next to
+the existing chain aggregate used for **calculation**. The two are allowed to
+diverge (e.g. Onboard can be higher than the exact-segment Loaded figure,
+because some onboard cargo is destined further downstream).
+
+## 3. ROOT CAUSE (current implementation)
+
+`backend/src/modules/capacity/capacity.service.js`:
+
+- Step C/D build `l2Events` / `l1Events` as `{ loadVoyageIdx, dischargeVoyageIdx, teu }`,
+  anchored via `voyageIndexById[booking.voyageId]` (the voyage the booking is
+  physically loaded on) with `dischargeVoyageIdx` resolved by walking forward
+  to the first voyage whose `toPort == booking.podId` (Step B,
+  `resolveDischargeIdx`). This is correct and unchanged.
+- Note: `loadVoyageIdx === dischargeVoyageIdx` is NOT a reliable proxy for
+  "this booking's POL/POD exactly match this voyage's fromPort/toPort" — it
+  only proves the discharge resolver's forward walk landed on the same index
+  as the load anchor. It does not verify `booking.polId` itself equals
+  `voyage.fromPort` (the engine anchors on `voyageId`, never validates that
+  the booking's own `polId` agrees with the voyage's `fromPort`). The fix
+  must compare booking fields to voyage fields directly (see §4.1 Revision 2).
+- Step E aggregates `loadedTEU[i] += ev.teu` for every event anchored at `i`,
+  with no filter on whether `dischargeVoyageIdx === i` (i.e. no filter on
+  whether the booking's POD is this exact voyage's POD). This single
+  `loadedTEU` array is used for BOTH the onboard chain math (`onboardTEU =
+  onboardStart + loaded - discharged`) AND is returned as `voyageRows[i].loadedTEU`,
+  which the frontend renders directly in the "Loaded" column.
+
+There is currently no separate "exact segment" figure — the same number
+serves both purposes, which is the presentation bug.
+
+## 4. REQUIRED CHANGES
+
+### 4.1 Backend — `capacity.service.js` (computeRoundCapacity)
+
+No changes to any existing field semantics or values. Additive only:
+
+1. In Steps C/D, while building `l2Events` / `l1Events`, tag each event with
+   an explicit `exactSegment` boolean computed by comparing the booking's own
+   stored fields to the anchor voyage's own port fields — NOT by comparing
+   `loadVoyageIdx`/`dischargeVoyageIdx`:
+   ```js
+   // Step C (l2Bookings) — voyages[loadIdx] is the booking's anchor voyage
+   const anchorVoyage = voyages[loadIdx];
+   const exactSegment =
+     String(b.polId) === String(anchorVoyage.polId?._id || anchorVoyage.polId) &&
+     String(b.podId) === String(anchorVoyage.podId?._id || anchorVoyage.podId);
+   l2Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx, teu: effectiveTEU, source: 'l2', exactSegment });
+   ```
+   ```js
+   // Step D (l1Bookings) — same comparison, m.polId / m.podId vs anchorVoyage
+   const anchorVoyage = voyages[loadIdx];
+   const exactSegment =
+     String(m.polId) === String(anchorVoyage.polId?._id || anchorVoyage.polId) &&
+     String(m.podId) === String(anchorVoyage.podId?._id || anchorVoyage.podId);
+   l1Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx, teu, source: 'l1', exactSegment });
+   ```
+   This directly implements the required rule (`booking.polId == voyage.fromPort
+   AND booking.podId == voyage.toPort`) against the literal stored fields,
+   with no dependency on how `resolveDischargeIdx`'s forward walk resolved
+   the index chain. It is coincidental, not guaranteed, that
+   `loadVoyageIdx === dischargeVoyageIdx` implies this — so index equality
+   must not be used as the condition.
+
+2. In Step E, add new parallel accumulator arrays (do not touch the existing
+   `loadedTEU` / `loadedL1` / `loadedL2` arrays used by the onboard chain):
+   - `loadedExactTEU[i]`
+   - `loadedExactL1[i]`
+   - `loadedExactL2[i]`
+   - (optionally) `loadedExactUnits[i]` / `loadedExactBookingIds[i]` if the
+     UI wants a booking count or drill-down list, per open question in §7.
+
+   Populate them only when `ev.exactSegment === true`, using
+   `ev.loadVoyageIdx` as the bucket index:
+   ```js
+   if (ev.exactSegment) {
+     loadedExactTEU[ev.loadVoyageIdx] += ev.teu;
+     if (ev.source === 'l1') loadedExactL1[ev.loadVoyageIdx] += ev.teu;
+     else                    loadedExactL2[ev.loadVoyageIdx] += ev.teu;
+   }
+   ```
+
+3. In the `voyageRows.push({...})` object (Step E), add a new nested field,
+   e.g.:
+   ```js
+   loadedExact: {
+     teu: loadedExactTEU[i],
+     layer1: loadedExactL1[i],
+     layer2: loadedExactL2[i],
+   },
+   ```
+   Leave `loadedTEU`, `layer1.loadedTEU`, `layer2.loadedTEU`,
+   `dischargedTEU`, `onboardStart`, `onboardTEU`, `remainingTEU`,
+   `utilisationPct` completely untouched — these keep driving the chain and
+   the Start/Onboard/Discharged/Remaining/Util columns exactly as today.
+
+4. `computeVoyagePreview` and `computeVesselActiveCapacity` are unaffected
+   (they consume `onboardTEU` / chain fields only, never `loadedTEU` for
+   display) — no changes needed there.
+
+5. Cache key/TTL/shape stays additive-compatible (new nested field only);
+   no cache invalidation strategy change needed since this is not a new
+   cache namespace, just a field added to the existing `capacity:round:<id>`
+   payload.
+
+### 4.2 Backend — no model or route changes
+
+- `booking.model.js` / `manualBooking.model.js` already store `polId` /
+  `podId` — no schema change needed.
+- `capacity.controller.js` and `capacity.routes.js` (GET
+  `/capacity/round/:roundId`, GET `/capacity/vessel/:vesselId/active`) need
+  no changes — the new field rides along in the existing response shape.
+
+### 4.3 Frontend — `CapacitySegmentTable.jsx`
+
+- Change the "Loaded" `<td>` (lines ~112–123) to render `v.loadedExact.teu`
+  (and `v.loadedExact.layer2` / `v.loadedExact.layer1` in the `Breakdown`
+  sub-component) instead of `v.loadedTEU` / `v.layer2.loadedTEU` /
+  `v.layer1.loadedTEU`.
+- No other column changes: Start (`onboardStart`), Discharged
+  (`dischargedTEU`), Onboard (`onboardTEU`), Remaining (`remainingTEU`), Util
+  (`utilisationPct`) keep reading the exact same fields they read today.
+- Consider a small visual affordance (tooltip or footnote) clarifying that
+  "Loaded" here means "loaded AND discharged at this exact POL→POD leg" and
+  may be lower than what contributes to Onboard for this voyage, to avoid
+  user confusion when the two numbers diverge. (Open question — see §7.)
+
+### 4.4 Frontend — other consumers to check
+
+- `CapacityTimeline.jsx` and `RoundCapacityReport.jsx` both consume the same
+  `voyages[]` payload — audit whether either also renders a "Loaded" figure
+  that needs the same swap to `loadedExact`. `CapacityWarnings.jsx` is
+  unaffected (warnings only, no loaded/discharged figures).
+- `CapacitySegmentTable` is rendered from `VesselDetail.jsx` and
+  `RoundCapacityReport.jsx` — confirm no other prop-drilling site expects the
+  old `loadedTEU` semantics changed (it isn't changing, only a new field is
+  added, so this should be a non-breaking check).
+
+## 5. WHAT MUST NOT CHANGE (explicit non-goals)
+
+- `onboardStart`, `onboardTEU`, `dischargedTEU`, `remainingTEU`,
+  `utilisationPct` — untouched, byte-for-byte same computation.
+- `totals.peakOnboardTEU`, `totals.peakVoyageId`, `totals.avgUtilisationPct`,
+  `totals.totalLoadedTEU`, `totals.totalBookedUnits` — all derived from the
+  existing chain arrays, untouched.
+- Cargo-flow chain / discharge resolution logic (`resolveDischargeIdx`,
+  Step B) — untouched.
+- Warnings (`VOYAGE_OVERBOOKED`, `MISSING_TEU_MAPPING`, etc.) — untouched,
+  still computed from `onboardTEU` / `remainingTEU`.
+- `computeVoyagePreview` bottleneck logic — untouched.
+- Cache TTL (60s) and invalidation triggers — untouched.
+
+## 6. FILES TOUCHED (implementation phase — not yet modified)
+
+Backend:
+- `backend/src/modules/capacity/capacity.service.js` (Step E aggregation +
+  voyageRows payload — additive field only)
+
+Frontend:
+- `frontend/src/modules/vessels/components/CapacitySegmentTable.jsx` (Loaded
+  column data source)
+- `frontend/src/modules/vessels/components/CapacityTimeline.jsx` (audit — may
+  need same swap)
+- `frontend/src/modules/reports/RoundCapacityReport.jsx` (audit — may need
+  same swap)
+
+No changes to: `capacity.controller.js`, `capacity.routes.js`,
+`booking.model.js`, `manualBooking.model.js`, `teuResolver.js`,
+`CapacityWarnings.jsx`.
+
+## 7. OPEN QUESTIONS FOR APPROVAL
+
+1. Should `loadedExact` also expose a booking count / list (for drill-down),
+   or is a TEU-only figure with L1/L2 breakdown sufficient, matching the
+   current Breakdown component's shape?
+2. Should the UI add a visible hint (tooltip/footnote) that "Loaded" now
+   reflects exact-segment cargo only, and may be smaller than the amount
+   contributing to this voyage's Onboard figure — to preempt user confusion
+   when a booking rides through to a later POD?
+3. Confirm `CapacityTimeline.jsx` and `RoundCapacityReport.jsx` are in scope
+   for the same Loaded-column fix, or if this sprint should touch
+   `CapacitySegmentTable.jsx` only (primary table) and leave the others for a
+   follow-up.
+
+---
+END OF PLAN — awaiting approval before implementation.

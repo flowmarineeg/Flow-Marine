@@ -1,0 +1,671 @@
+# Sprint 047 — Bulk Select & Delete, System-Wide Hard Delete,
+# Invoice Overview & PDF Redesign
+Status: ✅ COMPLETE — all three parts (A, B, C) implemented, verified
+(backend: `node --check` on every touched file; frontend: `eslint` on
+every touched file, zero new errors), and shipped. This document is the
+full historical record of what was decided, why, and what actually got
+built — kept as one file since all three parts landed in the same
+session under the Sprint 047 umbrella.
+
+Sprint 047 has THREE parts, built in sequence over several rounds of
+planning + implementation:
+  PART A (§§0-4)   — Bulk Select & Delete UI (Bookings/Voyages/Expenses),
+                      frontend-only, no new backend endpoints.
+  PART B (§§5-12)  — System-wide conversion from `isDeleted`-flag soft
+                      delete to real hard delete (14 models), no cascade,
+                      plus two narrow post-ship refinements (§12).
+  PART C (§§13-16) — Invoice Details page redesigned to an overview-only
+                      view (no booking list), new per-invoice Bill To
+                      fields, a simplified one-row payment-recording flow,
+                      and a full Invoice PDF redesign.
+None of the three parts depend on each other and each shipped
+independently, in the order above.
+
+---
+
+# PART A — BULK SELECT & DELETE (Bookings, Voyages, Expenses)
+
+This is a REVISION of the original 047 draft. Per explicit instruction, the
+original draft's "add new bulk-delete backend endpoints" design was
+REJECTED and replaced with the plan below. Everything here is
+intentionally minimal.
+
+---
+
+# 0. HARD CONSTRAINTS (explicit, honored throughout)
+
+- No redesign. No new architecture.
+- No new backend endpoints. No bulk-delete API of any kind.
+- No discussion of hard delete vs soft delete — each entity keeps whatever
+  delete behavior it already has today, untouched (Part B later converts
+  the mechanism, but Part A never touched a guard).
+- No refactor of existing code — only additive UI + a client-side loop.
+- Every "delete selected" action is: loop the selected ids, call the
+  EXISTING single-item delete endpoint for each one, one at a time. All
+  existing backend validation/business rules fire exactly as they do today
+  for a single delete — nothing server-side changes.
+- If one item fails (blocked by an existing guard, 404, etc.), record it as
+  failed and keep going — do not abort the rest of the loop.
+
+---
+
+# 1. SCOPE — SHIPPED
+
+Added the same three pieces of UI to three existing tables — Bookings,
+Voyages, Expenses:
+1. A checkbox per row + a header "select all" checkbox.
+2. A "Select All" affordance (VoyageList.jsx got an explicit toolbar
+   button since it has multiple per-Round tables; Bookings/Expenses reuse
+   the header checkbox already established in this codebase's pattern).
+3. A "Delete Selected (N)" button, shown only when at least one row is
+   selected, that:
+   - opens a confirm dialog (`ConfirmDialog`, same component already used
+     for every single-delete confirm in this codebase)
+   - on confirm, loops the selected ids and calls the existing delete
+     mutation for each one, sequentially (not `Promise.all`, so one
+     failure doesn't stop the rest)
+   - shows a summary toast at the end ("N deleted, M failed") and lists
+     the failure reasons
+   - invalidates the same query key the existing single-delete mutation
+     already invalidates, then clears the selection
+
+No new backend file was touched. No new route. No new controller/service
+function. Every entity keeps calling exactly the endpoint its existing
+single-row Delete button already called before this sprint:
+
+| Tab | Existing delete call (unchanged, reused as-is) |
+|---|---|
+| Bookings — Operational/Discharged/Remaining | `bookingsService.remove(id)` → `DELETE /bookings/:id` |
+| Bookings — Estimated/Manual | `bookingsService.removeManual(id)` → `DELETE /bookings/manual/:id` |
+| Voyages | `voyagesService.remove(id)` → `DELETE /voyages/:id` |
+| Expenses | `expensesService.remove(id)` → `DELETE /expenses/:id` |
+
+## 1.1 Frontend files touched (additive only)
+
+- `frontend/src/modules/bookings/BookingList.jsx` — the
+  Operational/Discharged/Remaining table already had `selected` state,
+  `toggleSelect`/`toggleAll`, and checkboxes (previously wired only to
+  `ExportButton`) — gained a "Delete Selected" button + `bulkDeleteMutation`
+  reusing that existing state. The Estimated/Manual table had none of this
+  before this sprint — gained its own independent
+  `manualSelected`/`manualToggleSelect`/`manualToggleAll`/
+  `manualBulkDeleteMutation`/checkbox column/button, separate from the
+  Operational tab's (same separation already used for
+  `deleteTarget`/`manualDeleteTarget`).
+- `frontend/src/modules/voyages/VoyageList.jsx` — had no selection state
+  before this sprint. Gained one flat `selected` array for the whole page
+  (not scoped per Round-group — a header checkbox per Round-group table
+  toggles just that group's rows within the shared array), a
+  "Select All"/"Clear Selection" toolbar button, and a "Delete Selected"
+  button + `bulkDeleteMutation`.
+- `frontend/src/modules/expenses/ExpenseList.jsx` — had no selection state
+  before this sprint. Gained header+per-row checkboxes, `selected` state,
+  `toggleSelect`/`toggleAll`, a "Delete Selected" button, and
+  `bulkDeleteMutation`.
+
+Nothing else changed in this part. Invoices already had a working per-row
+Delete button matching the backend guard exactly — confirmed not a gap,
+not touched here (Part C later reshapes the Invoice Details page for
+unrelated reasons — see §13+).
+
+---
+
+# 2. RESOLVED — Expense delete "related payment record"
+
+The instruction originally said Expense delete should also delete "its
+related payment record using the existing logic." Checked directly
+against the schema — no Expense↔Payment relationship exists anywhere in
+this codebase (`Payment` only ever references `Invoice`/`Booking`; a
+repo-wide search for `expenseId` returns nothing).
+
+**Decision (confirmed): dropped from scope.** Expense delete keeps doing
+exactly what it did before this sprint — hard delete of the DB record +
+removal of the attached file from disk (`expense.service.js`'s existing
+`deleteFile()` calls) — nothing else. The bulk "Delete Selected" loop for
+Expenses simply calls the existing `DELETE /expenses/:id` per selected id,
+same as every other entity in this sprint. No new field, relationship, or
+cascade was added anywhere.
+
+---
+
+# 3. EXPLICITLY OUT OF SCOPE (Part A) — honored
+
+- No `POST .../bulk-delete` endpoint anywhere.
+- No change to any existing single-delete guard, on any of the four
+  entities (Part A only — Part B later changes the delete MECHANISM, not
+  Part A's own scope).
+- No "select all across every page/filter" — selection is whatever is
+  rendered on the current page.
+- Invoices — no bulk-select change (already had a working per-row Delete).
+
+---
+
+# 4. ACCEPTANCE CRITERIA — ALL MET
+
+- [x] Expense/Payment question resolved: dropped from scope, Expense
+      delete behavior unchanged (DB record + attachment file removal only).
+- [x] Bookings (both Operational/Discharged/Remaining and Estimated
+      tables), Voyages, and Expenses each got: header+per-row checkboxes,
+      a "Delete Selected (N)" button, a confirm dialog, and a sequential
+      loop over the existing single-delete call per selected id.
+- [x] Zero new backend routes/controllers/services. Zero changes to any
+      existing delete guard (in Part A).
+- [x] A failed item in the loop is reported (not silently dropped) and
+      does not stop the remaining deletes.
+- [x] Verified: `eslint` on all three touched files — zero new errors
+      (pre-existing, unrelated warnings in `CreateInvoiceForm`'s
+      `useEffect`s don't count, confirmed via `git diff` they predate
+      this sprint).
+
+---
+
+# PART B — REMOVE SOFT DELETE, CONVERT TO HARD DELETE (simple, no cascade)
+
+Full-codebase audit performed (every `.model.js` and `.service.js` under
+`backend/src/modules` read/grepped directly — nothing assumed from
+claude.md's summary). Everything that WAS a design decision in an earlier
+planning round (a shared recursive/transactional "cascade delete" helper)
+was explicitly DISCARDED before implementation and replaced with the
+simple version below.
+
+## Goal (verbatim scope, per explicit instruction) — ACHIEVED
+
+Convert the system from soft delete to hard delete while keeping the
+existing business rules as simple as possible.
+
+For every currently soft-deletable entity, the delete flow is now:
+1. Delete is requested.
+2. Check whether the entity is still referenced by related business data
+   — using the EXACT SAME check that existed in that entity's
+   `softDelete`/`remove` function before this sprint, unchanged.
+3. If related data exists → reject, with a clear message naming what
+   depends on it (same message every guard already gave).
+4. If nothing references it → permanently hard-delete the record
+   (`Model.findByIdAndDelete(id)`), replacing the old
+   `isDeleted=true; deletedAt=...; save()` steps.
+
+No automatic cascade. No recursive delete. No transaction-based delete
+engine. No shared/generic delete service. The administrator remains
+responsible for deleting dependent records manually first — exactly the
+same responsibility as before this sprint. The only user-visible change:
+a delete that's allowed to proceed is now permanent, not soft.
+
+**User is the sole, explicit exception** — `user.service.js#softDelete`
+was not touched at all, keeps its exact pre-sprint soft-delete behavior.
+
+---
+
+# 5. MODELS CONVERTED — 14 total, confirmed from source
+
+16 models carried `isDeleted: Boolean, default:false` + `deletedAt: Date,
+default:null` before this sprint (no separate `deletedBy` field — the
+existing pattern folds "who deleted it" into the ordinary `updatedBy`
+field). Of those 16: **14 were converted to hard delete, User was
+excluded (stays soft), Route's flag was dead code (removed, no delete
+function ever existed for it)**.
+
+| Model | Guard (unchanged condition, now backs a hard delete) |
+|---|---|
+| Vessel | Blocks if `Round` exists with this vessel, status Planned/Active |
+| Agent | Blocks if `Booking` exists, status Pending/Confirmed (+ see §12 addendum) |
+| Service | Blocks if `Round` exists, status Planned/Active |
+| Round | Blocks if any `Booking` exists for the round's voyages (+ see §12 addendum) |
+| Booking (L2) | Blocks if a non-cancelled `Invoice` references it via `lineItems.bookingId` |
+| ManualBooking (L1) | No guard at all (unchanged — never had one) |
+| Invoice | Blocks if `paidAmount > 0` |
+| Role | Blocks if `isSystem`; blocks if any `User` still has this role |
+| ContainerType | Blocks if any `Booking` uses it |
+| ExpenseType | Blocks if any `Expense` references it |
+| Country | Blocks if any `City` references it |
+| City | Blocks if any `Port` references it |
+| Port | Blocks if any `Terminal` or `RouteLeg` references it |
+| Terminal | Blocks if any `RouteLeg` references it |
+
+**Excluded:**
+- **User** — stays soft-delete, the one deliberate exception,
+  `user.service.js#softDelete` untouched.
+- **Route** — `isDeleted` field was DEAD CODE (never set to `true`
+  anywhere, no delete function ever existed for Route). Field removed
+  from the schema, no migration needed (zero rows could ever have it
+  `true`).
+
+Already hard-delete before this sprint (the reference pattern this sprint
+copied — guard checks stay identical in shape, only the final step
+differs):
+- **Voyage** — `voyage.service.js#deleteVoyage`: guard, then
+  `await Voyage.findByIdAndDelete(id)`.
+- **Expense** — `expense.service.js#hardDelete`: deletes the attachment
+  file from disk, then `await Expense.findByIdAndDelete(id)`.
+- **ExpenseCategory** — `expenseType.service.js#deleteCategory`: guard,
+  then `await ExpenseCategory.findByIdAndDelete(id)`.
+
+## 5.1 Query sites cleaned up — 179 total, ~30 files
+
+Every `isDeleted: false` (or `isDeleted: true` in the model's own
+soft-delete step) query filter referencing one of the 14 converted models
+was removed, across every model's own `service.js` AND every cross-module
+reference:
+
+| File | # sites |
+|---|---|
+| `locations/location.service.js` | 25 |
+| `dashboard/dashboard.service.js` | 22 |
+| `vessels/vessel.service.js` | 13 |
+| `agents/agent.service.js` | 10 |
+| `rounds/round.service.js` | 10 |
+| `invoices/invoice.service.js` | 9 |
+| `export/export.service.js` | 9 |
+| `bookings/bookingImport.service.js` | 9 |
+| `reports/reports.service.js` | 8 |
+| `bookings/booking.service.js` | 7 |
+| `roles/role.service.js` | 7 (User's own countDocuments filter kept — see below) |
+| `services/service.service.js` | 7 |
+| `containerTypes/containerType.service.js` | 6 |
+| `expenseTypes/expenseType.service.js` | 6 |
+| `voyages/voyage.service.js` | 5 (Voyage itself has no flag — these checked `Round`/`Booking`/`Route.isDeleted`) |
+| `capacity/capacity.service.js` | several, incl. the `DELETED_CONTAINER_TYPE` branch removed entirely (dead once ContainerType can't be soft-deleted) |
+| `routes/route.service.js` | 4 |
+| `bookings/manualBooking.service.js` | 4 |
+| `invoices/payment.service.js` | 1 (guarded the parent Invoice) |
+| `config/migrations/migrate-dashboard-auditlogs.js` | 1 (old one-off migration, `Role.find({isSystem:false})` — trivially cleaned up too since Role no longer has the field) |
+
+**Deliberately UNCHANGED** (User's own field, User is excluded):
+`auth/auth.service.js` (5 sites), `users/user.service.js` (6 sites),
+`middleware/auth.js` (1 site), `users/user.model.js`,
+`roles/role.service.js`'s one `User.countDocuments({roleId, isDeleted:
+false})` check inside the Role-delete guard.
+
+`permissions/permission.service.js` and `expenses/expense.service.js` had
+zero `isDeleted` usage already (already consistent with the target
+pattern before this sprint).
+
+## 5.2 Compound indexes — redesigned, not just dropped
+
+| Model | Old index | New index |
+|---|---|---|
+| Booking | `{voyageId:1,status:1,isDeleted:1}`, `{agentId:1,status:1,isDeleted:1}`, `{isDeleted:1,createdAt:-1}` | `{voyageId:1,status:1}`, `{agentId:1,status:1}` (createdAt:-1 already existed as its own separate index) |
+| ManualBooking | same 3-index shape | same reduction |
+| Invoice | `{agentId:1,status:1,isDeleted:1}`, `{isDeleted:1,invoiceDate:-1}`, `{voyageId:1,isDeleted:1}`, `{roundId:1,isDeleted:1}` | `{agentId:1,status:1}`, `{invoiceDate:-1}`, `{voyageId:1}`, `{roundId:1}` |
+
+All other 11 flagged models had only a single-field `{isDeleted:1}` index
+— dropped outright, no replacement needed.
+
+---
+
+# 6. DEAD CODE — Route.isDeleted — REMOVED
+
+Confirmed and removed: the field was set to `false` at creation and never
+touched again by any code path.
+
+---
+
+# 7. KNOWN CONSEQUENCES — accepted as-is, not redesigned
+
+Per explicit instruction, existing business rules were not changed
+"unless absolutely required to preserve referential integrity." Neither
+item below creates a referential-integrity problem — both are accepted,
+documented trade-offs, not bugs:
+
+## 7.1 Capacity engine's soft-deleted-ContainerType branch — removed as dead code
+
+`capacity.service.js` used to populate `containerTypeId` with `'code size
+isDeleted'` and branch on `.isDeleted` to emit a `DELETED_CONTAINER_TYPE`
+warning while still using the soft-deleted type's `size`. Since
+ContainerType's guard is unchanged (still only blocks on an ACTIVE
+booking), a ContainerType used only by inactive/cancelled bookings can
+still be hard-deleted — `populate()` now returns `null` for those, hitting
+the existing `MISSING_CONTAINER_TYPE` fallback instead. The dead branch
+and its `isDeleted` populate projection were removed during
+implementation. capacity.service.js's cargo-flow algorithm itself was NOT
+touched.
+
+## 7.2 Invoice drill-down to a hard-deleted Booking
+
+Booking's guard is unchanged (blocks only if a NON-cancelled Invoice
+references it). A Booking that was only ever on a since-cancelled invoice
+(or never invoiced) can still be hard-deleted; that invoice's own line
+item still displays correctly (Sprint 033 historical snapshot), only the
+live "view original booking" link would 404. Accepted, not fixed.
+
+## 7.3 Populate has no `isDeleted` exclusion anywhere — context only
+
+Confirmed zero uses of Mongoose's `populate(...match...)` filtering syntax
+anywhere pre-sprint — soft-deleting was already invisible to existing
+reads; hard delete simply turns the same reference into `null` once the
+row is actually gone. No fix needed/attempted.
+
+---
+
+# 8. MANDATORY ONE-TIME DATA MIGRATION — SHIPPED, MUST BE RUN
+
+Required and built: `backend/src/config/migrations/
+migrate-hard-delete-cleanup.js` (same guarded `require.main === module`
+pattern as `migrate-invoice-v2.js`), run via:
+
+```
+npm run migrate:hard-delete-cleanup
+```
+
+Runs `Model.collection.deleteMany({isDeleted:true})` (raw collection
+access, not the Mongoose model, since the schema no longer declares the
+field) for each of the 14 converted models, BEFORE or as the very first
+step of deploying this sprint's changes to any environment. Without it,
+every row that was ever soft-deleted before this sprint would instantly
+reappear in every list/report/dropdown the moment the query filters were
+removed — this is a correctness requirement, not optional, and must still
+be run once against any environment (staging/production) that hasn't had
+it run yet.
+
+---
+
+# 9. UNIQUE-VALUE REUSE — confirmed, accepted side effect
+
+No partial/filtered unique index existed anywhere in this codebase, and
+none of the `create()`/`update()` duplicate-checks scoped by
+`isDeleted:false` either. Practical effect: hard delete now frees up
+previously-blocked unique values (vesselCode, agentCode, serviceCode,
+ContainerType.code, ExpenseType.name, Role.name, Country name/code,
+City/Port/Terminal compound names) immediately upon deletion — a
+deliberate, desirable side effect, not a bug.
+
+**Bonus, incidentally fixed:** Role's duplicate-name check already
+excluded `isDeleted:true` rows, but the DB-level unique index on `name`
+did not — reusing a soft-deleted Role's exact name used to throw an
+unhandled Mongo duplicate-key 500 instead of a clean 400. This is gone now
+that Role is hard-deleted (no leftover row, no index collision).
+
+---
+
+# 10. IMPLEMENTATION RECIPE — used for all 14 models, no shared helper
+
+For each of the 14 models:
+1. Kept the existing guard/check logic in that model's `service.js`
+   delete function exactly as it was — same queries, same conditions,
+   same error messages.
+2. Changed ONLY the final action: `isDeleted=true;deletedAt=new
+   Date();updatedBy=x;await doc.save()` → `await
+   Model.findByIdAndDelete(id)` — the exact pattern
+   `voyage.service.js#deleteVoyage`/`expense.service.js#hardDelete`/
+   `expenseType.service.js#deleteCategory` already used.
+3. Removed `isDeleted`/`isDeleted:false` from every query in that model's
+   own service AND every cross-module reference (§5.1).
+4. Removed `isDeleted`/`deletedAt` from the model's schema and its
+   index(es) (§5.2).
+5. Renamed each converted `softDelete`/`remove` function to `hardDelete`
+   (except Role, which was already named `remove` and stayed `remove`)
+   and updated the corresponding controller call site + `module.exports`.
+
+No shared service, no generic "delete engine," no new base class/utility,
+no new Mongoose transaction/session logic. Every one of the 14 edits
+shipped as an independent, in-place change to its own `service.js`/
+`model.js`/`controller.js` trio.
+
+No business rule was introduced or tightened anywhere in Part B's initial
+implementation — every guard's CONDITION stayed byte-for-byte what it was
+before. (§12 documents the two narrow, explicitly-requested exceptions
+added afterward.)
+
+---
+
+# 11. ACCEPTANCE CRITERIA (Part B) — ALL MET
+
+- [x] No cascade delete anywhere in the codebase, for any model (except
+      the two narrow, explicitly-requested exceptions in §12, which are
+      single-relationship cleanups, not a generic engine).
+- [x] No new shared/generic delete service, "delete engine," or recursive
+      helper of any kind — 14 independent, in-place edits.
+- [x] No new Mongoose transaction/session logic introduced for delete.
+- [x] Each of the 14 models' existing guard condition preserved verbatim
+      at ship time (Booking's stayed "blocked only if a NON-cancelled
+      invoice references it," not tightened) — see §12 for the two
+      guards later, explicitly, strengthened by direct instruction.
+- [x] Each of the 14 models' delete function's final step changed from
+      soft to `Model.findByIdAndDelete(id)`.
+- [x] Every one of the 179 `isDeleted:false` query-filter sites removed.
+- [x] `isDeleted`/`deletedAt` fields and every associated index removed
+      from each converted model's schema.
+- [x] The one-time purge migration shipped
+      (`migrate-hard-delete-cleanup.js` / `npm run
+      migrate:hard-delete-cleanup`) — MUST still be run once against any
+      environment not yet migrated.
+- [x] `route.model.js`'s dead `isDeleted` field removed, no migration
+      needed.
+- [x] User (`user.service.js#softDelete`) completely untouched.
+- [x] Verified: `node --check` on all ~40 touched backend files, zero
+      syntax errors.
+
+---
+
+# 12. POST-SHIP REFINEMENTS — Agent + Round (same sprint, explicit follow-up instructions)
+
+Two narrow, explicitly-requested additions after Part B's initial ship —
+each is a single, specific relationship, not a reopening of the "no
+cascade" decision:
+
+## 12.1 Agent.hardDelete — added a second guard (Invoice)
+
+`agent.service.js#hardDelete` gained a second check, in addition to the
+existing active-Booking guard: blocked if a non-cancelled `Invoice`
+references the agent (`Invoice.agentId`). Same "non-cancelled only"
+threshold as Booking's own invoice guard (§5's table) — not "any invoice
+ever." This is a guard STRENGTHENING (Agent could previously be deleted
+with invoice history present; now it can't while any active invoice
+exists), explicitly requested and confirmed via clarifying question before
+implementation.
+
+## 12.2 Round.hardDelete — now also deletes its own Voyages
+
+`round.service.js#hardDelete` now hard-deletes its own Voyage documents
+(`Voyage.deleteMany({_id:{$in: round.voyageIds}})`) once its guards
+confirm none of them are referenced. Voyages have no independent existence
+outside their Round (auto-generated by `utils/voyageGenerator.js`,
+exclusively owned) — this is a narrow, single-relationship cleanup
+specific to that exclusive ownership, confirmed via clarifying question
+NOT to be a reopening of the generic recursive cascade design rejected
+earlier in this sprint. It does not reach any further down the graph —
+Invoice is untouched (Booking's own guard already blocks its own delete
+if a non-cancelled Invoice references it, so an invoiced Booking blocks
+the Round delete transitively). Implementation choice (confirmed): direct
+`Voyage.deleteMany()`, not a loop calling `voyage.service.js#deleteVoyage`
+per voyage (the round-level guards already confirmed nothing references
+any of the round's voyages, so a per-voyage re-check would be redundant).
+
+**Post-audit fix (`system-audit-2026-8-3.md` §2.1):** the guard as first
+shipped checked only Layer 2 `Booking` — the Voyage cascade could
+silently orphan a live Layer 1 `ManualBooking` or an `Expense`
+(Round- or Voyage-scoped) referencing one of the round's voyages, since
+neither of those has independent existence once its voyage is deleted
+either. Fixed by adding two more guard checks, same shape as the existing
+Booking one:
+```js
+const hasManualBooking = await ManualBooking.exists({ voyageId: { $in: voyageIds } });
+if (hasManualBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have estimated bookings' };
+
+const hasExpense = await Expense.exists({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }] });
+if (hasExpense) throw { status: 400, message: 'Cannot delete — expenses are recorded against this round or its voyages' };
+```
+Expense is checked against BOTH `roundId` (Round-scoped expenses) and
+`voyageId` (Voyage/Port-scoped expenses), since `Expense.portId` is only
+ever set alongside `voyageId` (Sprint 036 — Port is a refinement of
+Voyage scope, never independent), so the `voyageId` half of the `$or`
+already covers Port-scoped expenses too.
+
+Both refinements verified via `node --check`; `CLAUDE.md`'s Deletion Rules
+table (§9) updated to reflect both.
+
+---
+
+# PART C — INVOICE DETAILS PAGE & PDF REDESIGN
+
+Built across several explicit follow-up rounds in the same session.
+Nothing in Part C touches the delete/hard-delete work in Parts A/B — this
+is a separate feature area (Invoice viewing/PDF), grouped into Sprint 047
+only because it landed in the same working session.
+
+---
+
+# 13. SCOPE — FINAL, AS SHIPPED (superseding two earlier intermediate iterations)
+
+The Invoice Details page and the Invoice PDF both went through more than
+one iteration in this session before reaching their final, shipped shape.
+This section documents ONLY the final state; earlier intermediate designs
+(e.g. a `BookingsSummaryCard` overview on the Invoice Details page, a
+two-column Payments Received list on the PDF) were explicitly superseded
+by later instructions in the same session and are NOT part of the final
+behavior — do not resurrect them.
+
+## 13.1 Invoice Details page (`InvoiceForm.jsx#EditInvoiceForm`) — final state
+
+- **No booking list of any kind** — not a per-booking table, not a
+  booking-count-plus-container-type-breakdown card. The entire financial
+  section is three stat figures: **Total Amount, Total Paid, Remaining**.
+  (An intermediate iteration used the same `BookingsSummaryCard` Create
+  Invoice uses for Voyage/Round scope — that was explicitly removed by a
+  later instruction; `BookingsSummaryCard` itself is untouched and still
+  used by `CreateInvoiceForm`'s Voyage/Round eligible-bookings view, a
+  different, still-valid use of that component.)
+- **New "Bill To (PDF)" section** — its own independent form + mutation,
+  rendered as a sibling to the main invoice-details form (not nested
+  inside it — two `<form>` elements side by side in a wrapping `<div>`).
+  Fields: Phone, Mobile, Email, Job Code, Tax ID, Address, Office. Always
+  editable regardless of the invoice's paid/locked state (confirmed via
+  clarifying question — this is PDF presentation data, not financial
+  data). Calls `PUT /invoices/:id/bill-to`, completely independent of the
+  main form's `PUT /invoices/:id` and its lock logic.
+
+## 13.2 Payment recording (`InvoicePaymentPanel.jsx`) — final state
+
+- **Payment records overview** — a "Total Paid / Remaining" summary always
+  visible above the payment history table (previously this only existed
+  inside the "Record Payment" form, which is hidden once an invoice is
+  fully Paid/Cancelled — now visible regardless of invoice status).
+- **Payment history table** — one row per payment: Date, Amount, Method,
+  Reference, Status (+ Void action when applicable). No per-booking
+  allocation breakdown column (that column existed transiently mid-session
+  and was removed by explicit instruction).
+- **"Record Payment" form** — collapsed to ONE row: Invoice Total / Paid
+  So Far / Remaining + a single "Amount to Apply" input, capped at the
+  invoice's total remaining balance. The backend still requires real
+  per-booking `Payment.allocations[]` (Sprint 033, unchanged, still
+  re-validated server-side — Agent Financial Account's per-booking paid/
+  remaining and orphaned-booking tracking both depend on this real data
+  continuing to exist). The single entered amount is auto-distributed via
+  a deterministic WATERFALL: fill the first booking's own remaining
+  balance, then the next, in line-item order — confirmed via clarifying
+  question to be a waterfall, explicitly NOT a proportional/percentage
+  split (that would have reversed a Sprint 033 decision).
+
+## 13.3 Invoice model + backend — final state
+
+- **NEW `invoice.billTo` embedded field** (schema: `billToSchema`, `{
+  phone, mobile, email, jobCode, taxId, address, office }`, all optional
+  strings, `_id:false`) on `invoice.model.js`.
+- **NEW `PUT /invoices/:id/bill-to`** route → `invoice.controller.js#
+  updateBillTo` → `invoice.service.js#updateBillTo(id, billTo)` — a
+  completely separate code path from the main `update()`, no lock check
+  of any kind (always succeeds regardless of paidAmount/status), does not
+  call `validateManualTransition()` or touch dates/currency/notes/status.
+  New `validateBillTo` validator (`invoice.validation.js`) — all fields
+  optional strings with max-length caps, no business-rule constraints.
+- **`invoice.service.js#getByIdForPdf`** now also fetches the invoice's
+  non-voided `Payment` records (`paymentDate amount method reference`,
+  sorted ascending) and attaches them as `invoice.payments` for the PDF
+  generator to render as a real table.
+
+## 13.4 Invoice PDF (`utils/invoicePdfGenerator.js`) — final layout
+
+1. Header bar — **"FLOW MARINE"** (was "Flow Dubai" — renamed everywhere:
+   header, PDF `Author` metadata, footer). Footer's "| Dubai, UAE" segment
+   removed entirely — footer now reads "Flow Marine | Shipping &
+   Logistics Operations".
+2. Meta strip — status pill, invoice date, due date (unchanged).
+3. Billing row — **Bill To** (agent name/code + `invoice.billTo` fields;
+   mobile/email fall back to the agent's own contact when not set on the
+   invoice, every other field has no fallback; only non-empty lines
+   render, so an invoice with no Bill To filled in yet shows no
+   placeholder wall) | **Shipment Details** (Type/POL/POD/Voyage/Round —
+   Voyage/Round no longer gated by `invoiceType`; both resolve from
+   whatever the invoice's own line items actually agree on regardless of
+   type, showing "N voyages"/"N rounds" if they don't all share one).
+4. **INVOICE OVERVIEW** — three stat boxes: Total Amount / Total Paid /
+   Remaining (Remaining accent-highlighted) — the entire financial
+   summary. Invoice notes render directly below this strip if present.
+   **There is no per-booking line items table anywhere on the PDF** — the
+   old one (# / Booking-Container / Voyage-Round / Shipper-Consignee /
+   Amount, one row per invoiced booking) was removed entirely, not
+   replaced by any other booking-level breakdown.
+5. **PAYMENTS RECEIVED** — a real full-width table, one row per payment:
+   Date | Method | Reference | Amount. Replaces both an intermediate
+   two-column (date+amount only) list AND the original static bank-wire-
+   details block (Bank Name/Account/SWIFT/Reference) — neither of those
+   exists anymore.
+6. Footer — "Flow Marine | Shipping & Logistics Operations" + generated
+   date + invoice number (unchanged shape, just the rebranded text above).
+
+---
+
+# 14. EXPLICITLY OUT OF SCOPE / UNCHANGED (Part C)
+
+- `BookingsSummaryCard` component itself — untouched, still used by
+  `CreateInvoiceForm`'s Voyage/Round eligible-bookings view (a pre-
+  invoice-creation view, not the invoice DETAILS page this part changed).
+- Sprint 033's payment rules (`Payment.allocations[]` required,
+  `recalcInvoiceStatus()`, `MANUAL_TRANSITIONS`) — completely untouched.
+  The waterfall distribution is a client-side convenience that still
+  produces the exact same shape of request the backend already validated
+  before this sprint.
+- The main invoice `update()` lock logic (`PUT /invoices/:id`,
+  `invoices:override`) — untouched; Bill To's always-open path is a
+  parallel, separate route, not a change to the existing lock.
+- Any change to `Invoice.lineItems[]` itself, or how invoices are created
+  (`CreateInvoiceForm`, `invoice.service.js#create`) — untouched.
+
+---
+
+# 15. FILES TOUCHED (Part C, for reference)
+
+Backend: `invoice.model.js` (billTo schema), `invoice.service.js`
+(`updateBillTo`, `getByIdForPdf` payments fetch), `invoice.controller.js`
+(`updateBillTo` handler), `invoice.routes.js` (`PUT /:id/bill-to`),
+`invoice.validation.js` (`validateBillTo`), `utils/invoicePdfGenerator.js`
+(full redesign per §13.4).
+
+Frontend: `invoices.service.js` (`updateBillTo`), `InvoiceForm.jsx`
+(`EditInvoiceForm`'s overview block + new `BillToSection` component),
+`InvoicePaymentPanel.jsx` (one-row Record Payment form, waterfall
+allocation, always-visible Total Paid/Remaining overview, history table
+column cleanup).
+
+---
+
+# 16. ACCEPTANCE CRITERIA (Part C) — ALL MET
+
+- [x] Invoice Details page shows no booking list of any kind — only
+      Total Amount / Total Paid / Remaining.
+- [x] New Bill To section (7 fields) on the Invoice Details page, its own
+      form/mutation, always editable regardless of invoice lock state.
+- [x] `PUT /invoices/:id/bill-to` ships as a completely separate,
+      lock-free code path from the main `update()`.
+- [x] Payment recording collapsed to one row (Invoice Total/Paid So
+      Far/Remaining + one Amount-to-Apply input); backend still receives
+      real per-booking `allocations[]`, computed via waterfall, never
+      proportional.
+- [x] Payment history table shows date/amount/method/reference/status per
+      record, one row per payment, no per-booking allocation column.
+- [x] A "Total Paid / Remaining" overview is visible above the payment
+      history table regardless of invoice status (not gated by whether
+      the Record Payment form itself renders).
+- [x] Invoice PDF: "FLOW MARINE" branding throughout, no "Dubai, UAE"
+      remnant.
+- [x] Invoice PDF: no per-booking line items table anywhere.
+- [x] Invoice PDF: "INVOICE OVERVIEW" three-stat-box summary (Total
+      Amount/Total Paid/Remaining) is the entire financial summary.
+- [x] Invoice PDF: "PAYMENTS RECEIVED" is a real table, one row per
+      payment, columns Date/Method/Reference/Amount.
+- [x] Invoice PDF: Voyage/Round in Shipment Details always resolve
+      correctly regardless of invoiceType (no longer artificially
+      suppressed for Round-type or Voyage-type invoices).
+- [x] Verified: `node --check` on every touched backend file; `eslint` on
+      every touched frontend file, zero new errors (same 3 pre-existing,
+      unrelated `CreateInvoiceForm` warnings persist, confirmed via `git
+      diff` to predate this sprint).

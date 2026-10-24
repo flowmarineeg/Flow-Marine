@@ -1,5 +1,6 @@
 'use strict';
 
+const lock = require('../rounds/roundLock');
 const ManualBooking = require('./manualBooking.model');
 const Voyage        = require('../voyages/voyage.model');
 const ContainerType = require('../containerTypes/containerType.model');
@@ -124,6 +125,7 @@ const getById = async (id) => {
 
 // ── Create ────────────────────────────────────────────────────────────────────
 const create = async (data, createdBy) => {
+  await lock.assertVoyageRoundOpen(data.voyageId);
   const voyage = await Voyage.findById(data.voyageId).lean();
   if (!voyage) throw { status: 400, message: 'Voyage not found' };
   if (['Cancelled', 'Completed'].includes(voyage.status)) {
@@ -168,6 +170,7 @@ const create = async (data, createdBy) => {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
+  await lock.assertDocRoundOpen('ManualBooking', id);
   const doc = await ManualBooking.findOne({ _id: id });
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
 
@@ -215,6 +218,7 @@ const update = async (id, data, updatedBy) => {
 // before this sprint either; not adding one now, per "do not redesign
 // business rules unless required for referential integrity").
 const hardDelete = async (id) => {
+  await lock.assertDocRoundOpen('ManualBooking', id);
   const doc = await ManualBooking.findOne({ _id: id });
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
 

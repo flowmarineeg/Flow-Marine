@@ -1,0 +1,69 @@
+# Sprint 050 (V2 S1) - Foundation - implementation log
+Status: IMPLEMENTED in the working tree, NOT committed. Plan: sprints/049-sprint.txt section 4.
+Everything is behind feature flags (all OFF) - with all flags off V1 behaves as before.
+
+DONE
+ P0  system_settings        modules/settings: SystemSetting model, settings.service (cached 30s),
+                            flags accounting/partners/agentSoa/netting/settlement/v2Invoices/fx = false.
+                            GET /settings/feature-flags (any signed-in user), PUT needs settings:manage.
+                            requireFlag(flag) guard -> 403 FEATURE_DISABLED.
+                            Frontend: hooks/useFeatureFlags.js, /settings page (toggle list).
+ P1  Chart of accounts      modules/ledger/account.model.js + accounts.seed.js (20 proposed accounts,
+                            4-digit). Idempotent: npm run migrate:seed-accounts. NOT wired into
+                            config/seed.js. The list still needs the controller's confirmation.
+ P2  Ledger core            JournalEntry + JournalEntryLine models; LedgerService.post()/reverse()
+                            in ledger.service.js is the only write path. Balance checked per currency in
+                            integer minor units, inside a transaction. Models refuse update/delete
+                            (hooks) -> LEDGER_IMMUTABLE. Reversal = mirror entry; the original's status
+                            flag flips through the raw collection in the same transaction; a unique
+                            partial index on reversesEntryId makes a double reversal impossible.
+                            counter key 'journal' -> JE-000001.
+ P3  Money helpers          backend utils/money.js and frontend utils/money.js: toMinor, fromMinor,
+                            format, add, sub, allocate (largest remainder, never loses a cent).
+ P4  exchange_rates         ExchangeRate model, fx.service getRate (latest on/before date) / setRate.
+                            GET/PUT /ledger/exchange-rates; PUT needs ledger:manage and flag fx.
+ P5  Partners master        modules/partners; /partners page (MasterTable); module 'partners'.
+ P6  Vessel JV shares       VesselPartner (basis points; unique vessel+partner; unique lead per vessel
+                            as a partial index). validateShares(): total 10000, exactly one lead, no
+                            duplicates. Locked once the vessel has any Round (VESSEL_SHARES_LOCKED).
+                            GET/PUT/DELETE /vessels/:id/partners. UI: VesselPartnersPanel on Vessel Details.
+ P7  Agreement schemas      AgentAgreement, AgentCommission (schema only; screens/logic in 051/052).
+ P8  Dependents engine      utils/dependents.js - counts blockers, refuses with HAS_DEPENDENTS naming each
+                            with its count. Not a cascade. Wired into Partner, Vessel and Agent delete.
+                            See "Not done" for the V1 guards.
+ P9  Trial balance          GET /ledger/trial-balance (flag accounting): per account+currency, balanced flag.
+ Also: RBAC modules partners/ledger/settings, new 'manage' action on the Permission schema and the
+ PermissionMatrix (new 'Accounting (V2)' group). errorHandler/AppError now return a stable `code` (R7).
+ `npm test` = node --test (D13), zero dependencies.
+
+ERROR CODES (R7)
+ FEATURE_DISABLED 403 | LEDGER_UNBALANCED 400 | LEDGER_BAD_LINE 400 | LEDGER_BAD_ENTRY 400
+ LEDGER_IMMUTABLE 409 | ACCOUNT_NOT_FOUND 400 | ACCOUNT_INACTIVE 400 | REASON_REQUIRED 400
+ ENTRY_NOT_FOUND 404 | ENTRY_ALREADY_REVERSED 409 | SHARES_NOT_100 400 | LEAD_COUNT_INVALID 400
+ DUPLICATE_PARTNER 400 | SHARE_INVALID 400 | SHARE_PARTNER_REQUIRED 400 | PARTNER_NOT_FOUND 404/400
+ VESSEL_NOT_FOUND 404 | VESSEL_SHARES_LOCKED 409 | HAS_DEPENDENTS 409 | FX_RATE_MISSING 400
+ FX_RATE_INVALID 400 | UNKNOWN_FLAG 400 | INVALID_FLAG_VALUE 400
+
+VERIFIED
+ - npm test: 16 tests pass (money, ledger balance rules, ledger immutability hooks, share rules,
+   flag defaults, dependents skip rules).
+ - Flag guard + error code exercised through a mini Express app (403 FEATURE_DISABLED, 409 HAS_DEPENDENTS,
+   200 once the flag is on).
+ - All new route/model files load; frontend `next build` passes; eslint: no errors on new files.
+
+NOT VERIFIED (no test database - only the live Atlas DB is configured, and I did not write to it)
+ - LedgerService.post()/reverse() inside a real transaction, the unique indexes, trial balance
+   aggregation, setShares transaction, seedAccounts. Run them against a copy of the DB or a local replica
+   set before turning accounting on. These are the first things to test.
+
+NOT DONE / DECISIONS
+ - P8 retrofit: proposal 9.2 lists more blockers for Round, Voyage, Booking, Invoice, Expense, Agent,
+   container type/service/expense type (tracking history, invoice lines, settlements...). Existing V1
+   guards were left byte-for-byte (R1). Only Partner/Vessel/Agent got the engine, because the other
+   blockers point at collections that do not exist until 051-053. Add those entries to DEPENDENTS as
+   each collection lands (a spec for a missing collection is skipped, so adding them early is safe).
+ - V1 guard tightening (e.g. Vessel blocked by ANY Round) is only active with flag `accounting` on.
+ - config/seed.js not touched (it is not the account seeding path).
+ - Partners create/update need partners:manage on the server, but the list page's New/Edit buttons
+   use the standard create/update check - grant both on the role, or expect a 403 otherwise.
+ - D-1 (sharp/nodemailer/xlsx), D-2 (cache), D-3 from sprint 049 are still open.

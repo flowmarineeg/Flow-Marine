@@ -1,5 +1,6 @@
 'use strict';
 
+const lock = require('../rounds/roundLock');
 const TrackingHistory = require('./trackingHistory.model');
 const Voyage          = require('../voyages/voyage.model');
 const Round           = require('../rounds/round.model');
@@ -20,6 +21,7 @@ const pop = (q) =>
 
 // ─── Create entry (append-only) ───────────────────────────────────────────────
 const createEntry = async (data, userId) => {
+  await lock.assertVoyageRoundOpen(data.voyageId);
   // 1. Voyage must exist
   const voyage = await Voyage.findById(data.voyageId).lean();
   if (!voyage) throw { status: 404, message: 'Voyage not found' };

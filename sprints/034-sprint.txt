@@ -1,0 +1,708 @@
+# Sprint 034 — Booking Reports Modernization
+Status: ✅ IMPLEMENTED. This document is the
+implementation plan requested in prompt.txt, built directly on
+`docs/booking-report-analysis.md` (the prior, already-approved
+investigation) plus fresh technical analysis of the Layer 2 Booking
+model for Task 2. All open business decisions have now been resolved
+(Revision 3) and the sprint is fully approved for implementation,
+phase by phase, per IMPLEMENTATION PHASES below.
+
+**Revision 2** — updated per an approved business decision: the
+Weighted Average freight-rate recommendation (Revision 1's Decision 9)
+is rejected. Booking Revenue Details must group on exact pricing
+(Agent, Commodity, POL, POD, Container Type, Freight Rate) and always
+display the actual, real freight rate agreed for the bookings in that
+group — never a computed average. Every section this touches has been
+revised below; Task 1 and everything else in Task 2 not related to
+grouping/rate is unchanged.
+
+**Revision 3** — two final business updates, both applied below:
+(1) Decision 10 (the 45ft/44ft container-size question) is now
+**approved, not open**: 20 Qty includes only `20ft`; 40 Qty includes
+ALL of `40ft`, `40HC`, `44ft`, and `45ft`. No separate "45 Qty" column
+is introduced — the Report Structure is unchanged. This was the last
+open business decision in the sprint; none remain.
+(2) An explicit "pricing group" business clarification has been added to
+both the Business Description and Grouping Strategy of Task 2, and the
+Rate 20/Rate 40 description has been reworded to "The Freight Rate
+shared by all bookings in the pricing group" throughout, replacing the
+shorter "the actual freight rate" phrasing.
+
+---
+
+# SPRINT GOAL
+
+Modernize how the system reports on bookings, in two independent pieces:
+
+1. **Migrate the existing Booking Report** off its Layer-2-only,
+   partly-dead implementation onto the current dual-layer (Layer 1 +
+   Layer 2) architecture, without changing its business purpose.
+2. **Add a new, separate report — Booking Revenue Details** — a grouped
+   commercial-revenue breakdown by Agent/Commodity/POL/POD, built ONLY
+   from Layer 2 Final Loading bookings, with no dependency on
+   ManualBooking, Invoice, or Payment.
+
+These two tasks do not share code paths and can be built/shipped
+independently of each other.
+
+---
+
+# SCOPE
+
+**In scope:**
+- Task 1: rebuild `reports.service.js#getBookingReport`,
+  `reports.controller.js`, `BookingReport.jsx` to be dual-layer-correct,
+  legacy-field-free, and internally consistent (rows vs. summary).
+- Task 2: a brand-new backend aggregate, a brand-new API endpoint, and a
+  brand-new frontend report page/component for Booking Revenue Details.
+
+**Out of scope (explicitly, per the brief and per
+`docs/booking-report-analysis.md`'s own recommendation to keep concerns
+separate):**
+- Any Invoice/Payment visibility on either report.
+- Any change to `capacity.service.js`, `teuResolver.js`'s existing rule
+  set (only *reused*, never modified), `booking.model.js`,
+  `manualBooking.model.js`, or any booking-mutation path.
+- The unrelated operational Bookings-list export
+  (`export.service.js`'s `case 'bookings'`) — it shares the same dead
+  `quantity` reference documented in the prior analysis, but touching it
+  is a separate, later decision, not part of this sprint.
+- Any change to the Agent Financial Account (Sprint 033).
+
+---
+
+# ARCHITECTURE DECISIONS
+
+## Decision 1 — Task 1 reuses the Sprint 032 dual-layer pattern, not a new one
+`vessel.service.js#getVesselStats` already proved the working shape for
+"query Layer 2 and Layer 1 in parallel, merge in JS, one combined
+result" (Sprint 032). Task 1's backend rebuild reuses that exact shape
+— no new dual-layer convention is invented.
+
+## Decision 2 — Task 1 keeps the report's business purpose unchanged
+Per the brief ("keep the current business purpose of the report") and
+`docs/booking-report-analysis.md` §4: this stays a filterable operational
+booking ledger + count/freight summary. It does not gain Invoice/Payment
+awareness — that question was raised in the prior analysis and is
+explicitly deferred, not answered, by this sprint.
+
+## Decision 3 — Task 1 fixes the row/summary Cancelled mismatch by
+excluding Cancelled from both, consistently
+`docs/booking-report-analysis.md` §5 documented that the row list
+includes Cancelled bookings (unless the user filters status) while the
+summary aggregate silently excludes them. Going forward: **both the row
+list and the summary apply the same exclusion** — Cancelled bookings are
+shown only when the user explicitly filters `status = Cancelled`;
+otherwise both rows and totals agree. This mirrors the "Cancelled is its
+own explicit filter, never silently mixed into an unscoped default"
+convention already used elsewhere in the codebase (e.g. Booking List's
+own status filter).
+
+## Decision 4 — Task 1 replaces `quantity` with nothing (not a
+replacement field) for Layer 2, and with `cargoRows[].quantity`/
+`totalUnits` for Layer 1
+Layer 2 has no unit-count concept since Sprint 025 ("one booking = one
+container" — there is nothing to sum beyond a straight document count,
+which the report already computes as `count`). Layer 1
+(`ManualBooking.totalUnits`) DOES still have a real multi-unit concept.
+The "Total Units" KPI is therefore redefined as **Layer 1's
+`totalUnits` sum only** — Layer 2 contributes its booking count to
+"Bookings", not to "Units". This is the most honest mapping of a real
+field to a real KPI, rather than inventing a fabricated combined number
+that would conflate two different concepts (containers vs. cargo units).
+
+## Decision 5 — Task 1 drops "Total Slots" entirely
+Per the prior analysis, this KPI has had no backing field since Sprint
+017. It is removed, not replaced — there is no current concept in either
+layer called a "slot."
+
+## Decision 6 — Task 2 is a read-only, Layer-2-only, Final-Loading-only
+report, with NO join to Invoice/Payment/ManualBooking
+Per the brief's explicit "Data Source" section. This is a hard
+constraint, not a starting point for negotiation — Task 2's backend
+function must not `require()` `invoice.model.js`, `payment.model.js`, or
+`manualBooking.model.js` at all.
+
+## Decision 7 — Task 2 groups on a normalized commodity key, not raw text
+`Booking.commodity` is free text (`{ type: String, trim: true, default:
+null }` — no enum, no ref). Grouping directly on the raw string would
+split what should be one group into several over casing/whitespace
+differences ("Rice" vs "rice" vs "RICE"). The grouping key uses a
+normalized form (trim + uppercase) of `commodity`, while the row
+displayed to the user shows one representative original-case value from
+the group (e.g. the first non-null value encountered) — the same
+"normalize for matching, display the human original" pattern already
+used for container-type matching in `bookingImport.service.js`'s `ctMap`
+lookups.
+
+## Decision 8 — the TEUs column reuses `teuResolver.js#resolveTEU()`
+unmodified; the 20/40 Qty bucketing is a related, separate report-level
+classification (finalized by Decision 10, Revision 3)
+`resolveTEU()` extracts the leading numeric length from a container size
+string and is used **exactly as-is, unmodified,** for the `TEUs` column
+— no change to `teuResolver.js` in this sprint. The 20 Qty / 40 Qty
+bucketing reuses that same leading-digit-extraction *idea* (same
+normalize-then-match technique) but is its own small classification,
+living in the Booking Revenue Details report code, not inside
+`teuResolver.js` — because the two questions are not actually the same
+question: `resolveTEU()` answers "how many TEU does this container
+represent" (a capacity concept, unrelated to and unchanged by this
+report), while this report's bucketing answers "does this booking belong
+in the 20-column or the 40-column" (a report-presentation concept). Per
+Decision 10 (Revision 3, approved), the 40 Qty bucket is explicitly
+`40ft`, `40HC`, `44ft`, and `45ft` together — a broader set than
+`resolveTEU()`'s own explicit `40 || 45` check, so the two cannot simply
+share one function call. This still satisfies "reuse the existing
+project architecture wherever possible": the *technique* (leading-digit
+extraction, normalize-trim-uppercase-strip-whitespace) is reused
+identically; only the bucket-boundary *values* differ, because they
+answer genuinely different questions.
+
+## Decision 9 (REVISED, Revision 2/3) — Task 2 groups on exact pricing;
+Rate 20/Rate 40 are the Freight Rate shared by all bookings in the
+pricing group, never an average
+**The Weighted Average recommendation from Revision 1 is rejected and
+removed.** Approved business decision: bookings are grouped together
+only when Agent, Commodity, POL, POD, Container Type, AND Freight Rate
+are all identical. If two bookings agree on Agent/Commodity/POL/POD/
+Container Type but carry different Freight Rates — DG surcharges,
+different pricing agreements, different container-type pricing, or any
+future pricing rule — they are two separate pricing groups and MUST
+appear as two separate report rows. Never merged, never averaged.
+
+Consequence: because Container Type and Freight Rate are now part of the
+grouping key itself, every booking inside a resulting group shares one
+identical container type (hence one identical size bucket) and one
+identical freight rate by construction. There is nothing left to
+average — Rate 20/Rate 40 are read directly off the group (any booking's
+`freightRate` in the group, since by construction they are all equal),
+never computed as Revenue ÷ Qty. See the revised Grouping Strategy,
+Aggregation Strategy, and Calculation Rules below for the full mechanics.
+
+One structural side effect worth naming explicitly: since a group now has
+exactly one container type, a single report row will only ever populate
+ONE side of the 20/40 pair — a 20ft pricing group shows `20 Qty`/
+`Rate 20`/`Revenue 20` populated and `40 Qty`/`Rate 40`/`Revenue 40` at
+zero, and vice versa for a 40ft group. This is the correct, expected
+shape of the new design, not a defect — it follows directly from Container
+Type being a grouping dimension rather than something summed across
+within a row.
+
+## Decision 10 (RESOLVED, Revision 3) — 20 Qty is `20ft` only; 40 Qty
+includes `40ft`, `40HC`, `44ft`, AND `45ft`; no separate "45 Qty" column
+**Approved business decision — the last open question in this sprint is
+now closed.** Container size classification for this report follows the
+project's existing TEU-rule philosophy (Decision 8's leading-digit
+extraction, the same idea already used by `teuResolver.js`), extended
+with an explicit bucket assignment for this report specifically:
+```
+20 Qty bucket:  20ft
+40 Qty bucket:  40ft, 40HC, 44ft, 45ft
+```
+The Report Structure remains unchanged — no "45 Qty" (or "44 Qty")
+column is introduced. A group whose container type is `40HC`, `44ft`, or
+`45ft` is simply a 40-bucket pricing group: it populates `40 Qty`/
+`Rate 40`/`Revenue 40` exactly like a `40ft` group would, per Decision
+9's structural rule (one bucket populated, the other at zero).
+
+**Technical note carried forward from implementation (not a business
+decision, a factual observation):** `backend/src/config/constants.js`'s
+`CONTAINER_SIZES` enum is currently `['20ft', '40ft', '40HC', '45ft']` —
+`'44ft'` is not presently a creatable `ContainerType.size` value at all
+(the field is enum-constrained). The 44ft bucket rule is still specified
+exactly as approved, so that if `'44ft'` is ever added to that enum in
+the future, this report classifies it correctly without any further
+change — but no booking can carry that size today, so this branch is
+currently unreachable in practice. This does not affect `teuResolver.js`
+itself, which is not modified by this sprint (its own `len === 40 ||
+len === 45` TEU-value rule is separate from — and untouched by — this
+report's own 20/40 bucket-assignment rule; see Decision 8's note that
+the TEUs column and the Qty-bucket columns are two different
+calculations reusing the same underlying size-parsing idea, not the same
+function call for both purposes where they'd need to disagree).
+
+---
+
+# TASK 1 — BOOKING REPORT MIGRATION
+
+## Business Description
+Unchanged from `docs/booking-report-analysis.md` §4: a filterable ledger
+of booking activity (by voyage/agent/status/service/date) with a
+count + freight summary, for Operations/Finance review. The only change
+is that "booking activity" now correctly means both layers, and the
+summary numbers are all real (no dead fields).
+
+## Technical Analysis (recap of `docs/booking-report-analysis.md`,
+carried forward as the basis for this plan)
+- Current implementation: `reports.service.js#getBookingReport` queries
+  `Booking` (Layer 2) only; `ManualBooking` is never referenced.
+- `quantity` is summed and displayed but does not exist on `Booking`
+  since Sprint 025/026 — always 0/blank.
+- `totalSlots` is displayed on the frontend but was never returned by
+  the backend since Sprint 017.
+- `containerNumber` (the system's primary booking match key since
+  Sprint 021) is never included in the report's row projection.
+- The row list and summary aggregate disagree on Cancelled inclusion.
+- No pagination controls exist despite the backend supporting
+  `page`/`limit`/`total`.
+- No export is wired for this report (true of every report in the
+  module).
+
+## Backend Tasks
+- `reports.service.js#getBookingReport`:
+  - Add a second query against `ManualBooking`, scoped by the same
+    filters that make sense for it (agentId, status, dateFrom/dateTo on
+    `createdAt`; `voyageId`/`serviceId` still resolve the same way).
+  - Merge Layer 1 + Layer 2 rows into one combined, layer-tagged result
+    set (each row gains a `layer: 'Operational' | 'Manual'` tag, mirroring
+    `BookingList.jsx`'s existing Operational/Manual terminology) — same
+    merge-in-JS shape as `vessel.service.js#getVesselStats` (Decision 1).
+  - Rebuild the summary aggregate: `count` = Layer 1 count + Layer 2
+    count (Cancelled excluded per Decision 3); `totalFreight` = Layer 1
+    `totalFreight` sum + Layer 2 `totalFreight` sum (Cancelled excluded);
+    `totalUnits` = Layer 1 `totalUnits` sum only (Decision 4); remove
+    `totalSlots` entirely (Decision 5).
+  - Apply the same Cancelled-exclusion rule to the row list as the
+    summary, unless the user's own `status` filter explicitly asks for
+    Cancelled (Decision 3).
+  - Add `containerNumber` to the Layer 2 row projection (Layer 1 has no
+    equivalent field — a Manual Booking row's "Container" column is
+    naturally blank/"—", since Layer 1 bookings precede container
+    assignment by design).
+  - Keep `page`/`limit`/`total` support; `total` now reflects the
+    combined Layer 1 + Layer 2 count.
+- No route or model changes — `GET /reports/bookings` stays the same
+  path and method (Decision-neutral: response shape changes, path does
+  not).
+
+## Frontend Tasks
+- `BookingReport.jsx`:
+  - Table gains a `Layer` column/badge (Operational vs. Manual) and a
+    `Container` column showing `containerNumber` (Layer 2 rows) or "—"
+    (Layer 1 rows), reusing the same visual convention `BookingList.jsx`
+    already uses for its own tab labels.
+  - Remove the "Qty" column's dependency on the dead `quantity` field —
+    since Layer 2 has no per-booking unit count, this column is dropped
+    for Layer 2 rows or replaced with a per-layer-appropriate value
+    (Layer 1 rows can show `totalUnits`, Layer 2 rows show "—" or are
+    simply omitted from a unit-count column entirely — exact column
+    layout is a frontend-detail decision to finalize during
+    implementation, not this planning pass).
+  - "Total Units" KPI card now reads the corrected Layer-1-only sum
+    (Decision 4); "Total Slots" card is removed (Decision 5).
+  - No pagination UI is added in this pass unless separately requested
+    — noted as still-open from the prior analysis, not required to
+    close out this migration.
+- No new components required — this is a rebuild of one existing
+  component, not a new one.
+
+## API Design
+```
+GET /reports/bookings   (unchanged path/method)
+  Query params: voyageId, agentId, status, serviceId, dateFrom, dateTo,
+                page, limit   (all unchanged)
+  Response shape (changed):
+    rows: [{ ..., layer: 'Operational' | 'Manual', containerNumber? }]
+    summary: { count, totalFreight, totalUnits }   // totalSlots removed
+    total   (unchanged meaning, now a combined count)
+```
+This is a breaking response-shape change, but per
+`docs/booking-report-analysis.md` §7, exactly one frontend component
+consumes this endpoint — no other module is affected.
+
+## Report Structure (Task 1, after migration)
+| Column | Source |
+|---|---|
+| Layer | new — 'Operational' (Layer 2) or 'Manual' (Layer 1) |
+| Booking No | `bookingNumber` (either model) |
+| Voyage | `voyageId.voyageNumber` (either model) |
+| Agent | `agentId.agentName` (either model) |
+| Shipper / Consignee | Layer 2 only (Layer 1 has no header-level shipper/consignee — see `manualBooking.model.js`) |
+| Container | `containerNumber` (Layer 2) / "—" (Layer 1) |
+| Freight | `totalFreight` (either model) |
+| Status | `status` (either model, same shared `BOOKING_STATUS` enum) |
+| Date | `createdAt` (either model) |
+
+## Acceptance Criteria (Task 1)
+1. The report includes both Layer 1 and Layer 2 bookings, visibly
+   distinguished per row.
+2. No column or KPI references a field that does not exist on either
+   model — `quantity` and `totalSlots` are fully removed, not just
+   hidden.
+3. "Total Units" reflects Layer 1's real `totalUnits` sum; Layer 2's
+   contribution to booking activity is represented by "Bookings" count,
+   not a unit count.
+4. The row list and the summary totals apply the identical Cancelled-
+   inclusion rule — no visible mismatch between rows shown and totals
+   displayed.
+5. `containerNumber` is visible for Layer 2 rows.
+6. The report's filters (voyage, agent, status, service, date range)
+   continue to work identically across both layers.
+7. No change to `capacity.service.js`, `teuResolver.js`,
+   `booking.model.js`, `manualBooking.model.js`, or any booking-mutation
+   path — confirmed by code review before merge.
+
+---
+
+# TASK 2 — BOOKING REVENUE DETAILS REPORT
+
+## Business Description
+A commercial revenue breakdown, not an operational ledger: "for each
+Agent/Commodity/POL/POD combination, how many 20ft and 40ft containers
+moved, how many TEUs and how much VGM did that represent, and how much
+revenue did it generate, broken out by container size and totaled."
+This answers a different question than Task 1's report (activity
+listing) or the Agent Financial Account (invoicing/payment state) — it
+is a pure freight-revenue-by-lane-and-commodity view, scoped exclusively
+to bookings that have actually reached Final Loading (i.e. cargo that
+actually moved, not still-pending reservations).
+
+**Business clarification (Revision 3, Final Business Update #2) — every
+report row represents exactly ONE commercial pricing group.** A pricing
+group is uniquely identified by all six of: Agent, Commodity, POL, POD,
+Container Type, and Freight Rate. Bookings belonging to different
+pricing groups — even if they agree on every other dimension — must
+never be merged into the same row. This is the report's core business
+intention and governs every calculation below: the report does not show
+"average commercial activity per lane," it shows "every distinct real
+price actually agreed for that lane," one row per distinct price.
+
+## Required Analysis — Does Layer 2 Contain Enough Information?
+
+Checked directly against `booking.model.js`'s current fields:
+
+| Report need | Field | Present on Booking? | Note |
+|---|---|---|---|
+| Agent grouping key | `agentId` | Yes (required, ref Agent) | |
+| Commodity grouping key | `commodity` | Yes, but free text, nullable | Needs normalization for grouping (Decision 7); a booking with `commodity: null` needs an explicit "Uncategorised"-style bucket, same pattern already used in `export.service.js`'s expense-category grouping |
+| POL grouping key | `polId` | Yes (required, ref Port) | |
+| POD grouping key | `podId` | Yes (required, ref Port) | |
+| Container size (20/40 bucketing) | `containerTypeId` → `ContainerType.size` | Yes, via populate/lookup | `size` is an enum (`20ft`,`40ft`,`40HC`,`45ft`) on `ContainerType`, not stored directly on `Booking` |
+| TEU calculation | derived from `ContainerType.size` | Yes | Via `teuResolver.js#resolveTEU()` (Decision 8) — already exists, reused as-is |
+| VGM | `vgm` | Yes, nullable Number | MongoDB `$sum` naturally treats null/missing as 0 contribution — no special-casing needed |
+| Rate / Revenue | `freightRate` / `totalFreight` | Yes | Identical values per booking today; `freightRate` is also now a grouping-key dimension itself (Decision 9, Revision 2) |
+| Status filter | `status` | Yes (`BOOKING_STATUS` enum, includes `'Final Loading'`) | |
+
+**Conclusion: every column the brief lists can be generated from the
+current Layer 2 Booking model plus its existing `ContainerType`
+reference — no field is missing, and nothing needs to be invented.**
+
+**Gap identified and now resolved (Decision 10, Revision 3):** the
+report structure has no column for 45ft bookings. Approved resolution:
+45ft (and 44ft, 40HC) bookings are not excluded and do not need their
+own column — they are 40-bucket pricing groups, populating `40 Qty`/
+`Rate 40`/`Revenue 40` exactly as a `40ft` group would.
+
+## Grouping Strategy (REVISED, Revision 2/3 — exact pricing groups)
+**Each report row represents one commercial pricing group, uniquely
+identified by Agent + Commodity + POL + POD + Container Type + Freight
+Rate (Revision 3, Final Business Update #2). Bookings belonging to
+different pricing groups are never merged.** Group key (six dimensions,
+per the approved business decision):
+`(agentId, normalizedCommodity, polId, podId, containerTypeId,
+freightRate)`, where `normalizedCommodity = (commodity || '').trim()
+.toUpperCase()` (Decision 7, unchanged). Using the booking's own
+`containerTypeId` reference (not just a derived size bucket) as the
+grouping dimension naturally captures "different container pricing"
+(e.g. a Reefer and a Dry container of the same size legitimately pricing
+differently) without any extra logic — two bookings only fall in the
+same group if they reference the exact same `ContainerType` document.
+`freightRate` is compared for exact equality as stored (a plain Number
+comparison — no rounding/tolerance logic is introduced; if this ever
+proves too strict in practice, that is a future decision, not one made
+here).
+
+Each distinct combination of all six values becomes exactly one report
+row — this is a genuine change from Revision 1's four-dimension grouping.
+Two bookings identical on Agent/Commodity/POL/POD/Container Type but
+carrying different Freight Rates now produce two separate rows, per the
+approved business reason (DG cargo, different pricing agreements,
+different container pricing, future pricing rules). The displayed
+"Commodity" text for a group is still the first non-empty original-case
+`commodity` value encountered (Decision 7). Only Layer 2 bookings with
+`status === 'Final Loading'` and `isDeleted: false` participate — nothing
+else is queried (Decision 6, unchanged).
+
+## Aggregation Strategy (REVISED, Revision 2/3)
+Because Container Type and Freight Rate are now grouping-key dimensions,
+every booking inside one resulting group already shares one identical
+container type and one identical freight rate — there is no
+within-group size mixing or rate variance left to reconcile. Per group,
+accumulate:
+- `qty20` — count of the group's bookings, IF the group's shared
+  container size is `20ft` (Decision 10, approved); otherwise 0 for this
+  group
+- `qty40` — count of the group's bookings, IF the group's shared
+  container size is `40ft`, `40HC`, `44ft`, or `45ft` (Decision 10,
+  approved — all four are one bucket); otherwise 0 for this group
+- `teus` — `resolveTEU(size).teu` × the group's booking count, via
+  `teuResolver.js#resolveTEU()` unmodified (every booking in the group
+  shares the same size, so this is no longer a mixed-size sum)
+- `vgm` — sum of `booking.vgm` across the group's bookings (null treated
+  as 0)
+- `freightRate` — the group's own shared rate, read directly (any
+  booking's `freightRate` in the group — they are all equal by
+  construction) — this is the value described everywhere in this report
+  as "the Freight Rate shared by all bookings in the pricing group"
+  (Revision 3 rate-description wording)
+- `revenue20` — `qty20 × freightRate` if the group is a 20ft group, else 0
+- `revenue40` — `qty40 × freightRate` if the group is a 40/40HC/44ft/45ft
+  group, else 0
+
+This can be implemented either as a single MongoDB aggregation pipeline
+(a `$group` on the six-part key, with a `$lookup` to `containertypes`
+first to resolve `containerTypeId` into its `size`) or as a plain
+`Booking.find(...).populate('containerTypeId')` followed by an in-memory
+JS reduce — the same "fetch, then merge/group in JS" shape already used
+by `agent.service.js#getAgentFinancialAccount` and
+`vessel.service.js#getVesselStats`. Recommended: the in-memory approach,
+specifically so `teuResolver.js#resolveTEU()` can be called directly and
+unmodified (a Mongo-side `$switch` would otherwise have to duplicate
+that same size-parsing logic in aggregation-pipeline syntax, violating
+"reuse the existing project architecture").
+
+## Calculation Rules (every column) — REVISED, Revision 2/3
+| Column | Rule |
+|---|---|
+| Sr | Row sequence number, generated at render/response time — not stored data |
+| Agent | `agentId.agentName` (or code) for the group |
+| Commodity | first non-empty original-case `commodity` seen in the group (grouping itself uses the normalized form, Decision 7) |
+| POL | `polId.name` for the group |
+| POD | `podId.name` for the group |
+| 20 Qty | the group's booking count, IF the group's (single, shared) container size is `20ft` — otherwise 0 (Decision 10, approved) |
+| 40 Qty | the group's booking count, IF the group's (single, shared) container size is `40ft`, `40HC`, `44ft`, or `45ft` — otherwise 0 (Decision 10, approved — all four count as one bucket, no separate "45 Qty"/"44 Qty" column) |
+| TEUs | `resolveTEU(size).teu × group booking count`, via `teuResolver.js#resolveTEU()` unmodified |
+| VGM | sum of `booking.vgm` across the group's bookings, null treated as 0 |
+| Rate 20 | **The Freight Rate shared by all bookings in the pricing group** — read directly, NEVER averaged or derived — shown only when the group is a 20ft group (0/blank otherwise) |
+| Rate 40 | **The Freight Rate shared by all bookings in the pricing group** — read directly, NEVER averaged or derived — shown only when the group is a 40/40HC/44ft/45ft group (0/blank otherwise) |
+| Revenue 20 | `20 Qty × Rate 20` |
+| Revenue 40 | `40 Qty × Rate 40` |
+| Total Revenue (USD) | `Revenue 20 + Revenue 40` — labeled USD per the existing system-wide assumption that `totalFreight`/`freightRate` are single-currency figures (Booking has no currency field, same inherited assumption already noted in `docs/invoice-behavior-analysis.md`) |
+
+Because grouping now includes Container Type and Freight Rate (Decision
+9), a single row's 20-side and 40-side columns are never both populated
+— exactly one pair (`Qty`/`Rate`/`Revenue`) is non-zero per row, per the
+structural note under Decision 9.
+
+## Backend Tasks
+- New file `backend/src/modules/reports/reports.service.js` function
+  `getBookingRevenueDetails({ agentId, voyageId, roundId, dateFrom,
+  dateTo })` (proposed filter set, for approval — the brief does not
+  mandate specific filters; these mirror the existing report filter
+  conventions already in this file):
+  - Query: `Booking.find({ status: 'Final Loading', isDeleted: false,
+    ...filters }).populate('agentId', 'agentCode agentName')
+    .populate('polId', 'name').populate('podId', 'name')
+    .populate('containerTypeId', 'size')`.
+  - Group in JS on the six-part key `(agentId, normalizedCommodity,
+    polId, podId, containerTypeId, freightRate)` per the revised
+    Grouping/Aggregation Strategy above — NOT the four-part key from
+    Revision 1.
+  - Return `{ rows, grandTotal }`, `grandTotal` summing every numeric
+    column across all groups (qty20, qty40, teus, vgm, revenue20,
+    revenue40, totalRevenue) — no grand-total "rate" of any kind (average
+    or otherwise); only sums are totaled, matching the pattern
+    `getRevenueReport`'s existing `grandTotal` already uses.
+- `backend/src/modules/reports/reports.controller.js` — new
+  `getBookingRevenueDetails` handler, same shape as the file's other
+  handlers.
+- `backend/src/modules/reports/reports.routes.js` — new
+  `router.get('/booking-revenue-details', ctrl.getBookingRevenueDetails)`,
+  under the same existing `rbac('reports')` gate — no new RBAC module
+  needed.
+
+## Frontend Tasks
+- New `frontend/src/modules/reports/BookingRevenueDetailsReport.jsx`,
+  built on the same shared `ReportLayout.jsx`/`reportHelpers.jsx` shell
+  every other report already uses (filters bar, summary row, table body
+  — no new UI shell invented).
+- New `frontend/src/app/(dashboard)/reports/booking-revenue-details/page.jsx`,
+  same `PageGuard module="reports"` wrapper pattern as every other report
+  page.
+- `frontend/src/services/reports.service.js` — add
+  `getBookingRevenueDetails(params)`.
+- `ReportsHub.jsx` — add a new entry linking to this report, alongside
+  the existing six.
+
+## API Design
+```
+GET /reports/booking-revenue-details
+  Query params (proposed, for approval): agentId, voyageId, roundId,
+    dateFrom, dateTo
+  Response:
+    {
+      rows: [{
+        agentId, agentName, commodity, polName, podName,
+        containerTypeId, containerTypeCode,   // NEW, Revision 2 — internal
+                                               // disambiguation data only;
+                                               // the visible Report
+                                               // Structure/column list is
+                                               // unchanged from the
+                                               // original brief and is
+                                               // NOT revised by this
+                                               // update. Included in the
+                                               // API response so the
+                                               // frontend can, if useful,
+                                               // show it as a tooltip/
+                                               // secondary detail without
+                                               // altering the approved
+                                               // column list
+        qty20, qty40, teus, vgm, rate20, rate40,
+        revenue20, revenue40, totalRevenue
+      }],
+      grandTotal: { qty20, qty40, teus, vgm, revenue20, revenue40, totalRevenue }
+    }
+```
+
+## Report Structure (Task 2)
+Matches the brief's Excel example exactly:
+`Sr | Agent | Commodity | POL | POD | 20 Qty | 40 Qty | TEUs | VGM | Rate 20 | Rate 40 | Revenue 20 | Revenue 40 | Total Revenue (USD)`
+
+## Acceptance Criteria (Task 2) — REVISED, Revision 2
+1. The report queries ONLY Layer 2 `Booking` documents with `status:
+   'Final Loading'` — confirmed by code review that
+   `manualBooking.model.js`, `invoice.model.js`, and `payment.model.js`
+   are never required by this report's backend function.
+2. Each report row represents one distinct (Agent, Commodity, POL, POD,
+   Container Type, Freight Rate) combination — never one row per
+   booking, and never one row merging two different freight rates.
+3. Two bookings that agree on Agent/Commodity/POL/POD/Container Type but
+   have different Freight Rates always appear as two separate rows —
+   confirmed by a test case exercising exactly this scenario.
+4. Commodity grouping is case/whitespace-insensitive (Decision 7) —
+   confirmed by a test case with mixed-case commodity text across
+   otherwise-identical bookings (same rate, same container type)
+   producing exactly one group.
+5. TEUs uses `teuResolver.js#resolveTEU()` unmodified; 20 Qty / 40 Qty
+   use the report's own size-bucket classification (Decision 10,
+   approved: 20ft → 20 Qty; 40ft/40HC/44ft/45ft → 40 Qty) — confirmed by
+   code review that `teuResolver.js` itself was not modified and that
+   the two calculations are kept separate, per Decision 8.
+6. Rate 20 and Rate 40 are always the Freight Rate shared by all
+   bookings in the pricing group — read directly from the grouped
+   bookings, never computed as an average, a weighted average, or any
+   other derived
+   statistic. Confirmed by code review that no division of Revenue by
+   Qty (or any similar averaging formula) exists anywhere in this
+   report's rate calculation.
+7. Revenue 20 = 20 Qty × Rate 20, and Revenue 40 = 40 Qty × Rate 40, for
+   every row — both being simple multiplications against the row's own
+   real rate, not the other way around.
+8. Total Revenue always equals Revenue 20 + Revenue 40, for every row
+   and for the grand total.
+9. `40ft`, `40HC`, `44ft`, and `45ft` container types all populate
+   `40 Qty`/`Rate 40`/`Revenue 40` identically as one bucket (Decision
+   10, approved) — confirmed by a test case covering all four size
+   values. No "45 Qty" or "44 Qty" column exists anywhere in the report.
+10. No change to `capacity.service.js`, `teuResolver.js`'s own rule set,
+    `booking.model.js`, `manualBooking.model.js`, `invoice.model.js`, or
+    `payment.model.js`.
+
+---
+
+# IMPLEMENTATION PHASES (approved, Revision 3 — implementation underway)
+
+**Phase 1 — Task 1 backend.** Dual-layer query + merged summary in
+`reports.service.js#getBookingReport`, dead-field removal.
+
+**Phase 2 — Task 1 frontend.** `BookingReport.jsx` column/KPI updates to
+match Phase 1's new response shape.
+
+**Phase 3 — Task 2 backend.** New `getBookingRevenueDetails` aggregate,
+controller, route. (No longer blocked — Decision 10 is approved,
+Revision 3.)
+
+**Phase 4 — Task 2 frontend.** New report page/component, service
+method, ReportsHub entry.
+
+Tasks 1 and 2 have no shared code and no ordering dependency on each
+other — Phases 1-2 and 3-4 could equally run in parallel. Per approval,
+phases are implemented in order, one at a time, with a stop for approval
+after each phase.
+
+---
+
+# RISKS / OPEN DECISIONS
+
+No open business decisions remain (Revision 3 resolved the last one,
+Decision 10). One purely technical note carries forward:
+
+- **Exact freight-rate equality (Revision 2).** Grouping now compares
+  `freightRate` for exact equality as a plain Number. This is expected
+  to be safe in practice (rates are entered as fixed decimal values, not
+  computed floats), but is noted here as a technical assumption inherent
+  to the approved "actual rate, never averaged" business decision — not
+  something this plan invents a tolerance/rounding rule for.
+- **Task 2's proposed filter set** (`agentId, voyageId, roundId,
+  dateFrom, dateTo`) is a recommendation, not something the brief
+  specified — confirm before implementation, or specify a different set.
+- **Currency assumption** — Task 2 inherits the same system-wide
+  single-currency assumption already flagged in
+  `docs/invoice-behavior-analysis.md` (Booking has no currency field).
+  Not a new risk introduced by this sprint, but worth carrying forward
+  since this report explicitly labels its total "(USD)".
+
+---
+
+# IMPLEMENTATION NOTES (as actually delivered)
+
+All four phases were implemented, in order, with user approval to
+proceed through all of them in one pass. No deviations from the approved
+Revision 3 architecture.
+
+- **Phase 1 (Task 1 backend)** — `reports.service.js#getBookingReport`
+  rewritten to query both `Booking` and `ManualBooking`, merge-tag each
+  row (`layer: 'Operational' | 'Manual'`), sort the combined set by
+  `createdAt`, and paginate in JS. `quantity`/`totalSlots` removed.
+  `totalUnits` is now Layer 1's real sum only. Row list and summary now
+  share one `buildMatch()` status/Cancelled rule (Decision 3) — fixes a
+  latent bug where the old summary aggregate silently discarded the
+  user's own `status` filter. `containerNumber` added to Layer 2 rows.
+- **Phase 2 (Task 1 frontend)** — `BookingReport.jsx` updated: new Layer
+  badge/column (teal for Operational, purple for Manual — matching
+  `BookingList.jsx`'s existing MB-number purple convention), Container
+  column now shows `containerNumber` instead of container type code,
+  dead Qty column removed, KPI cards reduced to Bookings / Total Freight
+  / Total Units (both sub-labeled with their real scope), "Total Slots"
+  card removed entirely.
+- **Phase 3 (Task 2 backend)** — new
+  `reports.service.js#getBookingRevenueDetails`: fetches Layer 2 Final
+  Loading bookings only, groups in JS on the six-part pricing-group key,
+  reuses `teuResolver.js#resolveTEU()` unmodified for TEUs, and uses a
+  new, separate `classifyRevenueSizeBucket()` helper (same leading-digit
+  normalize-and-extract technique, not a modification of
+  `teuResolver.js`) for the 20/40 Qty bucket per Decision 10's approved
+  rule (20ft → 20; 40ft/40HC/44ft/45ft → 40). Rate 20/Rate 40 are read
+  directly off the group, never averaged. New controller handler and
+  `GET /reports/booking-revenue-details` route added under the existing
+  `rbac('reports')` gate.
+- **Phase 4 (Task 2 frontend)** — new `BookingRevenueDetailsReport.jsx`
+  (Agent/Round/Voyage/date-range filters, the exact 14-column Report
+  Structure, a grand-total row), new
+  `app/(dashboard)/reports/booking-revenue-details/page.jsx`,
+  `reportsService.getBookingRevenueDetails` added, and a new card added
+  to `ReportsHub.jsx`.
+
+**Verification performed:**
+- `node --check` on every modified/new backend file; a full `require()`
+  load test of `reports.service.js`/`.controller.js`/`.routes.js` — all
+  clean.
+- A standalone logic test of `classifyRevenueSizeBucket()` confirmed
+  `20ft→20`, `40ft/40HC/44ft/45ft→40`, matching Decision 10 exactly.
+- `eslint` on every new/changed frontend file — clean.
+- A full `next build` production build completed with zero errors
+  across all 43 routes, including the new
+  `/reports/booking-revenue-details` route.
+
+**Confirmed untouched, per Acceptance Criteria:** `capacity.service.js`,
+`teuResolver.js` (read-only, never modified), `booking.model.js`,
+`manualBooking.model.js`, `invoice.model.js`, `payment.model.js`.
+
+**Not yet done:** manual/browser QA (running both reports against real
+seeded data in a live browser) was not performed as part of this pass —
+recommended before this is considered production-verified, consistent
+with how prior sprints (e.g. Sprint 032) flagged the same manual-
+verification step as a separate, outstanding item.
+
+---
+END OF SPRINT — implemented per the approved Revision 3 architecture.

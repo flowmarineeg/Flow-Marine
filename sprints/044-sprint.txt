@@ -1,0 +1,236 @@
+# Sprint 044 — Invoice Booking-List Scroll Cap, Round/Voyage Auto-Include +
+# Summary Overview, Agent Bookings Tab Summary
+Status: PLANNING — ALL OPEN QUESTIONS ANSWERED AND DECISIONS LOCKED (see
+§5). NO CODE WAS WRITTEN OR MODIFIED, NO SCHEMA WAS CHANGED. Awaiting
+explicit go-ahead to implement.
+
+---
+
+# 0. SCOPE — THREE POINTS
+
+1. Invoice creation, `invoiceType === 'Booking'`: the single-booking radio
+   list gets a max-height + internal scroll (same class of fix as Sprint
+   042's import-preview table).
+2. Invoice creation, `invoiceType === 'Voyage'` or `'Round'`: remove the
+   checkbox selection table entirely. Selecting a Voyage/Round now
+   auto-includes EVERY eligible Final Loading booking with no manual
+   exclusion, and shows a summary overview instead of a per-booking list:
+   booking count, total revenue, and a per-container-type breakdown
+   (count + amount per type).
+3. Agent Details page, "Bookings" tab: replace the current one-row-per-
+   booking flat table (`BookingsLedger`, 9 columns) with the SAME
+   aggregate summary shape as point 2 — booking count, total revenue,
+   per-container-type breakdown — computed across all of this agent's
+   Final Loading bookings. No individual booking numbers in this tab
+   anymore.
+
+---
+
+# 1. POINT 1 — BOOKING-TYPE RADIO LIST: MAX-HEIGHT + SCROLL
+
+## 1.1 Current state, confirmed
+
+`frontend/src/modules/invoices/InvoiceForm.jsx`'s `CreateInvoiceForm`,
+when `invoiceType === 'Booking'`, renders every one of the agent's Final
+Loading bookings as a plain `flex flex-col gap-2` list of radio rows (one
+booking = one invoice, per the Sprint 033 "Booking type = exactly one
+Final Loading booking" rule) — no height cap, no scroll container. A
+agent with many Final Loading bookings pushes the whole page down.
+
+## 1.2 Fix
+
+Wrap the `flRows.map(...)` block in a `max-h-[...] overflow-y-auto`
+container, same pattern as Sprint 042's Booking Import preview table and
+Sprint 043's non-issue — a simple, self-contained CSS fix. No open
+question.
+
+---
+
+# 2. POINT 2 — VOYAGE/ROUND INVOICE: AUTO-INCLUDE ALL + SUMMARY OVERVIEW
+
+## 2.1 Current state, confirmed
+
+`CreateInvoiceForm` (`invoiceType === 'Voyage'` or `'Round'`) fetches
+`GET /invoices/eligible-bookings` and renders `EligibleBookingsTable.jsx`
+— a checkbox-selectable table letting the admin choose a SUBSET of
+eligible Final Loading bookings for that voyage/round + agent. `selected`
+(the array of chosen `bookingId`s) is what gets submitted as
+`bookingIds` to `POST /invoices`.
+
+`invoice.service.js#getEligibleBookings` (lines 97-131) queries
+`Booking.find({ agentId, status:'Final Loading', ...voyage/round scope,
+isDeleted:false })`, populates `voyageId` (+ nested `roundId`), and maps
+each booking to `{bookingId, bookingNumber, containerNumber, voyageId,
+voyageNumber, voyageName, roundId, roundNumber, roundName,
+freightAmount}` — **no container type field today.**
+
+## 2.2 Fix — DECIDED (§5 Q1): always ALL eligible bookings, no exclusions
+
+`CreateInvoiceForm` auto-sets `selected` to every `bookingId` in the
+`eligible` result as soon as it loads (a `useEffect` keyed on the
+`eligible` query result), instead of waiting for checkbox clicks. The
+`EligibleBookingsTable` checkbox UI is removed from the Voyage/Round
+branch entirely — nothing for the admin to click, no partial selection
+possible. Submission (`bookingIds: selected`) is otherwise unchanged;
+`invoice.service.js#create()` itself needs no change at all — it already
+accepts whatever `bookingIds` array it's given.
+
+## 2.3 New summary overview — DECIDED (§5 Q2): booking count + total
+revenue + per-container-type breakdown, no individual booking numbers
+
+Replaces `EligibleBookingsTable` in the Voyage/Round branch with a new
+component, e.g. `InvoiceBookingsSummary.jsx`:
+```
+12 bookings — $45,000.00 total
+
+  20ft   × 5   $15,000.00
+  40HC   × 7   $30,000.00
+```
+Computed client-side from the same `eligible` array already fetched —
+no extra request. Grouping key is container type (code/size, however
+`ContainerType` is already labeled elsewhere in this system, e.g.
+Booking Revenue Details' `containerType` column — reuse that same
+label format, not a new one).
+
+## 2.4 Backend addition needed — DECIDED (§5 Q4): add containerTypeId
+
+`getEligibleBookings`'s `Booking.find(...)` gains
+`.populate('containerTypeId', 'code size type')`, and the mapped output
+object gains a `containerType` field (e.g. `` `${code} ${size}` ``,
+matching the format used elsewhere — confirm exact existing format at
+implementation time, e.g. `booking.service.js`'s own populate/format
+convention). Purely additive — no existing field removed, no change to
+`create()`, `findActiveInvoiceIdsForBookings()`, or any other function in
+this file.
+
+---
+
+# 3. POINT 3 — AGENT DETAILS "BOOKINGS" TAB: SAME SUMMARY SHAPE
+
+## 3.1 Current state, confirmed
+
+`frontend/src/modules/agents/AgentFinancialAccount.jsx`'s `BookingsLedger`
+flattens every Round → Voyage → Booking in the statement into one flat
+table: `['Booking', 'Container', 'Round', 'Voyage', 'Freight', 'Status',
+'Paid', 'Remaining', 'Invoice']` — one row per booking, 9 columns.
+
+`agent.service.js#getAgentFinancialAccount` (lines 106-121) queries
+`Booking.find({ agentId, status:'Final Loading', isDeleted:false })`
+(bounded to the account's own 20-round window per existing Sprint 033
+rule), populates `voyageId`+nested `roundId` — **no container type field
+today**, same gap as point 2.
+
+## 3.2 Fix — DECIDED (§5 Q3, clarified): same aggregate summary as point 2
+
+Per your clarification ("I want to just view overview data like a
+summary for the booking — booking amount, total revenue, container type
+amount" — for BOTH the invoice overview and this tab), `BookingsLedger`
+is replaced with the exact same summary shape as §2.3: booking count,
+total revenue, per-container-type breakdown (count + amount) — computed
+across ALL of this agent's Final Loading bookings in the account (same
+20-round-bounded population already powering every other tab), NOT one
+row per booking. No individual booking numbers appear in this tab
+anymore — that per-booking drill-down still exists one level up, in the
+Rounds tab's expandable Round → Voyage → Booking statement (`BookingRow`
+inside `RoundsStatement`, untouched by this sprint).
+
+**Reuse, don't reimplement:** the same summary component built for §2.3
+(`InvoiceBookingsSummary.jsx` or a renamed shared version, e.g.
+`BookingsSummaryCard.jsx`) is reused here too — one implementation, two
+call sites, consistent with this project's established "one shared
+component" precedent (Sprint 043 Q3, Sprint 042's error-toast helper).
+
+## 3.3 Backend addition needed — same as §2.4
+
+`getAgentFinancialAccount`'s `Booking.find(...)` gains the same
+`.populate('containerTypeId', 'code size type')`, and the per-booking
+object already being assembled for `bookings`/`BookingsLedger` gains the
+same `containerType` field, computed the same way as §2.4.
+
+---
+
+# 4. WHAT DOES NOT CHANGE
+
+- `invoice.service.js#create()`, `buildLineItemSnapshot()`,
+  `findActiveInvoiceIdsForBookings()`, `recalcInvoiceStatus()` — untouched.
+  The invoice-creation business rules (Final-Loading-only eligibility,
+  one-sided Booking↔Invoice ownership, snapshot-at-creation-time line
+  items) are exactly as documented in `claude.md`'s Sprint 033 section —
+  this sprint only changes what the ADMIN SEES and auto-selects before
+  submitting, never what the backend accepts or how it processes it.
+- `agent.service.js#getAgentFinancialAccount`'s Round/Voyage tree
+  (`RoundsStatement`, `VoyagesLedger`) and its own drill-down `BookingRow`
+  — untouched. Only the flat, tab-level `BookingsLedger` view changes.
+- `EligibleBookingsTable.jsx` stays as a file (still structurally valid,
+  just no longer rendered from the Voyage/Round branch) unless you'd
+  rather it be deleted outright — flagged as an implementation-time
+  cleanup detail, not a decision blocking this plan.
+
+---
+
+# 5. DECISIONS (all questions answered, locked in)
+
+- **Q1 — Manual exclusion → DECIDED: none.** Voyage/Round invoices always
+  include every eligible booking; no partial-selection mechanism of any
+  kind remains.
+- **Q2 — Invoice overview content → DECIDED: booking count + total
+  revenue + per-container-type breakdown (count + amount per type).** No
+  individual booking numbers listed.
+- **Q3 — Agent Bookings tab shape → DECIDED (clarified): same aggregate
+  summary as Q2**, not a trimmed per-booking list. Booking count, total
+  revenue, per-container-type breakdown — no individual bookings shown
+  in this tab.
+- **Q4 — Backend addition → DECIDED: yes.** `containerTypeId` populated
+  in both `getEligibleBookings` and `getAgentFinancialAccount`'s existing
+  `Booking.find(...)` queries — additive only.
+
+---
+
+# 6. ACCEPTANCE CRITERIA
+
+- [ ] Booking-type radio list has a max-height + internal scroll.
+- [ ] Selecting a Voyage or Round auto-includes every eligible booking —
+      confirmed by checking `POST /invoices`'s submitted `bookingIds`
+      always equals the full `eligible` set, never a subset.
+- [ ] The Voyage/Round summary shows booking count, total revenue, and a
+      correct per-container-type count+amount breakdown that sums back
+      to the total revenue shown.
+- [ ] `EligibleBookingsTable`'s checkbox UI no longer renders anywhere in
+      `InvoiceForm.jsx`.
+- [ ] Agent Details "Bookings" tab shows the same summary shape as the
+      invoice overview, computed over the agent's full Final Loading
+      booking population (same 20-round bound as every other tab) — no
+      per-booking rows.
+- [ ] The summary component is implemented once and reused by both call
+      sites (invoice creation, Agent Bookings tab) — not duplicated.
+- [ ] `invoice.service.js#create()` and every other invoice/agent
+      function not named in §2.4/§3.3 is provably unchanged.
+
+---
+
+IMPLEMENTED.
+- Backend: `invoice.service.js#getEligibleBookings` and `agent.service.js#
+  getAgentFinancialAccount` both now populate `containerTypeId` and
+  expose a `containerType` string field — additive only, nothing else in
+  either function changed.
+- Frontend: new shared `components/ui/BookingsSummaryCard.jsx` (booking
+  count, total revenue, per-container-type breakdown), used by both
+  `InvoiceForm.jsx` (Voyage/Round scope, auto-selecting every eligible
+  booking via a `useEffect` on the `eligible` query result — no checkbox
+  UI remains) and `AgentFinancialAccount.jsx`'s Bookings tab (replacing
+  the old one-row-per-booking `BookingsLedger` table). The Booking-type
+  radio list got a `max-h-[360px] overflow-y-auto` wrapper. The now-fully
+  -unused `EligibleBookingsTable.jsx` was deleted. Frontend build verified
+  clean across all 43 routes.
+
+ADDENDUM (same sprint, added after initial implementation): the Rounds
+tab's expandable Round -> Voyage -> Booking statement — the one place
+originally left showing individual booking rows (`BookingRow` inside
+`RoundsStatement`) — now ALSO renders `BookingsSummaryCard` (scoped to
+that voyage's own bookings) instead of a per-booking table, per explicit
+follow-up request. `BookingRow` is deleted (now unused); `RoundsStatement`
+no longer takes a `router` prop (no longer needed once the per-booking
+invoice link was removed). This means the Agent Financial Account no
+longer shows individual booking numbers ANYWHERE except by drilling into
+a specific Invoice from the Invoices tab. Frontend build re-verified
+clean after this change too.

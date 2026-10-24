@@ -1,0 +1,162 @@
+ROUND CAPACITY REPORT — BUG INVESTIGATION & FIX
+Page: /reports/round-capacity
+Symptom reported: page never shows any result, regardless of round.
+Status: ROOT CAUSE FOUND AND FIXED.
+
+================================================================================
+1. SYMPTOM
+================================================================================
+User could not get any data to display on the Round Capacity Report page
+(Reports tab -> Round Capacity). No cards, no timeline, nothing rendered
+after selecting a round.
+
+================================================================================
+2. WHAT WAS CHECKED (in order)
+================================================================================
+
+2.1 Backend capacity math (capacity.service.js#computeRoundCapacity)
+----------------------------------------------------------------------
+Called the function directly against the live database (bypassing HTTP),
+for the one Round currently in the DB (R000016, 4 voyages).
+
+Result: WORKS CORRECTLY.
+  - Returned all 4 voyages with real port names (Yantian, Nhava Sheva,
+    Jeddah), correct vessel capacity (14,000 TEU), totalLoadedTEU: 142,
+    zero thrown errors, zero unexpected warnings.
+  - round.voyageIds (the array computeRoundCapacity resolves voyages
+    through — see CLAUDE.md known-gap note about this not yet being
+    Voyage.find({roundId})) was verified to be perfectly in sync with the
+    actual Voyage documents: voyageIds.length == Voyage.find({roundId})
+    count == Voyage.find({_id:$in voyageIds}) count. This known
+    architectural deferral (Sprint 038/041) is NOT the cause of this bug.
+
+Conclusion: the backend capacity engine, the route (GET
+/reports/round-capacity, gated by auth + rbac('reports') same as every
+other report), and the controller are all fine. The bug is not here.
+
+2.2 Frontend — RoundCapacityReport.jsx
+----------------------------------------------------------------------
+Traced the render logic:
+  !roundId              -> "Select a round..." empty state
+  roundId && isLoading  -> spinner
+  roundId && isError    -> red error message
+  raw (data loaded)     -> renders cards, OR "No bookings found..." if
+                            displayVoyages.length === 0
+
+Since the user reported "no result" rather than a visible error message,
+the real question was: could `roundId` ever actually get set at all?
+`roundId` only gets set via the Round <select> dropdown, populated from:
+
+    const { data: roundsData } = useQuery({
+      queryKey: ['rounds-list-for-cap'],
+      queryFn:  () => roundsService.list({ limit: 200 })
+                        .then(r => r.data.data?.data || []),   // <- BUG
+    });
+
+================================================================================
+3. ROOT CAUSE
+================================================================================
+
+frontend/src/modules/reports/RoundCapacityReport.jsx, line 39 (before fix):
+
+    roundsService.list({ limit: 200 }).then(r => r.data.data?.data || [])
+
+`roundsService.list()` (frontend/src/services/rounds.service.js) returns
+the raw axios response with NO unwrapping:
+
+    list: (params) => api.get(BASE, { params })
+
+The backend's response envelope (backend/src/utils/responseHelper.js#success)
+is:
+
+    { success: true, message: '...', data: <the array>, pagination: {...} }
+
+So for an axios response `r`:
+    r.data        = the FULL envelope   { success, message, data, pagination }
+    r.data.data   = the ACTUAL ARRAY of rounds   <- correct, one level
+    r.data.data.data = undefined (arrays have no .data property)
+
+RoundCapacityReport.jsx was reading THREE levels deep (`r.data.data?.data`)
+instead of two (`r.data.data`) — one `.data` too many. `?.data` on an
+array always evaluates to `undefined`, so the `|| []` fallback silently
+kicked in on every single load. `roundsData` was therefore ALWAYS an empty
+array, meaning:
+
+  - The Round <select> dropdown was ALWAYS EMPTY ("Select a round..." with
+    zero options underneath it — never actually broken-looking, just
+    permanently unpopulated).
+  - Since `roundId` can only ever be set by picking an option from that
+    dropdown, `roundId` could NEVER be set by a real user.
+  - The capacity-report useQuery (`enabled: !!roundId`) could therefore
+    NEVER fire — the report literally never had a chance to call the
+    (perfectly working) backend at all.
+
+This matches the reported symptom exactly: not an error, not a slow load,
+just permanent silence — because the page's own round picker had nothing
+in it to pick.
+
+Every OTHER report page that fetches the same rounds dropdown does it
+correctly, which is how this was confirmed as a one-off typo rather than a
+systemic issue:
+
+    ExpenseReport.jsx:   roundsService.list({...}).then(r => r.data.data)
+    RoundPnlReport.jsx:  roundsService.list({...}).then(r => r.data)  (then
+                          reads .data.data itself further down)
+    VoyagePerformanceReport.jsx:  same pattern as RoundPnlReport.jsx
+
+Only RoundCapacityReport.jsx had the extra, erroneous `?.data`.
+
+================================================================================
+4. FIX APPLIED
+================================================================================
+
+File: frontend/src/modules/reports/RoundCapacityReport.jsx (line 39)
+
+  BEFORE:
+    queryFn:  () => roundsService.list({ limit: 200 }).then(r => r.data.data?.data || []),
+
+  AFTER:
+    queryFn:  () => roundsService.list({ limit: 200 }).then(r => r.data.data || []),
+
+This is the exact same unwrapping pattern already used by ExpenseReport.jsx
+for the identical dropdown. No backend change was needed — the API and the
+capacity engine were correct the entire time.
+
+Verified:
+  - `npx eslint src/modules/reports/RoundCapacityReport.jsx` — clean, no
+    new warnings/errors.
+  - Confirmed backend.serviceId population (round.service.js#list()
+    populates `serviceId` with serviceCode/serviceName) so the dropdown's
+    label `{r.serviceId?.serviceCode || 'No service'}` will render
+    correctly once the array is no longer empty.
+
+================================================================================
+5. SIDE OBSERVATION (not a bug, logged for awareness)
+================================================================================
+
+While calling computeRoundCapacity() directly, every voyage in the sample
+round came back with onboardTEU: 0 even though totalLoadedTEU summed to
+142 across the round. This is very likely correct behaviour for that
+specific round's data (each container's POL/POD happen to be the exact
+same voyage leg, so loadedTEU and dischargedTEU cancel out on the same
+row — see capacity.service.js Step E, onboardTEU = onboardStart + loaded
+- discharged). It was NOT investigated further since it did not reproduce
+the reported symptom and the underlying chain logic is unchanged,
+well-tested code from Sprint 023/028/029/045. Flagging only so it isn't
+mistaken for a leftover unresolved issue from this investigation.
+
+================================================================================
+6. FILES TOUCHED
+================================================================================
+
+  frontend/src/modules/reports/RoundCapacityReport.jsx   <- the fix (1 line)
+
+No backend files were changed — none needed to be.
+
+Scratch diagnostic scripts used during investigation
+(backend/_diag_capacity.js, backend/_diag_capacity2.js) were deleted after
+use; they are not part of the codebase.
+
+================================================================================
+END OF REPORT
+================================================================================

@@ -21,4 +21,5 @@ export const MODULES = [
   'containerTypes', 'expenseTypes', 'services', 'routes',
   'rounds', 'voyages', 'bookings', 'expenses', 'invoices',
   'tracking', 'reports', 'export', 'dashboard', 'auditLogs',
+  'partners', 'ledger', // Sprint050 V2
 ];

@@ -2,22 +2,24 @@ import api from '../config/axios';
 
 const BASE = '/invoices';
 
+// Invoicing (Version 2). All money amounts are integer minor units.
 export const invoicesService = {
   list:        (params) => api.get(BASE, { params }),
   getById:     (id)     => api.get(`${BASE}/${id}`),
-  create:      (data)   => api.post(BASE, data),
-  update:      (id, data) => api.put(`${BASE}/${id}`, data),
-  // Sprint 047 — Bill To (PDF contact details), always editable
+  // Bill To (PDF contact details), always editable
   updateBillTo: (id, data) => api.put(`${BASE}/${id}/bill-to`, data),
-  remove:      (id)     => api.delete(`${BASE}/${id}`),
-  // Sprint020: download invoice as PDF
   downloadPdf: (id)     => api.get(`${BASE}/${id}/pdf`, { responseType: 'blob' }),
 
-  // Sprint 033 — Decision 6 eligible-bookings composition table
-  getEligibleBookings: (params) => api.get(`${BASE}/eligible-bookings`, { params }),
-
-  // Sprint 033 — explicit per-line-item payment allocation (Revision 4)
-  listPayments: (id)   => api.get(`${BASE}/${id}/payments`),
-  createPayment: (id, data) => api.post(`${BASE}/${id}/payments`, data),
-  voidPayment:  (id, paymentId, data) => api.post(`${BASE}/${id}/payments/${paymentId}/void`, data),
+  // Wizard: items the bill-to party can still be invoiced for
+  listItems:        (params)            => api.get(`${BASE}/items`, { params }),
+  createDraft:      (data)              => api.post(BASE, data),
+  updateDraft:      (id, data)          => api.put(`${BASE}/${id}`, data),
+  remove:           (id)                => api.delete(`${BASE}/${id}`), // Draft only
+  issue:            (id)                => api.post(`${BASE}/${id}/issue`),
+  cancel:           (id, reason, cancelCommission = false) => api.post(`${BASE}/${id}/cancel`, { reason, cancelCommission }),
+  listSettlements:  (id)                => api.get(`${BASE}/${id}/settlements`),
+  recordSettlement: (id, data)          => api.post(`${BASE}/${id}/settlements`, data),
+  voidSettlement:   (id, sid, reason)   => api.post(`${BASE}/${id}/settlements/${sid}/void`, { reason }),
+  creditNote:       (id, data)          => api.post(`${BASE}/${id}/credit-note`, data),
+  debitNote:        (id, data)          => api.post(`${BASE}/${id}/debit-note`, data),
 };

@@ -1,0 +1,109 @@
+================================================================================
+SPRINT 002 — AUTHENTICATION, USERS, ROLES & PERMISSIONS
+================================================================================
+
+STATUS: ✅ COMPLETE — LOGIN REDIRECT FIXED & VERIFIED
+
+--------------------------------------------------------------------------------
+WHAT WAS BUILT
+--------------------------------------------------------------------------------
+
+BACKEND:
+  Models:
+  [x] counter.model.js              — Auto-number sequences
+  [x] user.model.js                 — With invite + reset token fields
+  [x] role.model.js                 — isSystem flag for SuperAdmin
+  [x] permission.model.js           — Per-module action flags
+  [x] auditLog.model.js             — Immutable audit trail
+
+  Utilities:
+  [x] utils/autoNumber.js           — Atomic counter increment (R000001, BK-, INV-)
+  [x] utils/mailer.js               — Gmail SMTP via nodemailer
+                                       sendInvitationEmail (24h expiry)
+                                       sendPasswordResetEmail (1h expiry)
+                                       sendPasswordChangedEmail (confirmation)
+
+  Middleware:
+  [x] middleware/auth.js            — JWT verify, attaches req.user
+  [x] middleware/rbac.js            — Module + action permission check
+  [x] middleware/auditLogger.js     — Auto-logs all POST/PUT/PATCH/DELETE
+  [x] middleware/upload.js          — Multer (PDF/image, 10MB limit)
+
+  Config:
+  [x] config/seed.js                — Seeds SuperAdmin role + user + permissions
+  [x] config/env.js                 — Requires SMTP_EMAIL, SMTP_APP_PASSWORD
+
+  Auth Module:
+  [x] auth.service.js               — login, getMe, changePassword, forgotPassword, resetPassword
+  [x] auth.controller.js
+  [x] auth.validation.js
+  [x] auth.routes.js
+
+  Users Module:
+  [x] user.service.js               — CRUD + invite + acceptInvite + resendInvite
+  [x] user.controller.js
+  [x] user.validation.js
+  [x] user.routes.js
+
+  Roles Module:
+  [x] role.service.js
+  [x] role.controller.js
+  [x] role.routes.js
+
+  Permissions Module:
+  [x] permission.service.js         — getByRoleId, saveByRoleId (bulk upsert)
+  [x] permission.controller.js
+  [x] permission.routes.js
+
+  Audit Log Module:
+  [x] auditLog.service.js
+  [x] auditLog.routes.js            — Read-only
+
+  server.js:
+  [x] All routes registered
+  [x] Seed runs on startup
+
+FRONTEND:
+  Routing Fix:
+  [x] app/page.js                   — Auth-aware redirect (→ /dashboard or /login)
+  [x] app/layout.js                 — Root layout with Providers (fixed duplicate .js/.jsx)
+  [x] app/(dashboard)/page.jsx      — Redirects to /dashboard
+  [x] app/(dashboard)/dashboard/    — Actual dashboard page
+  [x] Login redirect fixed          — router.replace('/dashboard') after login
+
+  Context & Providers:
+  [x] AuthContext.jsx               — login, logout, isAuthenticated, isLoading
+  [x] PermissionContext.jsx         — can(), isHidden()
+  [x] Providers.jsx                 — QueryClient + Auth + Permission + Toaster
+
+  Auth Pages:
+  [x] /login                        — with already-authenticated redirect guard
+  [x] /forgot-password
+  [x] /reset-password?token=
+  [x] /accept-invite?token=
+
+  Shared UI:
+  [x] Button, Input, Select, Badge, Modal, ConfirmDialog
+  [x] EmptyState, LoadingSpinner, Pagination, SearchBar, PageHeader
+
+  Layout:
+  [x] Sidebar.jsx                   — Nav links to /dashboard, permission-gated
+  [x] Header.jsx
+  [x] (dashboard)/layout.jsx        — Auth guard
+
+  Dashboard Pages:
+  [x] /dashboard                    — Welcome + stat cards + quick start guide
+  [x] /users                        — Full user management + invite flow
+  [x] /roles                        — Role list + create/edit/delete
+  [x] /roles/[id]                   — Permission matrix
+  [x] /audit-logs                   — Filterable log list
+  [x] /audit-logs/[id]              — Detail with old/new diff + record navigation
+
+BUGS FIXED:
+  [x] Login did not redirect to dashboard — root page always redirected to /login
+  [x] Duplicate layout.js + layout.jsx conflict resolved
+  [x] Sidebar home link pointed to / causing redirect loop
+
+--------------------------------------------------------------------------------
+NEXT: Sprint 003 — Vessel Master & Agent Master
+================================================================================

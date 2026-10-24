@@ -58,12 +58,15 @@ app.use('/api/v1/rounds', require('./modules/rounds/round.routes'));
 app.use('/api/v1/voyages', require('./modules/voyages/voyage.routes'));
 app.use('/api/v1/bookings', require('./modules/bookings/booking.routes'));
 app.use('/api/v1/expenses', require('./modules/expenses/expense.routes'));
-app.use('/api/v1/invoices', require('./modules/invoices/invoice.routes'));
-app.use('/api/v1/payments', require('./modules/invoices/payment.routes')); // Sprint 033
+app.use('/api/v1/invoices', require('./modules/billing/billing.routes')); // V2 invoices (the only invoicing)
 app.use('/api/v1/tracking', require('./modules/tracking/tracking.routes'));
 app.use('/api/v1/reports', require('./modules/reports/reports.routes'));
 app.use('/api/v1/dashboard', require('./modules/dashboard/dashboard.routes'));
 app.use('/api/v1/capacity', require('./modules/capacity/capacity.routes'));
+app.use('/api/v1/partners', require('./modules/partners/partner.routes'));   // Sprint050 V2
+app.use('/api/v1/ledger', require('./modules/ledger/ledger.routes'));       // Sprint050 V2
+app.use('/api/v1/agent-accounts', require('./modules/agentAccounts/agentAccounts.routes')); // Sprint052 V2
+app.use('/api/v1/round-accounting', require('./modules/partnerSettlement/partnerSettlement.routes')); // Sprint053 V2
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) =>

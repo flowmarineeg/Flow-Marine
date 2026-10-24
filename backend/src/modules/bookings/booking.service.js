@@ -1,5 +1,6 @@
 'use strict';
 
+const lock = require('../rounds/roundLock');
 const pickFields = require('../../utils/pickFields');
 const mongoose  = require('mongoose');
 const Booking   = require('./booking.model');
@@ -115,6 +116,7 @@ const getById = async (id) => {
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 const create = async (data, createdBy) => {
+  await lock.assertVoyageRoundOpen(data.voyageId);
   const voyage = await Voyage.findById(data.voyageId).lean();
   if (!voyage) throw { status: 400, message: 'Voyage not found' };
   if (['Cancelled', 'Completed'].includes(voyage.status)) {
@@ -166,6 +168,7 @@ const create = async (data, createdBy) => {
 
   // Invalidate per-leg capacity cache for this round
   invalidateRoundCache(voyage.roundId);
+  require('../billing/bookingItem.service').scheduleSync({ voyageIds: [booking.voyageId] }); // Sprint051
 
   const saved = await getById(booking._id);
   // Attach capacity warning if in warn mode (non-blocking overbooking)
@@ -175,6 +178,7 @@ const create = async (data, createdBy) => {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
+  await lock.assertDocRoundOpen('Booking', id);
   const booking = await Booking.findOne({ _id: id });
   if (!booking) throw { status: 404, message: 'Booking not found' };
 
@@ -200,12 +204,14 @@ const update = async (id, data, updatedBy) => {
   // Invalidate capacity cache — pol, pod, status or rate may have changed
   const updatedVoyage = await Voyage.findById(booking.voyageId).select('roundId').lean();
   if (updatedVoyage) invalidateRoundCache(updatedVoyage.roundId);
+  require('../billing/bookingItem.service').scheduleSync({ voyageIds: [booking.voyageId] }); // Sprint051
 
   return getById(booking._id);
 };
 
 // ─── Hard Delete ──────────────────────────────────────────────────────────────
 const hardDelete = async (id) => {
+  await lock.assertDocRoundOpen('Booking', id);
   const booking = await Booking.findOne({ _id: id });
   if (!booking) throw { status: 404, message: 'Booking not found' };
 
@@ -222,6 +228,7 @@ const hardDelete = async (id) => {
 
   // Invalidate capacity cache — a booking was removed from the round
   if (deletedVoyage) invalidateRoundCache(deletedVoyage.roundId);
+  require('../billing/bookingItem.service').scheduleSync({ voyageIds: [booking.voyageId] }); // Sprint051
 };
 
 // ─── Get voyage ports (for booking form dropdown) ─────────────────────────────

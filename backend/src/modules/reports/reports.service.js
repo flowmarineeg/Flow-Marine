@@ -77,7 +77,7 @@ const voyageDurationDays = (voyage) => {
 // since it is not a per-port cost).
 // ADR-7: bunkerCost is a reserved, always-null, always-excluded placeholder.
 // ─────────────────────────────────────────────────────────────────────────────
-const getRoundPnL = async ({ roundId, voyageId } = {}) => {
+const getRoundPnL = async ({ roundId, voyageId, basis } = {}) => {
   if (!roundId) throw { status: 400, message: 'roundId is required' };
 
   const round = await Round.findOne({ _id: roundId })
@@ -309,7 +309,22 @@ const getRoundPnL = async ({ roundId, voyageId } = {}) => {
     profitMarginPct:  totalVoyageProfitRevenue > 0 ? (netProfit / totalVoyageProfitRevenue) * 100 : 0,
   };
 
+  // Sprint 053 S6 - ledger-based P&L, Accrual | Cash. ADDITIVE: every legacy field below is
+  // unchanged. Only present when the accounting ledger is switched on and `basis` is passed.
+  // Voyage scope counts only ledger lines tagged to that voyage (voyage-type invoices and
+  // voyage-scoped expenses); items booked at Round level are not split across voyages.
+  let ledgerPnl = null;
+  if (basis) {
+    const mode = String(basis).toLowerCase() === 'cash' ? 'Cash' : 'Accrual';
+    const { roundLines } = require('../partnerSettlement/partnerSettlement.service');
+    const { computeProfit } = require('../partnerSettlement/partnerSettlement.logic');
+    let lines = await roundLines(roundId, 'USD');
+    if (voyageId) lines = lines.filter((l) => String(l.voyageId || '') === String(voyageId));
+    ledgerPnl = { basis: mode, currency: 'USD', scope, ...computeProfit(lines, mode) };
+  }
+
   return {
+    ledgerPnl,
     round: {
       _id:         round._id,
       roundNumber: round.roundNumber,

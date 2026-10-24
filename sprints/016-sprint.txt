@@ -1,0 +1,390 @@
+================================================================================
+SPRINT 016 — MANUAL VOYAGE CONTROL IN ROUND DETAIL
+================================================================================
+
+STATUS: ⏳ Pending
+GOAL:
+  Give users full control over voyages within a round.
+  The auto-generation stays as-is (leg1→2, leg2→3...) but users can
+  ALSO manually add custom voyages (leg1→leg3, leg4→leg6, etc.).
+  Users can control all voyage fields including the new ETP field.
+  Users can also delete any system-generated OR manually-added voyage
+  from the round detail tab.
+
+================================================================================
+PROBLEM STATEMENT
+================================================================================
+
+CURRENT BEHAVIOUR:
+  When a round is created, voyages are auto-generated as consecutive leg pairs:
+    Route: [A, B, C, D, E]
+    Voyages: A→B, B→C, C→D, D→E  (always leg[i] to leg[i+1])
+
+REQUESTED CHANGE:
+  Sometimes the business needs non-consecutive legs as a single voyage:
+    - Leg 1 → Leg 3 (skipping Leg 2 as a direct voyage)
+    - Leg 4 → Leg 6 (grouping 3 legs into one voyage)
+    - Leg 1 → Leg 6 (the whole route as a single voyage)
+
+  The user must be able to:
+  1. View auto-generated voyages in the round detail tab (unchanged)
+  2. Add new custom voyages manually: choose any POL from route legs
+     and any POD from route legs (POL ≠ POD, both must be in the route)
+  3. Set all voyage fields on create: ETD, ETA, ATD, ATA, ETP, Status, Voyage Code
+  4. Delete any voyage from the round (soft delete guarded if bookings exist)
+  5. Edit existing voyages (already exists — unchanged)
+
+================================================================================
+CHANGES SUMMARY (what changes vs what stays)
+================================================================================
+
+STAYS UNCHANGED:
+  - Auto-generation on Round.create (leg[i]→leg[i+1] consecutive pairs)
+  - Existing VoyageEditForm (edit ETD/ETA/ATD/ATA/status)
+  - All voyage status transition rules
+  - bookingImport (uses voyageId, unaffected)
+  - Global /voyages list page (unaffected)
+  - Round creation flow (unaffected)
+
+NEW CAPABILITIES:
+  Backend:
+    A. New field `etp` on voyage.model.js (Estimated Time of Port — or passage)
+    B. New field `voyageCode` on voyage.model.js (user-defined code, optional, free text)
+    C. New service function: createManualVoyage(roundId, data, userId)
+    D. New service function: deleteVoyage(id, userId)
+    E. New validation: validateCreate for manual voyage
+    F. New routes: POST /voyages (manual create) + DELETE /voyages/:id
+    G. Update validateUpdate to include etp, voyageCode
+
+  Frontend:
+    A. RoundVoyageList: Add "+ Add Voyage" button in header
+    B. New VoyageAddForm modal: full form for manual voyage creation
+    C. RoundVoyageList: Add delete button per row (guarded: has bookings?)
+    D. VoyageEditForm: Add ETP + VoyageCode fields
+    E. RoundDetail: update subtitle from "Auto-generated" to reflect both modes
+    F. RoundVoyageList: visual distinction between auto-generated and manual voyages
+
+================================================================================
+PART A — BACKEND CHANGES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+A1. voyage.model.js — Add etp and voyageCode fields
+────────────────────────────────────────────────────────────────────────────────
+
+ADD these two fields to voyageSchema:
+
+  voyageCode: { type: String, trim: true, default: null }
+    — optional user-defined code (e.g. 'V2025-001', 'SHUTTLE-MAR')
+    — NOT unique (different rounds can use same code)
+    — shown in voyage table next to voyageNumber
+
+  etp: { type: Date, default: null }
+    — Estimated Time of Port (or: Estimated Time of Passage)
+    — same type as etd/eta/atd/ata
+    — user-editable, optional
+
+  isManual: { type: Boolean, default: false }
+    — true if created manually via the new POST /voyages endpoint
+    — false for auto-generated voyages
+    — used in UI to show a visual indicator ("Manual" badge)
+
+ADD to voyageSchema.index calls:
+  voyageSchema.index({ roundId: 1, sequence: 1 });  (compound for ordered list)
+
+────────────────────────────────────────────────────────────────────────────────
+A2. voyage.service.js — Add createManualVoyage + deleteVoyage
+────────────────────────────────────────────────────────────────────────────────
+
+FUNCTION: createManualVoyage(roundId, data, createdBy)
+  Validates:
+    1. Round exists, not deleted, not Cancelled or Completed
+    2. polId and podId are Port documents that exist
+    3. polId ≠ podId
+    4. polId and podId both exist as portId values in the round's route legs
+       (validate via: Route→RouteLeg lookup for that service)
+       {We allow any port from the route, not just consecutive ones}
+    5. voyageNumber uniqueness if user provides voyageCode
+  
+  Generates voyageNumber:
+    Same format as auto-gen: {serviceCode}-{roundNumber}-{seq:02}
+    seq = current highest voyage sequence in this round + 1
+  
+  Creates Voyage with:
+    voyageNumber, roundId, serviceId (from round), polId, podId,
+    sequence (next available), etd, eta, atd, ata, etp, status,
+    voyageCode, isManual: true, createdBy
+
+  Updates Round.voyageIds: push new voyage._id
+
+  Returns: created voyage (fully populated)
+
+FUNCTION: deleteVoyage(id, deletedBy)
+  Validates:
+    1. Voyage exists
+    2. No active bookings on this voyage
+       Booking.exists({ voyageId: id, isDeleted: false, status: {$ne:'Cancelled'} })
+       → if found: throw 400 "Cannot delete — voyage has active bookings"
+    3. (No other guards — both manual and auto-generated voyages can be deleted)
+  
+  Action:
+    - Remove voyage from Round.voyageIds array ($pull)
+    - Delete voyage: Voyage.findByIdAndDelete(id) [hard delete — voyages have no isDeleted]
+  
+  Note: Hard delete is appropriate because:
+    - Voyages have no isDeleted field (they were never deletable before)
+    - Cancelled bookings are OK to leave (booking has voyageId but it's historical)
+    - We check for NON-cancelled bookings specifically
+
+UPDATE: update() function
+  Extend allowed fields list: add 'etp', 'voyageCode'
+  Both are optional, nullable
+
+────────────────────────────────────────────────────────────────────────────────
+A3. voyage.validation.js — Add validateCreate
+────────────────────────────────────────────────────────────────────────────────
+
+ADD validateCreate array:
+  body('roundId').notEmpty().isMongoId().withMessage('Round is required')
+  body('polId').notEmpty().isMongoId().withMessage('Port of Loading is required')
+  body('podId').notEmpty().isMongoId().withMessage('Port of Discharge is required')
+  body('etd').optional({nullable:true,checkFalsy:true}).isISO8601()
+  body('eta').optional({nullable:true,checkFalsy:true}).isISO8601()
+  body('atd').optional({nullable:true,checkFalsy:true}).isISO8601()
+  body('ata').optional({nullable:true,checkFalsy:true}).isISO8601()
+  body('etp').optional({nullable:true,checkFalsy:true}).isISO8601()
+  body('status').optional().isIn(VOYAGE_STATUS)
+  body('voyageCode').optional({nullable:true,checkFalsy:true}).trim().isLength({max:50})
+
+UPDATE validateUpdate array:
+  ADD body('etp').optional({nullable:true,checkFalsy:true}).isISO8601()
+  ADD body('voyageCode').optional({nullable:true,checkFalsy:true}).trim().isLength({max:50})
+
+────────────────────────────────────────────────────────────────────────────────
+A4. voyage.routes.js — Add POST + DELETE routes
+────────────────────────────────────────────────────────────────────────────────
+
+ADD:
+  router.post('/',    rbac('voyages'), audit('voyages'), validateCreate, ctrl.create)
+  router.delete('/:id', rbac('voyages'), audit('voyages'), ctrl.remove)
+
+KEEP EXISTING:
+  router.get('/',    ...)
+  router.get('/:id', ...)
+  router.put('/:id', ...)
+
+────────────────────────────────────────────────────────────────────────────────
+A5. voyage.controller.js — Add create + remove handlers
+────────────────────────────────────────────────────────────────────────────────
+
+ADD:
+  const create = async (req, res, next) => {
+    // calls voyageService.createManualVoyage(req.body.roundId, req.body, req.user._id)
+    // returns created(res, voyage, 'Voyage created')
+  }
+
+  const remove = async (req, res, next) => {
+    // calls voyageService.deleteVoyage(req.params.id, req.user._id)
+    // returns success(res, null, 'Voyage deleted')
+  }
+
+────────────────────────────────────────────────────────────────────────────────
+A6. voyage.service.js update() — add etp + voyageCode
+────────────────────────────────────────────────────────────────────────────────
+
+Change:
+  const allowed = ['etd', 'eta', 'atd', 'ata', 'status'];
+To:
+  const allowed = ['etd', 'eta', 'atd', 'ata', 'etp', 'status', 'voyageCode'];
+
+================================================================================
+PART B — FRONTEND CHANGES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+B1. voyages.service.js — Add create + remove methods
+────────────────────────────────────────────────────────────────────────────────
+
+ADD to voyagesService:
+  create: (data) => api.post(BASE, data),
+  remove: (id)   => api.delete(`${BASE}/${id}`),
+
+────────────────────────────────────────────────────────────────────────────────
+B2. VoyageAddForm.jsx — NEW component
+────────────────────────────────────────────────────────────────────────────────
+
+NEW FILE: src/modules/voyages/VoyageAddForm.jsx
+
+This is a full create form for manual voyage addition, used inside a Modal
+in the Round Detail page.
+
+INPUTS:
+  — POL (Port of Loading) *
+    Dropdown populated from the round's route legs (portId values)
+    Shows: Port Name (UNLOCODE) - ordered by sequence
+  
+  — POD (Port of Discharge) *
+    Same list as POL, excludes selected POL
+  
+  — Voyage Code (optional)
+    Free text input (e.g. 'V2025-001')
+    Hint: "If left blank, a code will be auto-generated"
+  
+  — Status (default: Scheduled)
+    Select from VOYAGE_STATUS
+  
+  — ETD  (Estimated Time of Departure)   datetime-local, optional
+  — ETA  (Estimated Time of Arrival)     datetime-local, optional
+  — ETP  (Estimated Time of Port)        datetime-local, optional  ← NEW
+  — ATD  (Actual Time of Departure)      datetime-local, optional
+  — ATA  (Actual Time of Arrival)        datetime-local, optional
+
+BEHAVIOUR:
+  — Round info strip at top: Round No, Service, Vessel (read-only)
+  — On save: POST /api/v1/voyages with roundId, polId, podId, and date fields
+  — On success: invalidate ['round-voyages', roundId], close modal, show toast
+  — Loading route legs: GET /api/v1/services/:serviceId/route → extract legs
+    (uses round.serviceId to load the service route)
+
+────────────────────────────────────────────────────────────────────────────────
+B3. VoyageEditForm.jsx — Add ETP + VoyageCode fields
+────────────────────────────────────────────────────────────────────────────────
+
+MODIFY existing VoyageEditForm to add:
+  — Voyage Code field: text input, optional, shows under read-only info
+  — ETP field: datetime-local, in its own row between ETA and ATD rows
+
+FORM LAYOUT AFTER CHANGE:
+  Read-only info card (voyageNumber, round, POL, POD, isManual badge)
+  Status dropdown
+  ETD / ETA  (row)
+  ETP        (full width, with note "(Estimated Time of Port)")
+  ATD / ATA  (row)
+  Voyage Code (optional text input)
+
+────────────────────────────────────────────────────────────────────────────────
+B4. RoundVoyageList.jsx — Add "+ Add Voyage" + delete controls
+────────────────────────────────────────────────────────────────────────────────
+
+MODIFY RoundVoyageList to:
+
+  HEADER BAR:
+    Left:  "Voyages" title + count badge
+    Right: "+ Add Voyage" button (if can('voyages','create'))
+           Opens VoyageAddForm in a Modal
+
+  TABLE — add new columns:
+    BEFORE "#" column: Type column (auto badge vs manual badge)
+    AFTER "Actions": Delete action (red trash icon, with confirm dialog)
+    ADD: "Voyage Code" column (between Voyage No and POL, hidden if all blank)
+    ADD: "ETP" column (between ETA and ATD)
+
+  TABLE COLUMN ORDER (new):
+    # | Type | Voyage No | Voyage Code | POL | POD | ETD | ETA | ETP | ATD | ATA | Status | Actions (Edit + Delete)
+
+  BADGES:
+    isManual=false → small "Auto" chip (gray)
+    isManual=true  → small "Manual" chip (teal/purple)
+
+  DELETE CONFIRMATION:
+    ConfirmDialog: "Delete voyage {voyageNumber}? This cannot be undone."
+    On confirm: DELETE /api/v1/voyages/:id
+    On success: invalidate ['round-voyages', roundId], toast success
+    Guard: if voyage has active bookings → backend returns 400 → show error toast
+
+  ADD VOYAGE MODAL:
+    open={addOpen} — controlled by "+ Add Voyage" button
+    Passes: roundId, round (for service info to load route legs)
+    On success: close modal + invalidate voyages query
+
+────────────────────────────────────────────────────────────────────────────────
+B5. RoundDetail.jsx — Update voyage section header
+────────────────────────────────────────────────────────────────────────────────
+
+CHANGE section title subtitle:
+  FROM: "Auto-generated from service route legs — one per consecutive port pair"
+  TO:   "Voyages for this round — auto-generated from route legs + manually added"
+
+UPDATE voyage count to be reactive (from loaded voyages, not round.voyageIds.length)
+  because deleting a voyage should update the count immediately
+
+================================================================================
+PART C — CONSTANTS UPDATE
+================================================================================
+
+No new status values needed.
+Consider documenting ETP meaning in constants.js comment:
+  ETP = "Estimated Time of Port" (estimated time vessel arrives/departs a key waypoint)
+
+================================================================================
+DATA DESIGN NOTES
+================================================================================
+
+WHY NOT ADD isDeleted TO VOYAGE?
+  Voyages never had isDeleted. Adding it now would require updating all existing
+  queries that filter by isDeleted. Instead, use hard delete but ONLY after
+  checking for active bookings.
+
+WHY ALLOW DELETING AUTO-GENERATED VOYAGES?
+  Business need: sometimes the auto-generation creates voyages the user doesn't
+  need (e.g. they want leg1→leg3 as a single voyage instead of leg1→leg2 + leg2→leg3).
+  They should be able to delete the auto-generated ones and add their custom ones.
+
+WHY NOT VALIDATE PORT IS IN ROUTE FOR MANUAL VOYAGE?
+  We DO validate this. The frontend POL/POD dropdowns are pre-filtered to route
+  leg ports only. The backend also validates:
+    RouteLeg.exists({ routeId, portId: polId }) and same for podId.
+  This prevents completely arbitrary ports being used.
+
+SEQUENCE NUMBER ON MANUAL VOYAGES:
+  Auto-generated: sequence = index (1, 2, 3...)
+  Manual: sequence = max(existing sequences) + 1
+  Sequence is just for ordering in the table, not enforced uniquely.
+
+================================================================================
+FILES TO CREATE
+================================================================================
+
+NEW:
+  frontend/src/modules/voyages/VoyageAddForm.jsx
+
+MODIFIED BACKEND:
+  src/modules/voyages/voyage.model.js       (etp, voyageCode, isManual fields)
+  src/modules/voyages/voyage.service.js     (createManualVoyage, deleteVoyage, update)
+  src/modules/voyages/voyage.validation.js  (validateCreate, update validateUpdate)
+  src/modules/voyages/voyage.controller.js  (create, remove handlers)
+  src/modules/voyages/voyage.routes.js      (POST /, DELETE /:id)
+
+MODIFIED FRONTEND:
+  src/modules/rounds/RoundDetail.jsx        (subtitle text, pass round to list)
+  src/modules/rounds/RoundVoyageList.jsx    (add button, delete, new columns)
+  src/modules/voyages/VoyageEditForm.jsx    (ETP + voyageCode fields)
+  src/services/voyages.service.js           (create, remove methods)
+
+================================================================================
+TESTING CHECKLIST
+================================================================================
+  [ ] Create round → auto-generated voyages appear as "Auto" in Type column
+  [ ] Click "+ Add Voyage" → modal opens with round info strip
+  [ ] POL dropdown shows only ports from the service route legs
+  [ ] POD dropdown excludes selected POL
+  [ ] Submit manual voyage → appears as "Manual" badge in table
+  [ ] Voyage number auto-generated correctly (next sequence)
+  [ ] ETP field saves and loads correctly
+  [ ] Voyage Code saves and loads correctly
+  [ ] Edit auto-generated voyage → ETP + VoyageCode fields present
+  [ ] Edit manual voyage → same form, all fields present
+  [ ] Delete voyage with no bookings → succeeds, removed from table
+  [ ] Delete voyage with active bookings → 400 error toast shown, voyage stays
+  [ ] Round voyage count updates after add/delete
+  [ ] Audit log records manual voyage creation
+  [ ] Audit log records voyage deletion
+
+================================================================================
+ESTIMATED COMPLEXITY: Medium
+  Most complex part: VoyageAddForm (needs to load route legs for dropdowns)
+  and the delete guard (backend booking check + frontend confirm dialog).
+  Everything else is additive changes to existing files.
+================================================================================
+END OF SPRINT 016 PLAN
+================================================================================

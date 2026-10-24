@@ -71,6 +71,8 @@ const MODULES = [
   'export',
   'dashboard',   // Sprint019 — RBAC audit
   'auditLogs',
+  'partners',    // Sprint050 V2
+  'ledger',      // Sprint050 V2
 ];
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

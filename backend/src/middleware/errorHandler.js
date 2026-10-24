@@ -58,7 +58,9 @@ const errorHandler = (err, req, res, next) => {
     ? err.message
     : 'Internal server error';
 
-  return res.status(statusCode).json({ success: false, message, errors: [] });
+  const body = { success: false, message, errors: [] };
+  if (err.code && typeof err.code === 'string') body.code = err.code; // Sprint050 R7
+  return res.status(statusCode).json(body);
 };
 
 module.exports = errorHandler;

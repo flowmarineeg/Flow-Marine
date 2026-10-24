@@ -1,0 +1,80 @@
+================================================================================
+SPRINT 003 — VESSEL MASTER & AGENT MASTER
+================================================================================
+
+STATUS: ✅ COMPLETE
+
+--------------------------------------------------------------------------------
+WHAT WAS BUILT
+--------------------------------------------------------------------------------
+
+BACKEND:
+  Vessels:
+  [x] vessel.model.js          — All fields, enums, indexes, sparse IMO unique
+  [x] vessel.service.js        — list, getById, create, update, softDelete, getAll
+                                  Charter date validation, IMO uniqueness check
+                                  Blocks delete if vessel in active/planned round
+  [x] vessel.validation.js     — vesselCode, vesselName, ownershipType required
+                                  IMO: optional 7-digit numeric
+                                  Charter dates: required when ownershipType=Chartered
+  [x] vessel.controller.js     — Captures auditOldDoc before update
+  [x] vessel.routes.js         — GET list, GET :id, POST, PUT, DELETE (auth + rbac)
+
+  Agents:
+  [x] agent.model.js           — All fields, unique agentCode, indexes
+  [x] agent.service.js         — list, getById, create, update, softDelete, getAll
+                                  Blocks delete if agent has active bookings
+  [x] agent.validation.js      — agentCode, agentName required; email format optional
+  [x] agent.controller.js
+  [x] agent.routes.js          — (auth + rbac)
+
+  Export Module:
+  [x] export.service.js        — buildExcelBuffer with styled headers + alternating rows
+                                  Column definitions for vessels and agents
+                                  exportSingle, exportZip (archiver)
+  [x] export.controller.js     — POST /export/excel, POST /export/zip
+  [x] export.routes.js
+
+  server.js:
+  [x] /api/v1/vessels registered
+  [x] /api/v1/agents registered
+  [x] /api/v1/export registered
+
+FRONTEND:
+  Services:
+  [x] vessels.service.js       — list, getById, create, update, remove, export
+  [x] agents.service.js        — list, getById, create, update, remove, export
+
+  Vessels:
+  [x] VesselList.jsx           — Table with checkboxes, search, status filter,
+                                  Export All, Export Selected, pagination, RBAC gates
+  [x] VesselForm.jsx           — Create + Edit, charter dates conditional on ownership type
+                                  Section-based layout: Basic Info / Ownership / Specs / Status
+  [x] /vessels/page.jsx
+  [x] /vessels/new/page.jsx
+  [x] /vessels/[id]/page.jsx
+
+  Agents:
+  [x] AgentList.jsx            — Table with checkboxes, search, status filter,
+                                  Export All, Export Selected, pagination, RBAC gates
+  [x] AgentForm.jsx            — Create + Edit, sections: Identity / Location / Contact / Status
+  [x] /agents/page.jsx
+  [x] /agents/new/page.jsx
+  [x] /agents/[id]/page.jsx
+
+--------------------------------------------------------------------------------
+MANUAL TEST CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Create a vessel → appears in list
+  [ ] Edit vessel → changes saved, form pre-fills correctly
+  [ ] Delete vessel → soft deleted (not visible in list)
+  [ ] Duplicate vessel code → shows error message
+  [ ] Chartered vessel without dates → shows validation error
+  [ ] Export All → downloads valid .xlsx file
+  [ ] Select 2 rows → Export Selected → only those 2 in file
+  [ ] Same tests for Agents
+  [ ] Audit log shows CREATE/UPDATE/DELETE entries
+
+--------------------------------------------------------------------------------
+NEXT: Sprint 004 — Container Types & Expense Types
+================================================================================

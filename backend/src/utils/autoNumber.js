@@ -7,6 +7,10 @@ const formats = {
   booking:       (seq) => `BK-${String(seq).padStart(6, '0')}`,
   manualBooking: (seq) => `MB-${String(seq).padStart(6, '0')}`,
   invoice:       (seq) => `INV-${String(seq).padStart(6, '0')}`,
+  creditNote:    (seq) => `CN-${String(seq).padStart(6, '0')}`, // Sprint051 V2
+  debitNote:     (seq) => `DN-${String(seq).padStart(6, '0')}`, // Sprint051 V2
+  handling:      (seq) => `HC-${String(seq).padStart(6, '0')}`, // Sprint052 V2
+  journal:       (seq) => `JE-${String(seq).padStart(6, '0')}`, // Sprint050 V2
 };
 
 /**

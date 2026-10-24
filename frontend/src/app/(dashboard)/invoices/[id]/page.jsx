@@ -6,8 +6,7 @@ import PageGuard from '@/components/ui/PageGuard';
 import { invoicesService } from '@/services/invoices.service';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
-import InvoiceForm from '@/modules/invoices/InvoiceForm';
-import InvoicePaymentPanel from '@/modules/invoices/InvoicePaymentPanel';
+import InvoiceV2Panel from '@/modules/invoices/InvoiceV2Panel';
 import Badge from '@/components/ui/Badge';
 
 function EditInvoiceContent({ id }) {
@@ -46,9 +45,13 @@ function EditInvoiceContent({ id }) {
         <Badge label={invoice.status} />
       </div>
       <div className="flex flex-col gap-5">
-        <InvoiceForm item={invoice} />
-        {/* Sprint 033 — payments live on Invoice Detail, not the create flow */}
-        <InvoicePaymentPanel invoice={invoice} />
+        {invoice.v2 ? (
+          <InvoiceV2Panel invoice={invoice} />
+        ) : (
+          <p className="text-sm text-gray-500">
+            This is a legacy (Version 1) invoice. It is kept for reference only and cannot be edited, paid or cancelled.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -20,6 +20,13 @@ const agentSchema = new mongoose.Schema(
     address:   { type: String, trim: true, default: null },
     contacts:  { type: [contactSchema], default: [] },
     status:    { type: String, enum: AGENT_STATUS, default: 'Active' },
+    // Sprint 052 V2 (additive). Old agents read as a plain commercial 'Agent'.
+    ledgerVersion: { type: Number, default: 0 }, // bumped to serialise agent cash movements (audit H2)
+    partyType: { type: String, enum: ['Agent', 'DirectLine'], default: 'Agent' }, // DirectLine: invoices + statement only, no offset
+    roles:     { type: [{ type: String, enum: ['Commercial', 'Port'] }], default: [] },
+    creditDays:{ type: Number, min: 0, max: 365, default: null },
+    receivableAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
+    payableAccountId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },

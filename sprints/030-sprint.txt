@@ -1,0 +1,468 @@
+# Sprint 030 — Booking Workflow Simplification: Round → Voyage (POL/POD auto-derived)
+Status: ✅ IMPLEMENTED (approved and applied) — Phases 1–4 all delivered
+Revision: 2 — rescoped per clarification: UI/workflow simplification only.
+NOT an architecture redesign. NOT a Capacity Engine redesign. NOT a
+Business Rules redesign. The Booking model, capacity engine, matching
+rules, and booking identity are all treated as fixed/reference and are
+explicitly out of scope.
+
+---
+
+## 0. SCOPE STATEMENT (per clarification)
+
+This sprint changes **only** how the user selects Voyage/POL/POD on the
+booking entry screens. It does not change:
+- What is stored on `Booking` / `ManualBooking` (`voyageId`, `polId`,
+  `podId` remain exactly as today, same fields, same types).
+- The Capacity Engine's logic, inputs, or outputs.
+- Import matching rules or booking identity rules.
+- Whether a booking can span one voyage-leg or multiple.
+
+Current workflow:
+```
+Voyage → POL (manual select) → POD (manual select)
+```
+New workflow:
+```
+Round → Voyage (filtered by selected Round) → POL/POD auto-displayed and
+                                                 auto-used from the
+                                                 selected Voyage
+```
+The user selects **Round** and **Voyage** only. POL and POD become
+read-only values taken from the selected Voyage — no independent POL
+selector, no independent POD selector, anywhere data entry happens
+(Layer 2, Layer 1, Import).
+
+Anywhere this review surfaces a topic that would require an actual
+business-rule or architecture decision, it is recorded verbatim as
+**"Requires Business Decision"** and left out of the implementation scope
+of this sprint.
+
+---
+
+## 1. ARCHITECTURE VERIFICATION
+
+Files read in full: `booking.model.js`, `booking.service.js`,
+`booking.validation.js`, `booking.controller.js`, `booking.routes.js`,
+`manualBooking.model.js`, `manualBooking.service.js`,
+`manualBooking.validation.js`, `bookingImport.service.js`,
+`voyage.model.js`, `voyage.service.js`, `voyage.controller.js`,
+`round.model.js`, `capacity.service.js`, `capacity.controller.js`,
+`BookingForm.jsx`, `ManualBookingForm.jsx`, `BookingImport.jsx`,
+`BookingList.jsx`; grep-checked `reports.service.js` and
+`invoice.service.js` for `polId`/`podId`/`voyageId` usage.
+
+Relevant facts, confirmed by reading the code (not assumed):
+
+- `Voyage` (`voyage.model.js`) already stores `roundId`, `serviceId`,
+  `polId`, `podId`, `sequence` directly on every voyage document — this is
+  existing data, not new.
+- `GET /voyages` (`voyage.controller.js` → `voyage.service.js#list`)
+  **already accepts and filters by `roundId`**
+  (`if (roundId) query.roundId = roundId`). No new backend list endpoint is
+  needed for "Voyage filtered by Round" — it exists today and is simply
+  unused by the booking screens, which currently fetch voyages unfiltered
+  (`limit: 200`, no `roundId` param).
+- Today, POL/POD dropdowns in `BookingForm.jsx` / `ManualBookingForm.jsx`
+  are populated via `GET /bookings/voyage-ports/:voyageId` →
+  `getVoyagePortIds(voyageId)` (`booking.service.js:31-56`), which returns
+  every port on the voyage's **service route** — not the two ports of the
+  selected voyage. This is the literal duplicated-input problem the prompt
+  describes: the Voyage select already carries POL/POD information (the
+  voyage document has its own `polId`/`podId`), yet the user is asked to
+  pick POL/POD again from a much larger, unrelated list.
+- Reports (`reports.service.js`) and Invoices (`invoice.service.js`) only
+  ever **read** `polId`/`podId`/`voyageId` off already-saved bookings
+  (`.populate()` / `$lookup`) — neither validates or requires these as
+  input. Confirmed unaffected by this workflow change.
+
+## 2. CAPACITY ENGINE COMPATIBILITY ANALYSIS
+
+Capacity Engine is treated as the reference implementation. It is not
+being redesigned, and this sprint does not propose any change to it.
+
+**Verdict: no Capacity Engine changes are required.**
+
+`capacity.service.js` consumes, per booking: `voyageId`, `polId`, `podId`
+(plus `containerTypeId`/`totalTEU`). It anchors the cargo-flow "load event"
+on `voyageIndexById[String(booking.voyageId)]` and resolves discharge by
+walking forward to the voyage whose `toPort === booking.podId`. Nothing
+about this consumption changes shape under the new workflow — the engine
+still receives a `voyageId` plus a `polId`/`podId` pair per booking, in the
+exact same fields, same types, same population shape it reads today.
+
+The only behavioral side effect: because POL/POD will now always be copied
+from the selected Voyage's own `polId`/`podId` at save time (instead of
+being independently, potentially inconsistently, hand-picked), the
+Sprint 029 `exactSegment` display flag in `capacity.service.js`
+(`booking.polId == anchorVoyage.polId AND booking.podId ==
+anchorVoyage.podId`) will evaluate `true` more often/consistently for
+newly-created bookings. This is a **side effect of cleaner input data**,
+not a required or proposed change to the engine itself — no line of
+`capacity.service.js` needs to be touched.
+
+**Requires Business Decision**: whether a booking should ever be allowed
+to represent a POL/POD pair that spans more than one voyage-leg (multi-leg
+cargo) is a pre-existing question independent of this sprint — the current
+engine supports it (`resolveDischargeIdx` walks forward across voyages),
+and this sprint does not change, restrict, or assume anything about that
+capability. If auto-deriving POL/POD from a single selected Voyage is later
+found to conflict with a real multi-leg booking use case, that is a
+business decision to be raised separately — it is not evaluated or
+resolved here.
+
+## 3. CURRENT WORKFLOW ANALYSIS
+
+Layer 2 (`BookingForm.jsx`) and Layer 1 (`ManualBookingForm.jsx`) both:
+1. Fetch all non-Cancelled/non-Completed voyages system-wide, unfiltered
+   by round.
+2. On voyage selection, fetch the voyage's full service-route port list via
+   `GET /bookings/voyage-ports/:voyageId`.
+3. Present independent POL/POD `<select>` dropdowns populated from that
+   full-route list — duplicating what the selected Voyage document already
+   states directly (`voyage.polId`, `voyage.podId`).
+
+Booking Import (`BookingImport.jsx`) selects one Voyage for the whole file;
+the Voyage dropdown itself is also unfiltered by Round today.
+
+Booking filters (`BookingList.jsx`) offer a flat, unfiltered Voyage
+dropdown for the Operational Bookings tab; the Manual Bookings tab has no
+voyage/round filter at all today.
+
+## 4. PROPOSED WORKFLOW
+
+### Layer 2 (Operational Booking)
+```
+Round  →  Voyage (filtered by selected Round)  →  POL/POD auto-displayed,
+                                                     auto-used from the
+                                                     selected Voyage
+```
+User selects Round and Voyage only. No POL selector. No POD selector.
+`booking.voyageId` is stored exactly as today. `booking.polId` /
+`booking.podId` are stored exactly as today, populated server-side from
+the selected Voyage's own `polId`/`podId` instead of from a separate form
+field.
+
+### Layer 1 (Manual Booking)
+Identical shape: Round → Voyage (inside selected Round) → POL/POD
+auto-derived, no selectors. Same model fields, same storage.
+
+### Booking Import / Final Loading Import
+```
+Round  →  Voyage (filtered by Round)  →  [existing upload / preview / save
+                                            flow, unchanged]
+```
+Only the Voyage-selection UI step changes (Round-filtered dropdown instead
+of an unfiltered one). Import's row-level matching, validation, and
+reconciliation logic are not redesigned — see §7.
+
+### Filters
+```
+Operational Bookings list:  Round filter → Voyage filter (filtered by selected Round)
+Manual Bookings list:       same pattern (new — today it has no round/voyage filter at all)
+```
+
+## 5. BACKEND CHANGES
+
+### 5.1 `booking.service.js`
+- `create(data, createdBy)`: already loads `voyage = await
+  Voyage.findById(data.voyageId)`. Change: set `polId: voyage.polId,
+  podId: voyage.podId` from that voyage document, instead of trusting
+  `data.polId`/`data.podId` from the request body. The
+  `getVoyagePortIds`/route-membership check for POL/POD is no longer
+  needed on `create`, since POL/POD are no longer independently supplied.
+- `update(id, data, updatedBy)`: `polId`/`podId` are not meant to be
+  independently editable after creation (they're derived from a voyage
+  that is itself immutable once set — `isEditing` already disables the
+  Voyage select in the current forms). Strip `polId`/`podId` from the
+  updatable field set the same way `voyageId` is already stripped today.
+- `getVoyagePorts` / `getVoyagePortIds`: left in place, unmodified. Not
+  called from the booking-creation POL/POD path anymore, but not removed
+  — no other consumer was ruled out in this pass, and removing an endpoint
+  is outside this sprint's scope.
+
+### 5.2 `manualBooking.service.js`
+Same change as §5.1: `create()` derives `polId`/`podId` from the loaded
+voyage document instead of `data.polId`/`data.podId`. `update()` already
+does not touch `polId`/`podId` — no change needed there.
+
+### 5.3 `voyage.service.js` / `voyage.controller.js`
+No changes. `list({ roundId })` already supports the filtering this sprint
+needs (§1).
+
+### 5.4 `bookingImport.service.js`
+No structural change. See §7 — Import's per-row POL/POD handling is
+explicitly not being redesigned in this sprint.
+
+### 5.5 `capacity.service.js` / `capacity.controller.js`
+No changes — confirmed in §2.
+
+## 6. FRONTEND CHANGES
+
+### 6.1 `BookingForm.jsx`
+- Add a Round `<select>` (sourced from the existing rounds list
+  service/hook).
+- Change the Voyage dropdown query to be Round-scoped: fetch
+  `voyagesService.list({ roundId, limit: 200 })` keyed on
+  `['voyages-dropdown', roundId]`, `enabled: !!roundId`.
+- Remove the "Port of Loading / Discharge" section (POL/POD `<select>`
+  elements, the `voyage-ports` query, and the `useEffect` that clears
+  `polId`/`podId` on voyage change).
+- Display the selected Voyage's POL/POD as read-only info, using the same
+  visual pattern already used for Voyage No / Status / ETD / ETA.
+- On edit: the Round selector needs to preselect based on the existing
+  booking's voyage. This requires the voyage's `roundId` to be available
+  wherever the edit form loads `item.voyageId` — confirm/extend the
+  `populate()` helper in `booking.service.js` if the detail/edit fetch
+  needs it (currently `populate()` selects `voyageNumber polId podId etd
+  eta status` on `voyageId`, not `roundId`).
+
+### 6.2 `ManualBookingForm.jsx`
+Same treatment as §6.1.
+
+### 6.3 `BookingList.jsx`
+- Operational Bookings toolbar: add a Round `<select>` before the existing
+  Voyage `<select>`; Voyage options become filtered by the selected Round.
+- Manual Bookings toolbar: currently has no round/voyage filter at all —
+  add the same Round → Voyage filter pair, wired to
+  `bookingsService.listManual({ ..., voyageId })` (already accepts
+  `voyageId` today).
+- **Requires Business Decision**: whether selecting a Round with no
+  specific Voyage chosen should filter to "all bookings across every
+  voyage in that round," or whether Voyage selection remains required
+  once a Round is picked. Not decided or implemented here — flagged only.
+
+## 7. IMPORT CHANGES
+
+### 7.1 UI (`BookingImport.jsx`)
+- Add a Round `<select>` above the existing Voyage `<select>`; Voyage list
+  becomes Round-filtered (`voyagesService.list({ roundId, limit: 500 })`).
+- No other UI change. File upload, preview table, and confirm/save flow
+  are untouched.
+
+### 7.2 Import matching rules / row-level POL/POD — explicitly not redesigned
+Per the clarification, Import architecture, matching rules, and booking
+identity are out of scope for this sprint. Today, each Excel row supplies
+its own free-text `pol`/`pod`, resolved system-wide
+(`bookingImport.service.js#previewImport`), independent of the selected
+Voyage. This sprint does not change that logic, does not force row-level
+POL/POD to match the selected Voyage, and does not add any new
+cross-validation between row POL/POD and the selected Voyage's POL/POD.
+
+**Requires Business Decision**: whether Import's row-level POL/POD should
+ever be constrained to, defaulted from, or cross-validated against the
+selected Voyage's own POL/POD is a matching-rules question, not a UI
+question — it is not evaluated or resolved in this sprint, only flagged.
+Import continues working exactly as it does today once a Voyage is chosen;
+only the path to choosing that Voyage (Round-filtered dropdown) changes.
+
+### 7.3 Final Loading Import reconciliation
+Unaffected. The cancellation query
+(`{ voyageId, agentId, containerNumber: $nin: manifest }`,
+`bookingImport.service.js:297-306`) is already `voyageId`-scoped and does
+not depend on how the Voyage was selected in the UI.
+
+## 8. FILTER REDESIGN
+
+- **Operational Bookings filter**: Round → Voyage cascading filter, per
+  §6.3. No backend change to `booking.service.js#list` is required if the
+  frontend always resolves the filter down to a specific `voyageId` before
+  querying (current query param already supported). A `roundId` query
+  param would only be needed if the "Round with no Voyage" case (see §6.3
+  Business Decision) is approved — not built speculatively here.
+- **Manual Bookings filter**: same Round → Voyage cascade added (currently
+  absent entirely).
+- No other filters were found in the reviewed files that need to become
+  Round-aware for this sprint's stated goal (removing duplicated Voyage/
+  POL/POD input on booking entry and filter screens). Filters outside the
+  booking module (reports, export) were not reviewed — out of scope.
+
+## 9. VALIDATION CHANGES
+
+### `booking.validation.js`
+- `validateCreate`: remove the `polId`/`podId` required-field validators —
+  they are no longer submitted by the client. `voyageId` remains the
+  required routing input, exactly as today.
+- `validateUpdate`: remove the optional `polId`/`podId` validators — no
+  longer accepted as updatable fields.
+
+### `manualBooking.validation.js`
+Same: remove `polId`/`podId` from `validateCreate`. `validateUpdate`
+already does not include them — no change needed there.
+
+### Import validation (`validateRow` in `bookingImport.service.js`)
+No change. Per §7.2, Import's row-level `pol`/`pod` requirement and
+resolution logic are not touched by this sprint.
+
+## 10. API IMPACT
+
+- `POST /bookings`, `PUT /bookings/:id`: request body no longer needs
+  (and will no longer be validated for) `polId`/`podId` — the server
+  derives them from `voyageId`. Any caller currently sending these fields
+  will simply have them ignored/overridden by the derived values; no
+  caller other than the current frontend forms is known.
+- `POST /bookings/manual`, `PUT /bookings/manual/:id`: same.
+- `GET /bookings/voyage-ports/:voyageId`: no longer called by the booking
+  creation forms after this sprint, but not removed or altered — it
+  remains a valid endpoint for its existing purpose.
+- `POST /bookings/import/preview`, `POST /bookings/import/save`: request/
+  response contract unchanged (`{ rows, agentId, voyageId, importType }`).
+  Only the UI path to selecting `voyageId` changes; the import service's
+  own handling is untouched (§7.2).
+- `GET /voyages?roundId=...`: no contract change — already exists; this
+  sprint is simply the first booking-module consumer to use it.
+
+## 11. RISKS
+
+- **Edit-form Round preselection dependency**: requires `roundId` to be
+  reachable from the populated `voyageId` on an existing booking (§6.1).
+  Small, mechanical addition to an existing populate call — flagged so it
+  isn't missed, not a design risk.
+- **Deployment ordering**: if backend and frontend changes are not
+  deployed together, an old frontend still sending `polId`/`podId` will
+  simply have those values ignored server-side in favor of the
+  voyage-derived ones — this is the intended end state, so this is a low
+  risk, noted for completeness only.
+- **Round dropdown data volume**: not checked in this pass whether the
+  Rounds list needs pagination/limit handling similar to the Voyage
+  dropdown's `limit: 200` pattern — a quick check of the rounds list
+  service before implementation is recommended, not a blocking concern.
+- No risk to Capacity Engine, booking identity, or import matching rules
+  is introduced by this sprint — confirmed by §2 and §7.2 respectively,
+  since neither is being changed.
+
+## 12. MIGRATION IMPACT
+
+- **No schema change.** `polId`/`podId` already exist on `Booking` and
+  `ManualBooking` exactly as today; only their input path changes (server-
+  derived instead of client-submitted). No migration script is required.
+- **Existing data is untouched.** This sprint changes future writes
+  (create/update) only. Any existing booking whose stored `polId`/`podId`
+  does not match its voyage's own `polId`/`podId` remains as-is — this
+  sprint does not retroactively correct historical data, and no such
+  correction is proposed here.
+- **Import historical data**: unaffected — see §7.2, §7.3.
+- No change to `bookingNumber`/`containerNumber` identity or auto-numbering.
+
+## 13. FILES AFFECTED (for the implementation phase — not modified in this pass)
+
+Backend:
+- `backend/src/modules/bookings/booking.service.js` (derive polId/podId
+  from voyage in `create`; strip polId/podId from `update`'s accepted
+  fields)
+- `backend/src/modules/bookings/booking.validation.js` (remove polId/podId
+  validators from validateCreate/validateUpdate)
+- `backend/src/modules/bookings/manualBooking.service.js` (derive
+  polId/podId from voyage in `create`)
+- `backend/src/modules/bookings/manualBooking.validation.js` (remove
+  polId/podId from validateCreate)
+- Populate helpers in `booking.service.js` — extend `voyageId` population
+  to include `roundId` for the edit-form Round preselect (§6.1, §11)
+
+Frontend:
+- `frontend/src/modules/bookings/BookingForm.jsx` (Round selector, remove
+  POL/POD selects, Round-filtered voyage query, read-only POL/POD display)
+- `frontend/src/modules/bookings/ManualBookingForm.jsx` (same)
+- `frontend/src/modules/bookings/BookingImport.jsx` (Round selector above
+  Voyage; no other structural change)
+- `frontend/src/modules/bookings/BookingList.jsx` (Round → Voyage
+  cascading filters on both tabs)
+- `frontend/src/services/bookings.service.js` — verify/extend if new
+  query params are needed for list calls
+- `frontend/src/services/voyages.service.js` — confirm `list({ roundId })`
+  passthrough (backend already supports it; not line-by-line confirmed on
+  the frontend service in this pass)
+
+No changes required to:
+- `backend/src/modules/capacity/capacity.service.js`,
+  `capacity.controller.js`, `teuResolver.js` (§2)
+- `backend/src/modules/voyages/voyage.service.js`,
+  `voyage.controller.js` (§1 — `roundId` filter already exists)
+- `backend/src/modules/bookings/bookingImport.service.js` (§7.2 — not
+  redesigned)
+- `backend/src/modules/reports/reports.service.js`,
+  `backend/src/modules/invoices/invoice.service.js` (read-only consumers,
+  confirmed unaffected)
+- `frontend/src/modules/vessels/components/CapacitySegmentTable.jsx`,
+  `CapacityTimeline.jsx` (Sprint 029 scope, unrelated)
+
+## 14. IMPLEMENTATION PHASES (proposed sequencing — for approval, not started)
+
+**Phase 1 — Layer 2 (Operational Booking):**
+Backend: derive polId/podId from voyage in `create`, strip from `update`,
+adjust validation. Frontend: Round selector, Round-filtered Voyage
+dropdown, remove POL/POD selectors, read-only POL/POD display.
+
+**Phase 2 — Layer 1 (Manual Booking):**
+Mirror Phase 1 in `manualBooking.service.js` / `manualBooking.validation.js`
+/ `ManualBookingForm.jsx`.
+
+**Phase 3 — Filters:**
+`BookingList.jsx` Round → Voyage cascade for both tabs.
+
+**Phase 4 — Booking Import (UI selection step only):**
+Round selector added above the existing Voyage selector in
+`BookingImport.jsx`. No change to import validation, matching, or
+reconciliation logic (§7.2).
+
+Each phase is independently deployable; none has a hard dependency on
+another. No phase requires any change to the Capacity Engine, the Booking
+model's stored fields, Import matching rules, or booking identity — all
+confirmed unchanged in this revision.
+
+## 15. IMPLEMENTATION NOTES
+
+All four phases implemented as planned, no scope changes:
+
+- **Backend** (`booking.service.js`, `manualBooking.service.js`): `create()`
+  in both now derives `polId`/`podId` directly from the loaded `voyage`
+  document instead of `data.polId`/`data.podId`; the route-membership check
+  against `getVoyagePortIds` was removed from both `create()` paths since
+  POL/POD are no longer independently supplied. `booking.service.js#update()`
+  strips `polId`/`podId` from the accepted field set (same pattern already
+  used for `voyageId`). `getVoyagePortIds`/`getVoyagePorts` were left in
+  place, unused by these paths now, per §5.1. `populate()` in both services
+  now includes `roundId` on the nested `voyageId` select, for edit-form
+  Round preselection (§6.1, §11). `computeVoyagePreview`'s `podId` argument
+  in `booking.service.js#create` now reads `voyage.podId` instead of the
+  removed `data.podId`.
+- **Validation** (`booking.validation.js`, `manualBooking.validation.js`):
+  `polId`/`podId` validators removed from `validateCreate` (both) and
+  `validateUpdate` (`booking.validation.js`, and the previously-present but
+  functionally-unused `polId`/`podId` optional validators in
+  `manualBooking.validation.js#validateUpdate`).
+- **`BookingForm.jsx` / `ManualBookingForm.jsx`**: added a Round `<select>`
+  (via `useRounds()`), Voyage dropdown re-keyed to
+  `['voyages-dropdown', roundId]` and gated on `enabled: !!roundId`; the
+  "Port of Loading / Discharge" section was removed entirely and replaced
+  with read-only POL/POD tiles inside the Round/Voyage info card, sourced
+  from `selectedVoyage.polId`/`podId` (with an edit-mode fallback to
+  `item.polId`/`item.podId` before the round-scoped voyage list loads).
+  `onSubmit` strips the UI-only `roundId` field before calling the mutation.
+- **`BookingList.jsx`**: added Round → Voyage cascading filters to both the
+  Operational and Manual Bookings tabs (Manual tab had none before). No
+  backend `list()` changes were needed — both cascades resolve down to the
+  existing `voyageId` query param, per §8's "no Round-only filter" scoping
+  (that mode remains an open "Requires Business Decision", not built).
+  The Discharge List export modal was decoupled onto its own independent,
+  unfiltered voyage query (`voyages-dropdown-all`, loaded lazily on modal
+  open) since it is a standalone export tool unrelated to the booking-entry
+  workflow and must not inherit the list page's Round filter state.
+- **`BookingImport.jsx`**: added a Round `<select>` above the existing
+  Voyage `<select>`; the voyage query became Round-scoped and gated on
+  `enabled: !!roundId`. No changes to `bookingImport.service.js`, row
+  validation, matching rules, or reconciliation logic — confirmed untouched
+  per §7.2/§7.3.
+- Two "Requires Business Decision" items from this plan were **not**
+  implemented, as instructed: (1) whether selecting a Round with no Voyage
+  should filter to "all bookings in the round" (§6.3, §8), and (2) whether
+  Import's row-level POL/POD should ever be constrained against the
+  selected Voyage (§7.2). Both remain exactly as flagged, pending a
+  separate decision.
+- Capacity Engine, Booking model schema, Import matching rules, and booking
+  identity: confirmed untouched — no files under `capacity/`,
+  `bookingImport.service.js`, `booking.model.js`, or `manualBooking.model.js`
+  were modified.
+
+---
+END OF PLAN — awaiting approval before writing any code.

@@ -1,0 +1,902 @@
+================================================================================
+  SPRINT 022 - Dynamic Per-Leg Vessel Capacity Engine (PLANNING - APPROVED)
+  Date: 2026-07-19  (Revision 3 — Final)
+  Status: COMPLETE — All 5 phases implemented
+================================================================================
+
+SPRINT SUMMARY:
+  Replace the current "total booked containers per vessel" capacity model with
+  a per-leg dynamic capacity engine measured in TEU. The engine calculates
+  onboard TEU and remaining free capacity at every route leg of a round,
+  accounting for continuous loading and discharging at each port call.
+
+  TEU is derived purely from container size using a small, deterministic
+  lookup. Container Type (Dry, Reefer, etc.) has NO impact on capacity and
+  is ignored by the engine. NO schema changes required.
+
+  Scope is deliberately focused on the vessel's CURRENT ACTIVE ROUND.
+  Tracking, GPS, and vessel position are explicitly OUT OF SCOPE.
+
+  NO CODE CHANGES YET. Awaiting explicit "Start Phase 1" before implementation.
+
+================================================================================
+  1. CURRENT ARCHITECTURE — ANALYSIS
+================================================================================
+
+  1.1 DATA MODEL AS IT STANDS TODAY
+
+    Service (1) ───< Route (1) ───< RouteLeg (n)   [ordered by sequence]
+       │
+       └───< Round (n) ───< Voyage (n)
+                                │
+                                └───< Booking (n) → ContainerType (n)
+       │
+       └───< Vessel (assigned per Round)
+
+    Key facts verified against the code:
+      - Route has ordered RouteLegs; each leg is ONE port.
+      - createRound() calls voyageGenerator.js which creates ONE Voyage per
+        adjacent leg pair — route with N legs produces N-1 voyages per round.
+      - Booking has its own polId + podId; both are validated against the
+        service route port list (booking.service.js getVoyagePortIds).
+      - Booking has containerTypeId (required, ref: ContainerType).
+      - ContainerType has size (enum '20ft' | '40ft' | '40HC' | '45ft') and
+        type (enum 'Dry' | 'Reefer' | 'Open Top' | 'Flat Rack' | 'Tank').
+      - Vessel.capacity is a TEU number (nullable).
+      - vessel.service.js getVesselStats() currently sums booking.quantity
+        across all Active+Planned rounds against vessel.capacity — this is
+        the flawed logic being replaced.
+
+  1.2 TEU IS A PURE FUNCTION OF CONTAINER SIZE
+
+    The engine computes:
+
+      effectiveTEU = booking.quantity × TEU(containerSize)
+
+    Where TEU(size) is a small deterministic mapping:
+
+      Any size representing 20ft         → 1 TEU
+      Any size representing 40ft or 40HC → 2 TEU
+      Any size representing 45ft         → 2 TEU
+      Unknown / unrecognised size        → 1 TEU  (fail-safe) + warning
+
+    Container Type (Dry, Reefer, Tank, Flat Rack, etc.) is IGNORED for
+    capacity purposes.
+
+    The engine resolves the size by looking up the booking's containerTypeId,
+    reading .size from the referenced ContainerType, and passing that string
+    to the TEU-resolver function. The ContainerType document itself receives
+    no schema change.
+
+    NORMALISATION for extensibility:
+      The resolver normalises the size string before matching — trims,
+      uppercases, strips spaces — so future sizes like ' 40 HC', '40hc',
+      '40HC-DRY' all match the 40HC bucket. Regex-based bucketing:
+
+        /(^|[^0-9])20/  → 1 TEU
+        /(^|[^0-9])40/  → 2 TEU
+        /(^|[^0-9])45/  → 2 TEU
+        else            → 1 TEU + MISSING_TEU_MAPPING warning
+
+      This means the client can add a new enum value like '20RF' or '40OT'
+      without a code change — the resolver still matches the leading digits.
+      Non-numeric-lead sizes would need explicit handling; documented as a
+      known future extension point (single function to edit).
+
+  1.3 WHERE CAPACITY IS DISPLAYED / QUERIED TODAY
+
+    Backend:
+      - vessel.service.js → getVesselStats() returns { capacityUsed, capacityPct }
+        USED BY: GET /vessels/:id/stats
+        CONSUMED BY: frontend VesselDetail.jsx (doughnut chart + KPI)
+
+    Frontend:
+      - modules/vessels/VesselDetail.jsx renders the doughnut based on
+        stats.capacityUsed vs vessel.capacity.
+      - No other page currently displays capacity.
+
+    Reports and Bookings: capacity is not currently referenced.
+
+  1.4 EXISTING BUSINESS RULES CARRIED FORWARD
+
+    - Booking POL and POD must both be in the service route leg list.
+    - Voyage POL = leg[i], POD = leg[i+1] for auto-generated voyages.
+    - Manual voyages may skip legs.
+    - vessel.capacity stored in TEU (nullable).
+    - Only one Round with status='Active' per vessel at a time (already
+      enforced by round.service.js create()). This makes "current active
+      round" a clean, unique concept for the vessel detail page.
+
+================================================================================
+  2. TARGET STATE — WHAT THE NEW ENGINE MUST DELIVER
+================================================================================
+
+  2.1 CORE PRINCIPLE — CAPACITY IS PER-LEG, MEASURED IN TEU
+
+    Given a service route with ports [P1, P2, P3, P4] and vessel capacity C TEU:
+
+      Segment 1:  P1 → P2
+      Segment 2:  P2 → P3
+      Segment 3:  P3 → P4
+
+    A booking occupies segment[k] iff pol.sequence ≤ k AND pod.sequence ≥ k+1.
+
+    Example:
+      Booking A: 10 × 20ft → 10 TEU across its segments
+      Booking B:  5 × 40ft → 10 TEU across its segments
+      Both consume identical capacity even though quantity differs.
+
+    Onboard TEU on segment k = sum of effectiveTEU for all bookings covering
+    that segment.
+
+  2.2 SCOPE FOCUS — CURRENT ACTIVE ROUND ONLY
+
+    The Vessel Details page shows the vessel's current operational journey:
+      "Which Active round is the vessel on? What does each leg look like?"
+
+    If the vessel has no Active round, an empty state is shown.
+
+    Historical and completed rounds are OUT OF SCOPE for this sprint. The
+    engine's core computeRoundCapacity() can still compute for any roundId —
+    this is a UI focus decision, not an engine limitation. Reports (Phase 3)
+    may still target any round.
+
+  2.3 REQUIRED OUTPUT SHAPE
+
+    computeRoundCapacity(roundId) returns:
+
+      {
+        round:   { _id, roundNumber, status, startDate, endDate },
+        vessel:  { _id, vesselCode, vesselName, capacity },  // TEU
+        route:   {
+          _id,
+          ports: [{ sequence, portId, name, code }]           // ordered
+        },
+        segments: [
+          {
+            segmentIndex: 1,
+            fromPort: { portId, name, code, sequence: 1 },
+            toPort:   { portId, name, code, sequence: 2 },
+            voyageId: <ObjectId | null>,
+            voyageStatus: <string | null>,
+            isManualJump: false,
+            loadedTEU:      <TEU loaded at fromPort>,
+            dischargedTEU:  <TEU discharged at fromPort>,
+            onboardTEU:     <TEU carried across this segment>,
+            remainingTEU:   <vessel.capacity - onboardTEU | null>,
+            utilisationPct: <round(onboardTEU / capacity * 100) | null>
+          },
+          ...
+        ],
+        ports: [
+          {
+            portSequence:   1,
+            port:           { portId, name, code },
+            loadedTEU:      <TEU loaded here>,
+            dischargedTEU:  <TEU discharged here>,
+            netChangeTEU:   loadedTEU - dischargedTEU,
+            onboardAfterTEU: <onboard after this port call>
+          },
+          ...
+        ],
+        totals: {
+          peakOnboardTEU:     <max segment.onboardTEU>,
+          peakSegmentIndex:   <index of peak>,
+          avgUtilisationPct:  <mean of non-null segment.utilisationPct>,
+          totalBookedTEU:     <sum of effectiveTEU across included bookings>,
+          totalBookedUnits:   <sum of qty>
+        },
+        warnings: [
+          { code, message, bookingId?, containerNumber? }
+        ]
+      }
+
+  2.4 EDGE CASES
+
+    E1  Booking POL == POD → rejected by validation upstream. Engine ignores.
+
+    E2  Booking with polSeq >= podSeq (data corruption).
+        Warning code: 'INVALID_DIRECTION'. Booking excluded.
+
+    E3  Simultaneous load + discharge at intermediate port.
+        Discharge netted first (containers off before on) so onboard-after
+        correctly reflects final state. Both raw values still surfaced.
+
+    E4  Booking statuses to include.
+        Default: ['Confirmed', 'Final Loading'].
+        opts.statuses can widen to include 'Pending' for what-if analysis.
+
+    E5  Overbooked segment (onboardTEU > vessel.capacity).
+        Warning code: 'SEGMENT_OVERBOOKED' with over-amount.
+        Not blocked in Phase 1–2. Enforcement is Phase 4 (feature-flagged).
+
+    E6  Manual voyage skips a route leg.
+        Segments without a covering voyage are flagged isManualJump = true.
+        Bookings that discharge at a skipped port get warning
+        'BOOKING_INTO_UNCALLED_PORT' and are excluded.
+
+    E7  Route legs edited after bookings exist.
+        Booking references a port no longer in the route.
+        Warning 'BOOKING_PORT_NOT_IN_ROUTE'. Excluded from calc.
+
+    E8  vessel.capacity is null.
+        onboardTEU returned; remainingTEU and utilisationPct returned as null.
+        UI shows em dash. peakOnboardTEU still present.
+
+    E9  Unrecognised container size (data corruption or new enum not yet
+        covered by the resolver).
+        Warning code: 'MISSING_TEU_MAPPING' with bookingId + raw size string.
+        Fail-safe: treat as 1 TEU. Never silently dropped.
+
+    E10 Mixed container sizes across bookings on the same segment.
+        Handled naturally — each booking's effectiveTEU is computed
+        independently then summed. No special case.
+
+    E11 Container type isDeleted after booking was created.
+        containerTypeId still resolves via populate (Mongo does not enforce
+        isDeleted on read). Warning 'DELETED_CONTAINER_TYPE' surfaced for
+        audit but calc proceeds using the soft-deleted record's size.
+
+    E12 Round with 0 bookings.
+        Every segment: loadedTEU=0, dischargedTEU=0, onboardTEU=0,
+        remainingTEU=vessel.capacity, utilisationPct=0.
+
+    E13 Route with only 2 legs → 1 segment → 1 voyage. Trivial case.
+
+    E14 Booking without a containerTypeId (data corruption; field is required
+        at model level so should not occur, but defensive).
+        Warning 'MISSING_CONTAINER_TYPE'. Booking excluded.
+
+================================================================================
+  3. IMPLEMENTATION PLAN — PHASE BREAKDOWN
+================================================================================
+
+  Phase 1 — Backend capacity engine core (calculator + endpoints)
+  Phase 2 — Vessel Details page — Current Active Round redesign
+  Phase 3 — Reports & Dashboard integration
+  Phase 4 — Optional pre-flight capacity enforcement (feature-flagged)
+  Phase 5 — Docs update + rollback validation + sprint close
+
+  Note: no separate migration phase — no schema changes required.
+
+================================================================================
+  PHASE 1 — Backend Capacity Engine Core
+  Estimate: 10h
+================================================================================
+
+  DESIGN GOALS:
+    - Pure computation module: no DB writes, no side effects.
+    - Deterministic given (round, bookings, route legs, vessel.capacity).
+    - Reusable from vessels, reports, dashboard, and future pre-flight.
+    - No new collections. No schema changes.
+
+  NEW FILES:
+    backend/src/modules/capacity/capacity.service.js
+    backend/src/modules/capacity/capacity.controller.js
+    backend/src/modules/capacity/capacity.routes.js
+    backend/src/utils/teuResolver.js       (small pure helper)
+
+  TEU RESOLVER (backend/src/utils/teuResolver.js):
+
+    /**
+     * Derive TEU value from a container size string.
+     * Size-only mapping — Container Type is intentionally ignored.
+     *
+     * @param {string} size — e.g. '20ft', '40ft', '40HC', '45ft'
+     * @returns {{ teu: number, matched: boolean }}
+     */
+    function resolveTEU(size) {
+      if (!size || typeof size !== 'string') {
+        return { teu: 1, matched: false };
+      }
+      const norm = size.trim().toUpperCase().replace(/\s+/g, '');
+      // Extract the leading numeric length
+      const m = norm.match(/^(\d{2,3})/);
+      if (!m) return { teu: 1, matched: false };
+      const len = Number(m[1]);
+      if (len === 20)             return { teu: 1, matched: true };
+      if (len === 40 || len === 45) return { teu: 2, matched: true };
+      return { teu: 1, matched: false };
+    }
+
+    module.exports = { resolveTEU };
+
+    Rationale:
+      - Length-based bucketing handles current enum ('20ft','40ft','40HC','45ft')
+        AND future variants like '20RF', '40OT', '45HC' without change.
+      - Single function; changes localised to one file if business rules
+        ever shift.
+      - Returns matched flag so the engine can emit MISSING_TEU_MAPPING when
+        a size is unrecognised.
+
+  PUBLIC API (functions in capacity.service.js):
+
+    computeRoundCapacity(roundId, opts)
+      Params:
+        roundId       ObjectId
+        opts.statuses string[]  default ['Confirmed','Final Loading']
+      Returns:  as spec §2.3
+
+    computeVesselActiveCapacity(vesselId)
+      Business rule: uses the vessel's CURRENT ACTIVE ROUND only.
+      Params: vesselId
+      Returns:
+        {
+          vessel: { _id, vesselCode, vesselName, capacity },
+          activeRound: <null if no Active round> | {
+            round:    { _id, roundNumber, startDate, endDate },
+            service:  { _id, serviceCode, serviceName },
+            segments: [...],
+            ports:    [...],
+            totals:   {...},
+            warnings: [...]
+          }
+        }
+      If no Active round: activeRound is null. UI shows empty state.
+
+    computeSegmentPreview(roundId, polId, podId, quantity, containerTypeId)
+      Used for pre-flight checks in booking create (Phase 4).
+      Simulates adding effectiveTEU = quantity × resolveTEU(size).teu across
+      the segments the booking would occupy. Returns:
+        {
+          canFit: boolean,
+          addedTEU: number,
+          bottleneckSegment: { segmentIndex, onboardAfterAdd, remainingAfterAdd } | null,
+          margins: [{ segmentIndex, onboardAfterAdd, remainingAfterAdd }]
+        }
+
+  ALGORITHM (computeRoundCapacity):
+
+    Step A — Load in parallel:
+      const [round, route, legs, bookings, vessel, voyages] =
+        await Promise.all([
+          Round.findById(roundId).populate('vesselId serviceId').lean(),
+          Route.findOne({ serviceId }).lean(),
+          RouteLeg.find({ routeId }).populate('portId','name code')
+                                    .sort({ sequence: 1 }).lean(),
+          Booking.find({ voyageId in round.voyageIds,
+                         isDeleted: false,
+                         status in opts.statuses })
+                 .select('quantity polId podId containerTypeId containerNumber status voyageId')
+                 .populate('containerTypeId','code size isDeleted')
+                 .lean(),
+          Vessel.findById(round.vesselId).lean(),
+          Voyage.find({ _id in round.voyageIds })
+                .select('polId podId sequence status')
+                .sort({ sequence: 1 }).lean()
+        ]);
+
+      NOTE: containerTypeId populate selects `size` only. No teuFactor field
+      is read or referenced.
+
+    Step B — Build port sequence map:
+      portSeqByPortId = { [portId]: sequence, ... }  from legs
+
+    Step C — Resolve TEU for each booking:
+      For each booking:
+        if !containerTypeId → warning MISSING_CONTAINER_TYPE, skip
+        const size = booking.containerTypeId.size
+        const { teu, matched } = resolveTEU(size)
+        if !matched:
+          warning MISSING_TEU_MAPPING (bookingId, containerTypeCode, size)
+        if containerTypeId.isDeleted:
+          warning DELETED_CONTAINER_TYPE (informational, proceed)
+        booking.effectiveTEU = booking.quantity × teu
+
+    Step D — Build event list:
+      For each surviving booking:
+        polSeq = portSeqByPortId[polId]
+        podSeq = portSeqByPortId[podId]
+        if polSeq == null → warning BOOKING_PORT_NOT_IN_ROUTE (POL), skip
+        if podSeq == null → warning BOOKING_PORT_NOT_IN_ROUTE (POD), skip
+        if polSeq >= podSeq → warning INVALID_DIRECTION, skip
+        events.push({ atSeq: polSeq, delta: +effectiveTEU, kind:'load',      bookingId })
+        events.push({ atSeq: podSeq, delta: -effectiveTEU, kind:'discharge', bookingId })
+
+    Step E — Per-port aggregation:
+      For each port in route.legs (ascending sequence):
+        loadedTEU     = sum of load events at this seq
+        dischargedTEU = sum of discharge events at this seq
+        netChangeTEU  = loadedTEU - dischargedTEU
+      Compute onboardAfterTEU as running total:
+        running = 0
+        for each port: running += netChange; port.onboardAfterTEU = running
+
+    Step F — Per-segment aggregation:
+      For each segment k = 1 … (legs.length - 1):
+        fromPort = leg at sequence k
+        toPort   = leg at sequence k+1
+        onboardTEU = ports[k].onboardAfterTEU
+        Find covering voyage: voyage where
+          voyage.polId == fromPort.portId AND voyage.podId == toPort.portId
+        If not found: isManualJump = true, voyageId = null
+        remainingTEU = vessel.capacity ? vessel.capacity - onboardTEU : null
+        utilisationPct = vessel.capacity
+          ? round(onboardTEU / vessel.capacity × 100) : null
+        loadedTEU     = fromPort.loadedTEU
+        dischargedTEU = fromPort.dischargedTEU
+
+        Overbooking check:
+          if remainingTEU != null && remainingTEU < 0:
+            warning SEGMENT_OVERBOOKED (segmentIndex, over=-remainingTEU)
+
+    Step G — Totals:
+      peakOnboardTEU     = max(segment.onboardTEU)
+      peakSegmentIndex   = index at peak
+      avgUtilisationPct  = mean of non-null segment.utilisationPct
+      totalBookedTEU     = sum of surviving booking.effectiveTEU
+      totalBookedUnits   = sum of surviving booking.quantity
+
+    Step H — Return payload.
+
+  COMPLEXITY:
+    O(B + P + V) where B = bookings, P = ports, V = voyages.
+    Bookings query is indexed by voyageId + isDeleted (Sprint 020).
+
+  CACHING (Sprint 020 cache utility):
+    Key: `capacity:round:${roundId}`
+    TTL: 60 seconds
+    Invalidation triggers (all additions to existing services):
+      booking.service.js create()  → cache.del after save
+      booking.service.js update()  → cache.del after save
+      booking.service.js softDelete() → cache.del after save
+      bookingImport.service.js saveImport() → cache.del for the affected round
+      voyage.service.js update() (status change) → cache.del
+      round.service.js update() → cache.del
+
+    NOTE: containerType.service.js does NOT invalidate the capacity cache.
+    TEU is a pure function of the size string, and existing bookings retain
+    their size mapping. If the business ever changes the TEU rule (e.g.
+    45ft → 2.25), the resolver code changes and a full server restart
+    naturally clears in-memory cache.
+
+  NEW ENDPOINTS:
+
+    GET /api/v1/capacity/round/:roundId
+      auth + rbac('rounds')
+      returns computeRoundCapacity(roundId)
+
+    GET /api/v1/capacity/vessel/:vesselId/active
+      auth + rbac('vessels')
+      returns computeVesselActiveCapacity(vesselId)
+
+    (Phase 4 only)
+    POST /api/v1/capacity/preview
+      auth + rbac('bookings')
+      body: { roundId, polId, podId, quantity, containerTypeId }
+      returns computeSegmentPreview(...)
+
+  MODIFIED FILES (Phase 1):
+    backend/src/app.js — mount capacity router
+    backend/src/modules/bookings/booking.service.js
+      cache invalidation on create/update/softDelete
+    backend/src/modules/bookings/bookingImport.service.js
+      cache invalidation on saveImport success
+    backend/src/modules/voyages/voyage.service.js
+      cache invalidation on status transitions
+    backend/src/modules/rounds/round.service.js
+      cache invalidation on update
+
+  NO CHANGES to any model files. No migration. No new indexes.
+
+================================================================================
+  PHASE 2 — Vessel Details Page — Current Active Round Redesign
+  Estimate: 8h
+================================================================================
+
+  BACKEND:
+    Modify: backend/src/modules/vessels/vessel.service.js  getVesselStats()
+      - Keep the existing top-level shape for backward compatibility.
+      - Replace the legacy capacityUsed / capacityPct KPIs with values from
+        computeVesselActiveCapacity(id):
+          capacityUsed  = activeRound?.totals.peakOnboardTEU ?? 0
+          capacityPct   = derived from peak
+        (Now interpreted as TEU. Same field names, corrected semantics.)
+      - Add new nested payload:
+          activeRound: <null | full computeRoundCapacity payload>
+
+  FRONTEND:
+    Modify: frontend/src/modules/vessels/VesselDetail.jsx
+
+    New primary section: "Current Active Round" (above existing panels).
+    UI hierarchy:
+
+      ┌─ Current Active Round ──────────────────────────────────────┐
+      │  Round: R000123    Service: Asia-Middle East    Status: Active│
+      │  Peak: 8,400 / 14,000 TEU (60%)     Total booked: 12,300 TEU  │
+      │                                                                │
+      │  ┌─ Route Timeline ────────────────────────────────────────┐  │
+      │  │ P1 ──[Seg 1]── P2 ──[Seg 2]── P3 ──[Seg 3]── P4         │  │
+      │  │                                                          │  │
+      │  │ Horizontal bar chart of segment.onboardTEU across route │  │
+      │  └─────────────────────────────────────────────────────────┘  │
+      │                                                                │
+      │  ┌─ Per-Leg Capacity Table ────────────────────────────────┐  │
+      │  │ #  From    To      Loaded  Discharged Onboard Remaining Util│
+      │  │ 1  P1 SIN  P2 JEA   6000     0         6000    8000     43%│
+      │  │ 2  P2 JEA  P3 SUE   3400     2100      7300    6700     52%│
+      │  │ 3  P3 SUE  P4 PSA   1000     8400      -100   14100      0%│ ← alert
+      │  └─────────────────────────────────────────────────────────┘  │
+      │                                                                │
+      │  ┌─ Per-Port Net Change ───────────────────────────────────┐  │
+      │  │  P1: +6000 loaded / 0 disch → 6000 onboard after         │  │
+      │  │  P2: +3400 loaded / -2100 disch → 7300 onboard after     │  │
+      │  │  P3: +1000 loaded / -8400 disch → -100 onboard after    │  │ ← warn
+      │  │  P4:     0 loaded / 0 disch → 0 onboard after           │  │
+      │  └─────────────────────────────────────────────────────────┘  │
+      │                                                                │
+      │  Warnings panel (if any) — SEGMENT_OVERBOOKED etc.            │
+      └────────────────────────────────────────────────────────────────┘
+
+    Empty state when activeRound is null:
+      "No active round for this vessel. Assign the vessel to a round and
+       activate it to see live per-leg capacity."
+
+    Existing panels (Vessel Particular, Rounds, Voyages, Agents, Bookings by
+    Status, Recent Tracking) remain BELOW the new section — untouched.
+
+    The existing capacity doughnut is REPLACED by the timeline + table.
+    Single-number thinking is the exact problem this sprint fixes.
+
+  NEW FRONTEND FILES:
+    frontend/src/modules/vessels/components/CapacityTimeline.jsx     NEW
+    frontend/src/modules/vessels/components/CapacitySegmentTable.jsx NEW
+    frontend/src/modules/vessels/components/CapacityWarnings.jsx     NEW
+    frontend/src/services/capacity.service.js                        NEW
+      getRoundCapacity(roundId)
+      getVesselActiveCapacity(vesselId)
+
+================================================================================
+  PHASE 3 — Reports + Dashboard Integration
+  Estimate: 5h
+================================================================================
+
+  NEW REPORT: "Round Capacity Utilisation"
+    Backend: reports.service.js getRoundCapacityReport()
+    Route: GET /api/v1/reports/round-capacity?roundId=
+    Returns computeRoundCapacity() payload directly.
+    Query param includeStatuses=Pending,Confirmed,Final Loading to widen scope.
+
+    Frontend: frontend/src/modules/reports/RoundCapacityReport.jsx
+      - Round picker (defaults to Active rounds)
+      - Same segment table + port timeline as vessel detail
+      - Excel export via existing report-export skeleton
+      - Optional "Include Pending bookings" toggle
+
+  DASHBOARD (SuperAdmin only): "Fleet Utilisation" widget
+    Backend: GET /api/v1/dashboard/fleet-utilisation
+      Iterates all Active rounds; calls computeRoundCapacity() for each
+      (60s cache bounds cost).
+      Returns per-round summary: vessel name, peakPct, next segment.
+    Frontend: dashboard/page.jsx card grid with colour coding:
+      green <70%, amber 70–90%, red >90%.
+
+================================================================================
+  PHASE 4 — Optional Pre-flight Capacity Enforcement (FEATURE-FLAGGED)
+  Estimate: 4h
+  Env: ENABLE_CAPACITY_ENFORCEMENT  ∈ {unset, 'warn', 'strict'}
+================================================================================
+
+  MODE 'warn' (default when flag set):
+    booking.service.js create() calls computeSegmentPreview() BEFORE save.
+    If canFit === false, save proceeds AND response body contains
+    capacityWarning: { bottleneckSegment, addedTEU, remainingAfterAdd }.
+    Frontend BookingForm shows a yellow banner post-create.
+
+  MODE 'strict':
+    Same call, but if canFit === false → throw AppError(400, ...) with
+    bottleneck details. Booking NOT created.
+
+  UNSET: No pre-flight call. Zero overhead.
+
+  IMPORT INTEGRATION:
+    bookingImport.service.js previewImport() simulates cumulative TEU by
+    grouping rows per (roundId) and running the events algorithm in-memory.
+    Rows that would push a segment over capacity get:
+      new _rowStatus 'overCapacity'
+      new warning entry in _errors[]
+    Row still previews as valid unless flag = 'strict'.
+
+================================================================================
+  PHASE 5 — Docs Update + Rollback Validation + Sprint Close
+  Estimate: 2h
+================================================================================
+
+  DOCS TO UPDATE:
+    claude.md:
+      - Capacity is per-segment, measured in TEU.
+      - TEU is derived from container size only via utils/teuResolver.js.
+        Container Type (Dry, Reefer, etc.) does not affect capacity.
+      - Location of capacity.service.js + function names.
+      - Cache key `capacity:round:<id>` + invalidation trigger list.
+      - New rule: any service mutating bookings/voyages/rounds MUST
+        invalidate the capacity cache for the affected round.
+    system-report.txt:
+      - Add capacity module to the module list.
+      - Add teuResolver utility note.
+    system-flow.txt:
+      - Add "Capacity Engine" block describing Round → Route → Segment →
+        Bookings pipeline with TEU derived from container size.
+
+  ROLLBACK VALIDATION: see §7. Verify each phase reverts cleanly in dev
+  before calling the sprint done.
+
+================================================================================
+  4. FULL FILE CHANGE LIST (PLANNED — no code yet)
+================================================================================
+
+  BACKEND — NEW:
+    backend/src/modules/capacity/capacity.service.js          Phase 1
+    backend/src/modules/capacity/capacity.controller.js       Phase 1
+    backend/src/modules/capacity/capacity.routes.js           Phase 1
+    backend/src/utils/teuResolver.js                          Phase 1
+
+  BACKEND — MODIFIED:
+    backend/src/app.js                                        Phase 1
+      Mount capacity router
+    backend/src/modules/bookings/booking.service.js           Phase 1 + Phase 4
+      Cache invalidation on create/update/softDelete
+      Pre-flight check on create (Phase 4, flag-gated)
+    backend/src/modules/bookings/bookingImport.service.js     Phase 1 + Phase 4
+      Cache invalidation on saveImport
+      Batch pre-flight simulation in previewImport (Phase 4)
+    backend/src/modules/voyages/voyage.service.js             Phase 1
+      Cache invalidation on status change
+    backend/src/modules/rounds/round.service.js               Phase 1
+      Cache invalidation on update
+    backend/src/modules/vessels/vessel.service.js             Phase 2
+      getVesselStats() delegates capacity to engine
+    backend/src/modules/reports/reports.service.js            Phase 3
+      New getRoundCapacityReport()
+    backend/src/modules/reports/reports.controller.js         Phase 3
+    backend/src/modules/reports/reports.routes.js             Phase 3
+    backend/src/modules/dashboard/dashboard.service.js        Phase 3
+      New getFleetUtilisation()
+    backend/src/config/env.js                                 Phase 4
+      ENABLE_CAPACITY_ENFORCEMENT var
+
+  FRONTEND — NEW:
+    frontend/src/services/capacity.service.js                        Phase 1
+    frontend/src/modules/vessels/components/CapacityTimeline.jsx     Phase 2
+    frontend/src/modules/vessels/components/CapacitySegmentTable.jsx Phase 2
+    frontend/src/modules/vessels/components/CapacityWarnings.jsx     Phase 2
+    frontend/src/modules/reports/RoundCapacityReport.jsx             Phase 3
+
+  FRONTEND — MODIFIED:
+    frontend/src/modules/vessels/VesselDetail.jsx             Phase 2
+      Wire the new active-round section; remove old doughnut
+    frontend/src/app/(dashboard)/dashboard/page.jsx           Phase 3
+      Fleet utilisation widget
+    frontend/src/modules/bookings/BookingForm.jsx             Phase 4
+      Warning banner on overbook (warn mode)
+    frontend/src/modules/bookings/BookingImport.jsx           Phase 4
+      overCapacity row style
+
+  NOT CHANGED (explicit list):
+    - No ContainerType model / validation / service / UI changes.
+      No teuFactor field. No backfill migration. No import/export changes.
+    - No booking, voyage, round, route, routeLeg, vessel schema changes.
+    - No tracking module changes.
+    - No new collections. No new indexes.
+
+================================================================================
+  5. API CONTRACT SUMMARY
+================================================================================
+
+  ADDED:
+    GET  /api/v1/capacity/round/:roundId
+    GET  /api/v1/capacity/vessel/:vesselId/active
+    POST /api/v1/capacity/preview                              (Phase 4)
+    GET  /api/v1/reports/round-capacity?roundId=               (Phase 3)
+    GET  /api/v1/dashboard/fleet-utilisation                   (Phase 3)
+
+  MODIFIED (backward-compatible extensions):
+    GET /api/v1/vessels/:id/stats
+      Adds activeRound (full engine payload or null).
+      Keeps capacityUsed / capacityPct at top level — VALUES now come from
+      engine (peak TEU, not sum of quantity). FIELD NAMES unchanged.
+
+  REMOVED FROM EARLIER PLANNING REVISIONS:
+    - No "current position" endpoint (tracking is out of scope).
+    - No ContainerType body/response changes.
+    - No teuFactor field anywhere in the API.
+
+================================================================================
+  6. PERFORMANCE CONSIDERATIONS
+================================================================================
+
+  Change from quantity to TEU:
+    Adds a size lookup on containerTypeId (small doc populate) plus one
+    resolveTEU() call and one multiplication per booking in memory. All
+    negligible cost. resolveTEU is a pure function with no I/O.
+
+  Worst realistic case per computeRoundCapacity call:
+    - 10 route legs, ~20 voyages, 500 bookings per round
+    - 5 parallel Mongo queries (all indexed)
+    - O(B) in-memory pass
+    - Estimated: < 100ms cold, < 5ms warm (cache hit)
+
+  Vessel active capacity: 1 round → single computeRoundCapacity call.
+    Cache TTL 60s → typical page view is a cache hit.
+
+  Fleet dashboard: bounded by active-round count (typically < 20).
+    Each call cache-warmed after first hit.
+
+  No additional caching or optimisation required beyond Sprint 020
+  conventions.
+
+  Deliberately no cache invalidation on container type updates. Rationale:
+  TEU is a pure function of the size string. Editing a ContainerType's size
+  is not blocked at the model level today, but since size is a hard enum and
+  bookings retain their containerTypeId reference, the engine picks up the
+  new size on the next cache miss (within 60s TTL) automatically. If a hard
+  business-rule change is ever made to the resolver code itself, a server
+  restart naturally purges the cache.
+
+================================================================================
+  7. ROLLBACK STRATEGY (PER PHASE)
+================================================================================
+
+  Phase 1 (engine + endpoints):
+    - Delete backend/src/modules/capacity/*.
+    - Delete backend/src/utils/teuResolver.js.
+    - Remove router mount in app.js.
+    - Revert cache invalidation lines in booking/voyage/round services
+      (pure additions — safe removal).
+    - No frontend impact yet, so no UI rollback needed.
+
+  Phase 2 (vessel detail redesign):
+    - Revert VesselDetail.jsx to prior version (git checkout).
+    - Revert vessel.service.js getVesselStats() to prior version.
+    - Delete new component files.
+    - Doughnut returns to sum-of-bookings behaviour. Data untouched.
+
+  Phase 3 (reports + dashboard):
+    - Delete the report and dashboard endpoints + frontend files.
+    - No user-generated data depends on these.
+
+  Phase 4 (pre-flight enforcement):
+    - Set ENABLE_CAPACITY_ENFORCEMENT unset in .env → warnings disabled.
+    - Hard rollback: remove pre-flight call site in booking.service.js and
+      the batch simulation in bookingImport.service.js.
+
+  Phase 5 (docs): text-only, trivial revert.
+
+  Cross-phase note:
+    No data migration. No schema changes. The engine is stateless. Zero
+    data-loss risk at every phase.
+
+================================================================================
+  8. TESTING STRATEGY (MANUAL, NO AUTOMATED SUITE)
+================================================================================
+
+  T1  Single-leg round (2 legs, 1 voyage, 1 segment)
+      Bookings: 10× 20ft, 5× 40ft
+      Expected: segment 1 onboardTEU = 10 + 10 = 20 TEU.
+
+  T2  Three-leg round with mixed sizes
+      Route: [P1, P2, P3, P4], vessel cap 100 TEU
+      Bookings:
+        B1: P1→P4  10× 40ft  = 20 TEU across all 3 segments
+        B2: P2→P3   5× 20ft  =  5 TEU on segment 2 only
+        B3: P1→P2  10× 40HC  = 20 TEU on segment 1 only
+      Expected:
+        Seg1 onboardTEU = 40, Seg2 onboardTEU = 25, Seg3 onboardTEU = 20
+        peakOnboardTEU = 40 on segment 1
+        utilisationPct: 40%, 25%, 20%
+
+  T3  Simultaneous load + discharge (mixed sizes)
+      Bookings:
+        B1: P1→P2   5× 40ft = 10 TEU (discharges at P2)
+        B2: P2→P3  10× 20ft = 10 TEU (loads at P2)
+      Expected at P2: dischargedTEU=10, loadedTEU=10, netChangeTEU=0
+      Seg1 onboardTEU=10, Seg2 onboardTEU=10 (same total, different mix)
+
+  T4  Overbooked segment (TEU exceeds capacity)
+      Vessel cap: 100 TEU
+      Bookings totalling 120 TEU on Seg 2.
+      Expected: segment 2 utilisationPct=120, remainingTEU=-20,
+        warnings contains SEGMENT_OVERBOOKED { segmentIndex:2, over:20 }
+
+  T5  Manual voyage jump (P1 → P3 direct, skipping P2)
+      Booking with pod=P2 exists.
+      Expected: warning BOOKING_INTO_UNCALLED_PORT, booking excluded.
+      Segment for P2 → P3 marked isManualJump=true.
+
+  T6  Container Type effect ignored
+      Two identical bookings — same size, same quantity — one Dry, one Reefer.
+      Expected: identical effectiveTEU. Confirms Container Type has zero
+      influence on capacity.
+
+  T7  Unrecognised size (defensive test)
+      Manually insert a booking whose containerTypeId.size = 'CUSTOM99'.
+      Expected: warning MISSING_TEU_MAPPING, effectiveTEU = quantity × 1,
+      calc proceeds. Booking not silently dropped.
+
+  T8  Vessel with capacity = null
+      Expected: onboardTEU real numbers, remainingTEU=null,
+      utilisationPct=null, UI shows em dash. peakOnboardTEU present.
+
+  T9  Empty active round
+      Expected: all segments onboardTEU=0, remainingTEU=vessel.capacity,
+      utilisationPct=0, no warnings.
+
+  T10 No active round
+      Expected: computeVesselActiveCapacity returns activeRound=null.
+      Frontend shows empty state message.
+
+  T11 Cache invalidation on booking mutation
+      Load vessel detail → verify 2nd call is cache hit.
+      Create a booking on the active round → verify next call reflects it
+      (cache was invalidated).
+
+  T12 Pre-flight preview (Phase 4, warn mode)
+      Nearly-full round; add a booking that would exceed capacity.
+      Expected: booking created, response has capacityWarning payload.
+
+  T13 Pre-flight preview (Phase 4, strict mode)
+      Same scenario → 400 error with bottleneck info; booking NOT created.
+
+  T14 Import batch pre-flight
+      Import file with 50 rows where cumulative TEU exceeds capacity on a
+      middle segment.
+      Expected: preview rows past the overflow point marked overCapacity.
+
+  T15 ContainerType soft-deleted after being used
+      Expected: warning DELETED_CONTAINER_TYPE, calc still proceeds using
+      the soft-deleted record's size.
+
+  T16 Booking with missing containerTypeId (defensive; model requires it)
+      Expected: warning MISSING_CONTAINER_TYPE, booking excluded.
+
+  SEED SCENARIOS (dev-only script):
+    backend/src/scripts/seed-capacity-scenarios.js  NEW
+      Scenario A: T2 dataset (three-leg mixed sizes)
+      Scenario B: T3 dataset (simultaneous load/discharge)
+      Scenario C: T4 dataset (overbooked)
+    Manual invocation only.
+
+================================================================================
+  9. RISKS AND OPEN QUESTIONS
+================================================================================
+
+  R1  Should Pending bookings be included in default utilisation?
+      Default: NO (Confirmed + Final Loading only).
+      Reports page exposes a toggle to include Pending for what-if planning.
+
+  R2  Route leg edits after bookings exist.
+      Engine emits BOOKING_PORT_NOT_IN_ROUTE and excludes booking.
+      No auto-repair. Ops must reconcile manually.
+
+  R3  Future TEU rule change (e.g. 45ft = 2.25 TEU industry adoption).
+      Single-file change to teuResolver.js. Server restart clears in-memory
+      cache. No data migration required.
+
+  R4  Unknown container sizes emerging in future.
+      Length-based regex bucketing already handles '20*', '40*', '45*' by
+      default. Truly non-numeric sizes need explicit resolver code change.
+      Documented single extension point.
+
+  R5  Multi-vessel rounds (deferred).
+      Current schema is 1 vessel per round. Engine assumes it. Out of scope.
+
+================================================================================
+  10. IMPLEMENTATION READINESS CHECKLIST
+================================================================================
+
+  [x] Data model reviewed — ZERO schema changes required
+  [x] Existing capacity logic located and documented
+  [x] All display sites for capacity identified (VesselDetail only, today)
+  [x] Algorithm designed with TEU-based math validated on 5 paper scenarios
+  [x] TEU derivation is size-only, Container Type ignored
+  [x] Cache strategy defined and aligned with Sprint 020 conventions
+  [x] Rollback plan defined per phase
+  [x] No breaking API changes
+  [x] No tracking dependency
+  [x] Scope focused on Current Active Round for vessel detail
+  [x] Extensible for future container sizes (single-function resolver)
+  [x] No ContainerType changes anywhere in the stack
+
+================================================================================
+  STATUS: COMPLETE — SPRINT 022 DONE
+================================================================================

@@ -1,0 +1,1492 @@
+================================================================================
+SYSTEM FLOW REFERENCE — Logistics & Shipping SaaS
+================================================================================
+PURPOSE:
+  Authoritative flow reference for this system.
+  Use to: understand how parts cooperate, trace data through the stack,
+  identify impact of changes, compare old vs new flows.
+
+LAST UPDATED: Sprint 046 Complete | Sprint 041 still planning-only, NOT implemented
+CURRENT STATUS: Sprints 001-036, 038-040, 042-046 shipped; 037 audit-only (no code);
+                041 planning approved, NOT yet implemented. F-01 to F-44 documented.
+ROOT: D:\web-desgin\freelance\logistics
+
+FORMAT CONVENTION:
+  ┌──────────────┐   box = component, module, screen, or collection
+  │  Component   │
+  └──────┬───────┘
+         │          arrow = data flow direction
+         ▼
+  [Field/Value]     bracket = field, value, or data payload
+  {Rule}            brace = business rule or validation
+  ◆ Decision        diamond = branch/decision
+  ✱ Auto            asterisk = auto-generated/computed
+  ✗ Block           cross = action blocked
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+  F-01  Authentication Flow  ← UPDATED Sprint020 (httpOnly cookie)
+  F-02  RBAC Permission Flow ← UPDATED Sprint020 (cache layer)
+  F-03  Master Data Setup Flow
+  F-04  Location Hierarchy Flow
+  F-05  Vessel Ownership Flow
+  F-06  Agent Contacts Flow
+  F-07  Expense Category Flow
+  F-08  Service & Route Flow
+  F-09  Route Leg Agent Flow
+  F-10  Round Creation & Voyage Auto-Generation Flow
+  F-11  Round Status Transition Flow
+  F-12  Voyage Lifecycle Flow
+  F-13  Booking Creation Flow
+  F-14  Booking Status & Guard Flow
+  F-15  Expense Creation Flow ← UPDATED Sprint020 (authenticated file serving)
+  F-16  Invoice Creation & Lifecycle Flow ← UPDATED Sprint020 (PDF export)
+  F-17  Tracking History Flow
+  F-18  Export Flow
+  F-19  Report Flow
+  F-20  Dashboard KPI Flow   ← UPDATED Sprint020 (SuperAdmin only, 90s cache)
+  F-21  Audit Log Flow       ← UPDATED Sprint020 (fire-and-forget)
+  F-22  Auto-Number Flow     ← UPDATED Sprint020 (batch mode)
+  F-23  Full End-to-End Operational Flow
+  F-24  Data Relationship Map
+  F-25  API Request/Response Contract
+  F-26  Frontend Data Fetching Pattern ← UPDATED Sprint020 (hooks, cookie auth)
+  F-27  Error Handling Flow
+  F-28  Seed Data Flow       ← UPDATED Sprint020 (always syncs passwords)
+  F-29  In-Memory Cache Flow ← NEW Sprint020 (Sprint 022/039: capacity+dashboard entries added;
+                                Sprint 041: agent/vessel-stats caching flagged, NOT yet added)
+  F-31  Dual-Layer Booking + Capacity Engine Flow ← NEW Sprint 021-032
+  F-32  Invoice & Payment Allocation Flow ← NEW Sprint 033
+  F-33  Voyage Profitability Report Flow (Round P&L Evolution) ← NEW Sprint 035-036
+  F-34  Expense Port-Scope Flow ← NEW Sprint 036
+  F-35  Reporting Consolidation Flow (dead-field fixes, Revenue rule unification) ← NEW Sprint 037-038
+  F-36  Dashboard Widget/Section Flow ← NEW Sprint 039
+  F-37  Bulk Export Update Flow (schema-drift fixes, manualBookings, metadata sheet) ← NEW Sprint 040
+  F-38  RBAC/Caching Gaps Flow (Sprint 041 audit — NOT yet implemented) ← NEW Sprint 041
+  F-39  Import Template/UX Convention/Round→Voyage Cascade Flow ← NEW Sprint 042
+  F-40  Voyage Display Order Flow (physical vessel flow, display-only) ← NEW Sprint 043
+  F-41  Invoice Booking Summary Flow (auto-include + BookingsSummaryCard) ← NEW Sprint 044
+  F-42  Discharge Import + Capacity Remaining-Onboard Flow ← NEW Sprint 045
+  F-43  Invoice Status Override Flow ← NEW Sprint 046
+  F-44  Flow Change Log
+
+================================================================================
+F-01 — AUTHENTICATION FLOW (Sprint020 — httpOnly Cookie)
+================================================================================
+
+  USER                FRONTEND                    BACKEND               DATABASE
+  ────                ────────                    ───────               ────────
+
+  MOUNT:
+                      AuthContext mounts
+                      useRef guard (fires once)
+                      GET /auth/me           ──►  auth middleware
+                                                  reads req.cookies.token
+                                             ──►  User.findOne (cache miss)
+                                                  ◆ valid token + user?
+                                                     YES → return safeUser
+                                                     NO  → 401 (no redirect)
+                      ◆ 200?
+                        YES → setUser, setIsAuthenticated(true)
+                              localStorage.setItem('user', JSON.stringify(u))
+                        NO  → setIsAuthenticated(false), localStorage.removeItem('user')
+                      setIsLoading(false)
+
+  LOGIN:
+  Enter email +  ──►  AuthContext.login()
+  password            POST /auth/login       ──►  validateLogin (no normalizeEmail)
+                                             ──►  authService.login(email, password)
+                                             ──►  User.findOne({email: lower})
+                                                  bcrypt.compare(password, hash)
+                                                  ◆ match?
+                                                     YES → signToken(userId)
+                                                           res.cookie('token', token, {
+                                                             httpOnly:true, secure:isProd,
+                                                             sameSite:isProd?'none':'strict',
+                                                             maxAge: 24h
+                                                           })
+                                                           return { user } only (no token in body)
+                                                     NO  → 401 (toast shown, no redirect)
+                      setUser(u)             ◄──
+                      setIsAuthenticated(true)
+                      localStorage.setItem('user')
+                      router.replace('/dashboard')
+
+  LOGOUT:
+  Click Sign out ──►  ConfirmModal shown
+  Confirm        ──►  AuthContext.logout()
+                      POST /auth/logout      ──►  res.clearCookie('token', {...})
+                      setUser(null)
+                      setIsAuthenticated(false)
+                      localStorage.removeItem('user')
+
+  COOKIE SETTINGS:
+    httpOnly: true               → not readable by JS (XSS protection)
+    secure:   NODE_ENV=production → HTTPS only in production
+    sameSite: production='none'  → allows cross-origin (VPS deployment)
+             development='strict' → same-site only in dev
+    maxAge:   24h
+
+  TOKEN RESOLUTION ORDER (auth.js middleware):
+    1. req.cookies.token (httpOnly cookie — primary)
+    2. Authorization: Bearer <token> (fallback — API tools, Postman, curl)
+
+  RATE LIMITING (auth routes only):
+    POST /auth/login, /auth/forgot-password, /auth/reset-password
+    20 requests per 15 minutes per IP
+    No rate limiting anywhere else in the app
+
+  PASSWORD RESET FLOW (unchanged):
+    POST /auth/forgot-password → generate resetToken → send email via SMTP
+    User clicks link → /reset-password?token=... (Suspense boundary)
+    POST /auth/reset-password → hash new password → save
+
+  INVITE FLOW (unchanged):
+    Admin creates user → generates inviteToken → sends invite email
+    User clicks link → /accept-invite?token=... (Suspense boundary)
+    POST /users/accept-invite → set password, activate account
+
+  401 INTERCEPTOR EXEMPTIONS (axios.js):
+    /auth/login         → wrong credentials show toast, not redirect
+    /auth/me            → expected 401 on login page (not logged in)
+    /auth/forgot-password, /auth/reset-password → public flows
+    All other 401s:     clear localStorage 'user' + window.location.href='/login'
+
+================================================================================
+F-02 — RBAC PERMISSION FLOW (Sprint020 — Cache Layer)
+================================================================================
+
+  Every protected API route:
+
+  Request
+    │
+    ▼
+  auth.js middleware
+    │  1. Read req.cookies.token (or Authorization header)
+    │  2. jwt.verify(token)
+    │  3. cache.get('user:<userId>') — TTL 60s
+    │     MISS → User.findOne + populate → cache.set('user:<userId>', user, 60s)
+    │  {SuperAdmin (roleId.isSystem=true) → bypasses ALL permission checks below}
+    ▼
+  rbac('moduleName') middleware
+    │  1. cache.get('perm:<roleId>:<moduleName>') — TTL 120s
+    │     MISS → Permission.findOne({roleId, module}) → cache.set(key, perm, 120s)
+    │  2. check permission.actions.hidden → 403 if true
+    │  3. map HTTP method to action (GET→read, POST→create, PUT→update, DELETE→delete)
+    │     or use actionOverride: rbac('bookings','import')
+    │  4. check permission.actions[action] → 403 if false
+    ▼
+  Controller function
+
+  CACHE INVALIDATION:
+    User cache:       user.service.update/softDelete/acceptInvite → cache.del('user:<id>')
+    Permission cache: permission.service.saveByRoleId → cache.delByPrefix('perm:<roleId>:')
+
+  FRONTEND RBAC:
+    PermissionContext.can(module, action) → boolean
+    PermissionContext.isHidden(module) → boolean
+    permissionsLoaded flag: true after /permissions/:roleId returns
+    SuperAdmin fast-path: isSuperAdmin=true → can() always true, isHidden() always false
+    GET /permissions/:roleId: NO rbac guard (self-service, Sprint019 fix)
+
+  DASHBOARD EXCEPTION:
+    Dashboard tab: checked by isSuperAdmin (roleId.isSystem) NOT can('dashboard','read')
+    Sidebar: if (href==='/dashboard' && !isSuperAdmin) return null
+    Dashboard page: enabled:isSuperAdmin on useQuery (API never called for non-admin)
+    Layout: non-SuperAdmin on /dashboard → redirect to FALLBACK_NAV first allowed page
+
+================================================================================
+F-03 — MASTER DATA SETUP FLOW (unchanged)
+================================================================================
+
+  Must complete before operations. Order:
+  1. Locations (Country→City→Port→Terminal)
+  2. Vessels
+  3. Agents (contacts[] array)
+  4. Container Types (code, size, type)
+  5. Expense Types + ExpenseCategories
+  6. Services + Routes + Route Legs
+  → Ready for operations
+
+================================================================================
+F-04 — LOCATION HIERARCHY FLOW (unchanged from Sprint013)
+================================================================================
+
+  CREATE ORDER: Country → City → Port → Terminal
+
+  CASCADING DROPDOWN:
+    Select Country → GET /locations/cities?countryId=X
+    Select City    → GET /locations/ports?cityId=X
+    Select Port    → GET /locations/terminals?portId=X
+    Select Terminal (optional)
+
+  USED IN: Route Legs, Bookings (POL/POD), Tracking (position), Voyages
+
+================================================================================
+F-05 — VESSEL OWNERSHIP FLOW (unchanged from Sprint013)
+================================================================================
+
+  OWNERSHIP TYPES: Owned | Chartered | Leased
+  charterStartDate/charterEndDate required for Chartered type only
+  imoNumber required, 7 numeric digits, unique
+  capacity field (TEU)
+  DELETE GUARD: blocked if vessel assigned to Active/Planned round
+
+================================================================================
+F-06 — AGENT CONTACTS FLOW (unchanged from Sprint013)
+================================================================================
+
+  contacts[] array: [{contactPerson, mobile, email, description}]
+  agentCode optional (sparse unique)
+  Primary contact = contacts[0]
+  Export: flattened to primaryContact/primaryMobile/primaryEmail/primaryDesc
+
+================================================================================
+F-07 — EXPENSE CATEGORY FLOW (unchanged from Sprint013)
+================================================================================
+
+  ExpenseType.category = free String
+  ExpenseCategory collection = managed suggestions
+  Routes: GET/POST /expense-types/categories BEFORE /:id
+
+================================================================================
+F-08 — SERVICE & ROUTE FLOW (unchanged)
+================================================================================
+
+  Service → Route (1:1 via serviceId:unique) → RouteLeg[]
+  Route save: full replace (delete old legs, insertMany new)
+  Minimum 2 legs required
+  BLOCKED if Active/Completed round uses this service
+
+================================================================================
+F-09 — ROUTE LEG AGENT FLOW (unchanged from Sprint013)
+================================================================================
+
+  Each RouteLeg has optional agentId (port call agent)
+  5th column in RouteEditor UI
+  Not yet used for auto-fill in bookings/invoices
+
+================================================================================
+F-10 — ROUND CREATION & VOYAGE AUTO-GENERATION FLOW (unchanged)
+================================================================================
+
+  round.service.create()
+    ├─► validate service active, has ≥2 legs, vessel not in active round
+    ├─► ✱ roundNumber via Counter 'round' → R000001
+    ├─► Round.create({..., status:'Planned'})
+    └─► generateVoyages(round, legs, service, userId)
+          For each leg[i] → leg[i+1]:
+            voyageNumber = {serviceCode}-{roundNumber}-{seq:02}
+            polId = legs[i].portId
+            podId = legs[i+1].portId
+          Voyage.insertMany([...]) then Round.voyageIds = [...]
+
+================================================================================
+F-11 — ROUND STATUS TRANSITION FLOW (unchanged)
+================================================================================
+
+  Planned → Active → Completed
+  Planned/Active → Cancelled
+  Completed/Cancelled = terminal
+
+================================================================================
+F-12 — VOYAGE LIFECYCLE FLOW (unchanged)
+================================================================================
+
+  Created by Round auto-generation (isManual=false) or manual POST (isManual=true)
+  Hard delete (no isDeleted) — $pull from Round.voyageIds
+  Delete blocked if non-Cancelled bookings exist
+  Manual voyage: POL/POD must be in service route legs
+  voyageNumber for manual: {serviceCode}-{roundNumber}-{maxSeq+1}
+
+================================================================================
+F-13 — BOOKING CREATION FLOW (Sprint020 — optimized port lookup)
+================================================================================
+
+  booking.service.create()
+    ├─► GET /bookings/voyage-ports/:voyageId
+    │     Sprint020: single aggregate pipeline
+    │     Voyage → $lookup routes → $lookup routelegs → $project portIds
+    │     (was: 3 sequential DB queries)
+    │     Returns port docs for POL/POD dropdown
+    ├─► {validate voyage not Cancelled/Completed}
+    ├─► {validate polId ≠ podId}
+    ├─► {validate both ports in voyage's route legs}
+    ├─► ✱ bookingNumber via Counter 'booking' → BK-000001
+    ├─► ✱ totalFreight = quantity × freightRate (server-computed, never from client)
+    └─► Booking.create({..., status:'Pending'})
+
+================================================================================
+F-14 — BOOKING STATUS & GUARD FLOW (unchanged from Sprint017)
+================================================================================
+
+  Pending → Confirmed → Final Loading → Cancelled
+  Pending/Confirmed → Cancelled
+  Final Loading → Cancelled only
+  Cancelled/Final Loading = LOCKED (no edits)
+  DELETE GUARD: blocked if Invoice exists for booking
+
+================================================================================
+F-15 — EXPENSE CREATION FLOW (Sprint020 — authenticated file serving)
+================================================================================
+
+  LINKAGE: Round OR Voyage (mutually exclusive, never both, never neither)
+
+  FILE UPLOAD (create/update):
+    Input: multipart/form-data with 'attachment' field
+    Middleware: compressUpload (multer → Sharp)
+      JPEG/PNG: resize max 1920px width, quality 80, no upscale
+      PDF:      pass through unchanged
+    Stored: /uploads/expenses/{timestamp}-{safe_filename}
+    DB:     attachmentUrl, attachmentOriginalName
+
+  FILE SERVING (Sprint020):
+    OLD: express.static('/uploads') — public, no auth
+    NEW: GET /api/v1/expenses/:id/attachment
+         auth middleware → rbac('expenses','read')
+         expense.service.getAttachmentPath(id) → {absPath, originalName, mimetype}
+         res.sendFile(absPath) with Content-Disposition header
+
+  ON UPDATE: new file → old file deleted via fs.unlinkSync
+  ON DELETE (hard): file removed from disk + DB record deleted
+
+================================================================================
+F-16 — INVOICE LIFECYCLE FLOW (Sprint020 — PDF export added)
+================================================================================
+
+  CREATION (unchanged):
+    Select booking → agentId + amount auto-fill from booking
+    ✱ invoiceNumber via Counter 'invoice' → INV-000001
+    {dueDate ≥ invoiceDate}
+
+  STATUS MACHINE (unchanged):
+    Draft → Issued → Paid (terminal)
+    Draft/Issued → Cancelled
+    Issued → Overdue → Paid or Cancelled
+
+  PDF EXPORT (Sprint020):
+    Click PDF button in InvoiceList row
+    GET /api/v1/invoices/:id/pdf
+      ← auth + rbac('invoices','read')
+      ← invoice.service.getByIdForPdf(id): deep populate
+         booking → polId/podId/voyageId → roundId → vesselId
+         agentId → contacts
+      ← invoicePdfGenerator.generateInvoicePdf(invoice): PDFKit
+         Layout: header bar, meta strip, billing block, line items table,
+                 totals (USD + AED at 3.692 rate), payment info, footer
+         Design: single accent #0D4A6B, pale blue alt rows, clean minimal
+      res.setHeader('Content-Disposition', 'attachment; filename="invoice-{num}.pdf"')
+      Frontend: downloadBlob(blob, filename) via URL.createObjectURL
+
+================================================================================
+F-17 — TRACKING HISTORY FLOW (unchanged)
+================================================================================
+
+  IMMUTABLE — no PUT, no DELETE. Every POST = new document.
+  Validation chain: Voyage → Round → Vessel chain, lastUpdate ≤ now
+  GET /tracking/latest: $group by voyageId → most recent per voyage
+  GET /tracking/:voyageId/history: paginated, lastUpdate DESC
+
+================================================================================
+F-18 — EXPORT FLOW (unchanged from Sprint014)
+================================================================================
+
+  SINGLE EXCEL: POST /export/excel {module, filters, selectedIds}
+  ZIP: POST /export/zip {exports:[{module,filters,selectedIds},…]}
+    buildZipStream(exportList, res)  [NOT exportZip]
+    All validation before res.setHeader()
+  BLOB ERROR: readBlobError(e) → text → JSON → message
+
+================================================================================
+F-19 — REPORT FLOW (unchanged from Sprint014)
+================================================================================
+
+  All reports: enabled:false + refetch() pattern
+  GET /reports/round-pnl, /voyage-performance, /bookings, /revenue, /expenses
+  All use MongoDB aggregations with preserveNullAndEmptyArrays:true
+
+================================================================================
+F-20 — DASHBOARD KPI FLOW (Sprint020 — SuperAdmin only + 90s cache)
+================================================================================
+
+  RESTRICTION:
+    Dashboard analytics tab is SuperAdmin-only by ROLE IDENTITY (roleId.isSystem=true)
+    NOT enforced via permission system — enforced by:
+      1. Sidebar: if (href==='/dashboard' && !isSuperAdmin) return null
+      2. Dashboard page: enabled:isSuperAdmin on useQuery
+      3. Layout: non-SuperAdmin on /dashboard → FALLBACK_NAV redirect
+
+  BACKEND (Sprint020 cache):
+    GET /api/v1/dashboard/stats
+    dashboard.service.getDashboardStats():
+      cache.get('dashboard:stats') — TTL 90s
+      MISS → computeStats():
+        15 countDocuments + 5 aggregates in Promise.all (parallel)
+        AuditLog.find() → last 10 entries
+      cache.set('dashboard:stats', stats, 90_000)
+      RETURN cached result
+
+  FRONTEND (Sprint020 optimizations):
+    Chart.js registration: targeted only (NOT ...registerables)
+      Saves ~120KB from bundle
+    useMemo on all 5 chart datasets (JSON.stringify comparison)
+    chart.update('none') when data changes (not destroy+recreate)
+    refetchInterval: 5 minutes (unchanged)
+
+  KPIs: activeVessels, activeRounds, plannedRounds, completedRounds,
+        totalVoyages, activeVoyages, totalBookings, confirmedBookings,
+        pendingBookings, cancelledBookings, totalAgents, draftInvoices,
+        overdueInvoices, paidInvoices, totalExpenses, revenue30d
+
+================================================================================
+F-21 — AUDIT LOG FLOW (Sprint020 — fire-and-forget)
+================================================================================
+
+  OLD:
+    auditLogger overrode res.json as async
+    Awaited AuditLog.create() BEFORE calling originalJson()
+    PROBLEM: every mutation delayed by audit write latency
+
+  NEW (Sprint020):
+    res.json captured (monkey-patched to read body) then called IMMEDIATELY
+    res.on('finish') fires after response is fully sent
+    setImmediate(() => AuditLog.create(...)) — fire-and-forget
+    If AuditLog.create fails: logger.error only, never affects response
+
+  DATA CAPTURED (unchanged):
+    userId, userEmail, action(CREATE/UPDATE/DELETE/LOGIN/LOGOUT)
+    module, recordId, recordNumber, oldValues, newValues
+    ipAddress (from req.ip — correct behind nginx with trust proxy:1)
+    userAgent, timestamp
+
+  PASSWORDS STRIPPED: password, resetToken, inviteToken fields removed before storing
+
+================================================================================
+F-22 — AUTO-NUMBER FLOW (Sprint020 — batch mode)
+================================================================================
+
+  COLLECTION: counters {_id, seq}
+  ATOMIC INCREMENT: findOneAndUpdate {$inc:{seq:1}} — safe for concurrent users
+
+  FORMATS:
+    'round'   → R000001
+    'booking' → BK-000001
+    'invoice' → INV-000001
+
+  SINGLE (unchanged):
+    const number = await nextNumber('booking');
+
+  BATCH (Sprint020 — for booking import):
+    const numbers = await nextNumberBatch('booking', count);
+    Atomically $inc by count → returns array of N formatted numbers
+    One DB round-trip for N numbers (was N round-trips)
+
+  PATH RULE:
+    require('../modules/counters/counter.model')  ← CORRECT
+    require('../counters/counter.model')           ← WRONG
+
+================================================================================
+F-23 — FULL END-TO-END OPERATIONAL FLOW (unchanged)
+================================================================================
+
+  SETUP: Locations → Vessels → Agents → CTs → ETs → Services + Routes
+  OPERATIONS:
+    Round (auto-voyages) → Bookings → Invoices
+                        → Expenses (round or voyage)
+                        → Tracking (append-only)
+  ANALYTICS:
+    Dashboard (SuperAdmin) → live KPIs + charts
+    Reports (Finance/Ops) → run-on-demand aggregations
+
+================================================================================
+F-24 — DATA RELATIONSHIP MAP (unchanged)
+================================================================================
+
+  MASTER: Country→City→Port→Terminal | Vessel | Agent | ContainerType | ExpenseType
+
+  SERVICE: Service → Route → RouteLeg[] → Port, Agent
+  OPERATIONAL:
+    Round → Voyage[] → Booking[] → Invoice
+                     → Expense[]
+                     → TrackingHistory[]
+    Round uses Vessel, Service
+
+  KEY REFS:
+    Booking → Voyage, Agent, Port(pol), Port(pod), ContainerType
+    Invoice → Booking → Agent(auto-fill)
+    Expense → Round OR Voyage, ExpenseType, Agent
+    TrackingHistory → Voyage, Round, Vessel, Service, Port, Terminal
+
+================================================================================
+F-25 — API REQUEST/RESPONSE CONTRACT (unchanged)
+================================================================================
+
+  ALL RESPONSES: {success, data, message, pagination?}
+  SUCCESS: 200 GET → success(res, data, msg, 200, paginate(...))
+           201 POST → created(res, data, msg)
+  ERRORS:  400 badRequest | 401 unauthorized | 403 forbidden | 404 notFound | 500 errorHandler
+  PAGINATION: ?page=1&limit=20 | default page=1, limit=20
+
+================================================================================
+F-26 — FRONTEND DATA FETCHING PATTERN (Sprint020)
+================================================================================
+
+  STANDARD QUERY:
+    useQuery({ queryKey:['module',filters], queryFn:() => service.list(filters).then(r=>r.data) })
+    DATA: data?.data || []
+    PAGINATION: data?.pagination
+
+  MUTATION:
+    useMutation({ mutationFn, onSuccess: () => { toast; invalidateQueries; router.push }, onError })
+
+  REPORT (run-on-demand):
+    useQuery({ queryKey:['report'], queryFn:fn, enabled:false })
+    const handleRun = () => refetch();
+
+  SHARED HOOKS (Sprint020 — in @/hooks/):
+    useAgents()           staleTime 5min  — agents dropdown
+    useVoyages(params)    staleTime 5min  — voyages dropdown
+    useServices()         staleTime 10min — services dropdown
+    useRounds(params)     staleTime 5min  — rounds dropdown
+    useContainerTypes()   staleTime 10min — CT dropdown
+    usePorts()            staleTime 10min — ports dropdown
+    useVoyagePorts(id)    staleTime 5min  — voyage-specific ports, enabled:!!voyageId
+
+  AUTH (Sprint020):
+    axios: withCredentials:true — browser sends httpOnly cookie automatically
+    NO manual token in request headers
+    401 response: exempt /auth/login + /auth/me + /auth/forgot + /auth/reset
+    Non-exempt 401: clear localStorage 'user' + window.location.href='/login'
+
+  FILE UPLOAD: FormData, multipart/form-data
+  BLOB EXPORT: responseType:'blob' + readBlobError(e) for error parsing
+  PDF DOWNLOAD: responseType:'blob' + URL.createObjectURL + a.click()
+
+================================================================================
+F-27 — ERROR HANDLING FLOW (Sprint020 — AppError class)
+================================================================================
+
+  BACKEND:
+    Preferred: throw new AppError(statusCode, message)  [Sprint020]
+    Legacy:    throw { status: 4XX, message: '...' }    [still works]
+    errorHandler reads err.statusCode || err.status
+    Production: 5xx messages hidden from response
+    All catch(err): if (err.status || err.statusCode) return error(res, msg, code); next(err)
+
+  FRONTEND:
+    Standard: toast.error(e.response?.data?.message || 'Default message')
+    Blob:     readBlobError(e) → text → JSON → message
+    404:      show not-found UI with back button
+
+================================================================================
+F-28 — SEED DATA FLOW (Sprint020 — password sync + require.main guard)
+================================================================================
+
+  COMMAND: npm run seed
+  NEVER: auto-run from server.js
+
+  GUARD (Sprint020):
+    if (require.main === module) {
+      connectDB() → seed() → mongoose.disconnect() → process.exit(0)
+    }
+    // When required from elsewhere: just exports the function, does nothing
+
+  PASSWORD SYNC (Sprint020):
+    Admin and demo users: password ALWAYS overwritten on every seed run
+    Not skipped if user exists — ensures .env changes take effect
+    Old behavior: skipped if user.findOne returned a result
+    New behavior: user.password = await bcrypt.hash(envPassword, 12); user.save()
+
+  MIGRATION (Sprint020):
+    migrate-dashboard-auditlogs.js runs before permissions step
+    Locks dashboard+auditLogs to hidden:true, read:false for all non-admin roles
+    Path: require('../../modules/permissions/permission.model') [from migrations/]
+
+  ORDER (unchanged):
+    1.Roles 2.Permissions(migration first) 3.Users 4.Countries→Cities→Ports→Terminals
+    5.Vessels 6.Agents 7.ContainerTypes 8.ExpenseTypes+Categories
+    9.Services+Routes+Legs 10.Rounds+Voyages 11.Bookings 12.Expenses 13.Invoices 14.Tracking
+
+================================================================================
+F-29 — IN-MEMORY CACHE FLOW (NEW Sprint020)
+================================================================================
+
+  FILE: backend/src/utils/cache.js
+  CLASS: TtlCache (Map-based, pure Node.js, no external deps)
+  INSTANCE: single shared module.exports = new TtlCache()
+
+  API:
+    cache.get(key)              → value | undefined (checks expiry on read)
+    cache.set(key, val, ttlMs)  → void  (default TTL 60s)
+    cache.del(key)              → void
+    cache.delByPrefix(prefix)   → void  (deletes all keys starting with prefix)
+    cache.flush()               → void
+    cache.size()                → number
+
+  ENTRIES:
+    'user:<userId>'          TTL 60s   ← user + populated roleId
+    'perm:<roleId>:<module>' TTL 120s  ← permission doc with actions object
+    'dashboard:stats'        TTL 90s   ← full stats+charts+activity object
+
+  INVALIDATION RULES:
+    user cache:
+      cache.del('user:<id>') called in:
+        user.service.update()
+        user.service.softDelete()
+        user.service.acceptInvite()
+
+    permission cache:
+      cache.delByPrefix('perm:<roleId>:') called in:
+        permission.service.saveByRoleId()
+      (deletes all module entries for that role at once)
+
+    dashboard cache:
+      TTL expiry only — no manual invalidation
+      New stats computed after 90s automatically
+
+  PERFORMANCE IMPACT:
+    Before: every request = 2-3 DB queries before business logic (User + Permission)
+    After:  cache hit = 0 DB queries; cache miss (first request, or after invalidation) = 2
+
+  UPGRADE PATH:
+    Swap Map for Redis client behind same API (get/set/del/delByPrefix)
+    No other code changes needed
+
+================================================================================
+F-31 — DUAL-LAYER BOOKING + CAPACITY ENGINE FLOW (Sprint 021-032)
+================================================================================
+
+  ┌──────────────┐         ┌──────────────┐
+  │ ManualBooking│         │   Booking    │
+  │  (Layer 1)   │         │  (Layer 2)   │
+  └──────┬───────┘         └──────┬───────┘
+         │ cargoRows[]            │ containerNumber (PRIMARY MATCH KEY)
+         │ no containerNumber     │ one booking = one container
+         │ commercial reservation │ operational, Excel-importable
+         ▼                        ▼
+  [totalFreight/totalTEU/totalUnits         [totalFreight — server-computed
+   — server-computed from cargoRows]         from freightRate, no quantity field]
+         │                        │
+         └───────────┬────────────┘
+                      ▼
+         capacity.service.js#computeRoundCapacity(roundId)
+           {Pending, Confirmed, Final Loading} count for BOTH layers
+           {Cancelled, isDeleted} excluded from BOTH layers
+           TEU = resolveTEU(containerType.size) — container TYPE ignored
+           Per-voyage onboard/discharge chain (NOT per-segment since
+           Sprint 023 — walks actual Voyage documents, one row per voyage)
+                      │
+                      ▼
+           resolveDischargeIdx() — forward-walk from load voyage's own
+           index (Sprint 028 fix) — a container loaded on voyage 1,
+           discharged on voyage 3, occupies voyages 1+2+3, not just voyage 1
+                      │
+                      ▼
+           {voyages[].onboardTEU, remainingTEU, utilisationPct,
+            loadedExact* (Sprint 029, presentation-only, does NOT feed
+            the onboard chain), capacityBeforeLoading (Sprint 038,
+            same presentation-only category)}
+                      │
+                      ▼
+    ⚠ round.voyageIds (denormalized array) is STILL what this engine
+      trusts for "which voyages belong to this round" — Sprint 035's
+      Voyage Profitability report deliberately uses the safer
+      Voyage.find({roundId}) instead, but the Capacity Engine itself
+      was NOT changed to match (Sprint 037 finding, Sprint 038
+      deliberate deferral — "reuse the engine, do not redesign it")
+
+  IMPORT FLOW (Layer 2 only, Round-scoped since Sprint 031):
+    Excel → preview(rows, agentId, roundId, importType)
+      each row resolves its OWN voyage from its own POL/POD text,
+      matched against the Round's own non-Cancelled voyages
+      (0 matches → 'unresolved', 2+ → 'ambiguous', manual override
+      always the exception path, never the default)
+    → save(...) → Booking.polId/podId ALWAYS copied from the
+      RESOLVED VOYAGE, never from the row's own text
+    Final Loading import → reconciliation scoped to the ENTIRE Round
+      (voyageId: {$in: roundVoyageIds}) + agentId — NOT one voyageId —
+      any booking for that agent, on any voyage in the round, not in
+      the manifest → Cancelled. An already-invoiced line item gets
+      flagged orphaned:true on the Invoice (Sprint 033), never silently.
+
+================================================================================
+F-32 — INVOICE & PAYMENT ALLOCATION FLOW (Sprint 033)
+================================================================================
+
+  ┌──────────────┐
+  │   Booking     │  status must be 'Final Loading' — the ENTIRE
+  │  (Layer 2)    │  invoiceable/reportable population, no exceptions
+  └──────┬────────┘
+         │ eligible bookings only (GET /invoices/eligible-bookings)
+         ▼
+  ┌──────────────────────────────────────────┐
+  │ Invoice.create({invoiceType, roundId|     │  invoiceType: 'Booking' (1 FL booking) |
+  │   voyageId, agentId, lineItems[]})        │  'Voyage' (subset on 1 voyage) |
+  └──────┬─────────────────────────────────────┘  'Round' (subset across the round)
+         │ Mongo session.withTransaction() — claim-checks
+         │ every bookingId against Invoice.exists({'lineItems.bookingId':id,
+         │ isDeleted:false, status:{$ne:'Cancelled'}}) so two concurrent
+         │ requests can't double-claim the same booking
+         ▼
+  [lineItems[] = HISTORICAL SNAPSHOT: bookingNumber, containerNumber,
+   voyageNumber, roundNumber, polName, podName, shipper, consignee,
+   commodity, freightAmount — captured NOW, never re-read from the
+   live Booking/Voyage/Round later. bookingId/voyageId/roundId kept
+   only as drill-down reference links.]
+         │
+         ▼
+  ┌──────────────┐
+  │   Payment     │  allocations[]: [{bookingId, amount}] — EXPLICIT,
+  │  .create()    │  never proportional/estimated. amount = sum(allocations).
+  └──────┬────────┘  Transaction re-checks each booking's already-allocated
+         │           total before accepting (no overpayment, no race).
+         ▼
+  recalcInvoiceStatus() — the ONLY place status becomes Partially
+  Paid/Paid/Overdue (paidAmount read as an EXACT sum of non-voided
+  Payment.allocations for that booking, never estimated)
+         │
+         ▼
+  Correction path: void the whole Payment (isVoided/voidedAt/voidedBy/
+  voidReason) + record a NEW one — a Payment is never edited or
+  partially voided.
+         │
+         ▼
+  ⚠ Payment void route (POST /invoices/:id/payments/:paymentId/void) is
+    gated by the default POST→'create' rbac mapping on `invoices`, not
+    update/delete — Sprint 041 flags this as an open decision, not a bug.
+
+  Booking↔Invoice ownership is ONE-SIDED: Invoice.lineItems is the only
+  place this relationship lives. Booking.model.js has NO invoiceId field
+  and never will (deliberately rejected — see sprints/033-sprint.txt).
+
+================================================================================
+F-33 — VOYAGE PROFITABILITY REPORT FLOW / ROUND P&L EVOLUTION (Sprint 035-036)
+================================================================================
+
+  GET /reports/round-pnl?roundId=&voyageId=  (voyageId OPTIONAL — same
+    route, same function, same page since Sprint 035's ADR-1: evolve
+    getRoundPnL/RoundPnlReport.jsx in place, never a second report)
+         │
+         ▼
+  Voyage.find({roundId}) — NOT round.voyageIds (ADR-4, deliberately the
+    safer of the two patterns already in the codebase)
+         │
+         ├──▶ Revenue: Booking.find({voyageId:{$in:...}, status:'Final
+         │      Loading', isDeleted:false}) — Layer 2 ONLY, grouped per
+         │      voyage: {polName, podName, totalTEU (resolveTEU, unchanged),
+         │      vgm (÷1000 → MT, Sprint 038 unit fix), totalRevenue}
+         │
+         ├──▶ Voyage Cost: Expense.find({$or:[{voyageId:{$in:...}},
+         │      {roundId}]}).populate('portId') filtered to
+         │      costClassification === 'Port Expense' (config-driven via
+         │      expenseTypeService.getCostClassificationMap(), NEVER a
+         │      hardcoded category string) — grouped per voyage (even in
+         │      Round scope) then per port (portId when present, else
+         │      legacy free-text `port` / 'Unspecified')
+         │
+         └──▶ Other Voyage Cost: same expense fetch, costClassification
+                !== 'Port Expense' — Hire Rate (a normal Expense,
+                ExpenseType='Hire Rate', voyageId-linked) × Voyage
+                Duration (eta−etd or ata−atd) = Total Hire Cost; Agency
+                Fees/Canal Dues/Stevedoring/Miscellaneous summed directly.
+                ⚠ COLLAPSED TO ONE SCOPE-WIDE TOTAL — never broken out
+                per voyage, even in Round scope (deliberate asymmetry
+                vs. Voyage Cost above — do not "fix" this to match).
+                bunkerCost: null always present, always excluded from
+                every Summary formula (reserved, not implemented).
+         │
+         ▼
+  summary: {totalRevenue, totalVoyageCost, netProfit, profitPerTEU,
+    profitMarginPct} — computed ONCE for the selected scope only.
+
+  ⚠ The SAME response also still carries getRoundPnL's PRE-Sprint-035
+    legacy top-level fields (totalRevenue/l1Revenue/l2Revenue/
+    bookingCount/totalQuantity — L1+L2 combined, any-non-Cancelled,
+    including one remaining dead $sum:'$quantity') — kept deliberately
+    for backward compatibility (Sprint 037 finding, Sprint 038 chose not
+    to remove them). Two different "total revenue" numbers coexist in
+    one payload by design.
+
+================================================================================
+F-34 — EXPENSE PORT-SCOPE FLOW (Sprint 036)
+================================================================================
+
+  ExpenseForm.jsx: Round → Voyage → Port (3-way, Port is a REFINEMENT
+    of Voyage scope, never a 4th independent field)
+         │
+         ▼
+  Port dropdown built CLIENT-SIDE from the already-selected Voyage's own
+    populated polId/podId — NO new "ports of a voyage" endpoint (ADR-3;
+    reusing /bookings/voyage-ports/:voyageId was rejected — it's
+    rbac('bookings')-gated and Finance Officer, who manages Expenses,
+    has no bookings permission)
+         │
+         ▼
+  POST/PUT /expenses  { roundId? | voyageId? | (voyageId+portId)? }
+         │
+         ▼
+  expense.service.js — three-way presence check (NEVER a client-sent
+    scope value — there isn't one):
+      portId present    → Port Expense: voyageId required, roundId
+                           forced null; server verifies portId equals
+                           that voyage's own polId OR podId (400 else)
+      voyageId only      → Voyage Expense: roundId forced null
+      roundId only       → Round Expense
+      none                → 400
+         │
+         ▼
+  Expense.portId (ref Port, default null) saved. Legacy free-text `port`
+    field is NEVER written by this flow again (kept read-only for
+    pre-Sprint-036 records).
+         │
+         ▼
+  expense.service.js#deriveScope({roundId,voyageId,portId}) — PURE
+    function, exported (Sprint 038), the ONLY place "what scope is
+    this expense" is ever answered — reused identically by
+    reports.service.js (Voyage Cost per-port grouping),
+    export.service.js (Sprint 040 Scope column), ExpenseList.jsx.
+    Scope is NEVER stored as its own field — inferring from
+    roundId/voyageId/portId makes an inconsistent state (e.g.
+    scope="Port" with portId=null) structurally impossible.
+
+================================================================================
+F-35 — REPORTING CONSOLIDATION FLOW (Sprint 037 audit → Sprint 038 fixes)
+================================================================================
+
+  Sprint 037 (audit, NO CODE) walked every reporting module and found:
+    dead $sum:'$quantity' in 3 reports (Booking.quantity removed
+      Sprint 025/026, always evaluates to 0)
+    "Revenue" meaning 2 different things across 5 code paths
+    Expense Report with zero Sprint 036 awareness
+    Round Capacity Report's round.voyageIds vs Voyage.find({roundId})
+      inconsistency (structural, not an active bug)
+    VGM shown in kg in one report, MT in another
+         │
+         ▼
+  Sprint 038 fixed everything EXCEPT the round.voyageIds item
+    (deliberately deferred — reuses the Capacity Engine unmodified):
+      getVoyagePerformance → dual-layer (bookingSource: L1|L2|combined,
+        bookingStatus: all|finalLoading), merge-in-JS shape copied
+        verbatim from getBookingReport (Sprint 034)
+      getRevenueReport → narrowed to Layer 2 + status:'Final Loading'
+        ONLY (was {$ne:'Cancelled'}) — this IS now the final Revenue
+        Report rule system-wide
+      getExpenseReport → +portId filter/populate, +scope (via
+        deriveScope(), reused not reimplemented), +classification-
+        grouped summary (reconciles exactly with getRoundPnL's totals)
+      getBookingRevenueDetails → vgm ÷1000 (kg→MT), matching getRoundPnL
+      Round Capacity Report page → rebuilt as one VoyageCapacityCard.jsx
+        per voyage (CapacitySegmentTable.jsx itself untouched, still
+        used on Vessel Details); +capacityBeforeLoading field (additive,
+        presentation-only, same category as Sprint 029's loadedExact)
+         │
+         ▼
+  Result: "Revenue" now means ONE thing everywhere except (a) listing
+    reports that intentionally show every status (Booking Report — a
+    deliberate, correct divergence, not the same defect) and (b)
+    getRoundPnL's own legacy fields (kept for backward compat, not a
+    template to copy elsewhere).
+
+================================================================================
+F-36 — DASHBOARD WIDGET/SECTION FLOW (Sprint 039)
+================================================================================
+
+  app/(dashboard)/dashboard/page.jsx
+         │
+         ▼
+  DashboardFilterProvider  (context: {roundId, voyageId, serviceId,
+    agentId, dateFrom, dateTo} — shared, read via useDashboardFilters())
+         │
+         ▼
+  Sections (Operations → Commercial → Financial → Bookings →
+    Performance → Alerts) — layout only, own no data
+         │
+         ▼
+  Widgets (one useQuery each, own loading/empty/error state — no
+    section-wide or page-wide blocking fetch)
+         │
+         ├──▶ Tier 1 (simple counts/status, no business rule) —
+         │      dashboard.service.js#computeStats(), GET /dashboard/stats,
+         │      90s cache (unchanged mechanism, corrected content: revenue
+         │      fields now Final-Loading-only, not Confirmed/any-status)
+         │
+         └──▶ Tier 2 (anything with a business rule) — calls the EXACT
+                existing report/service function, either backend-composed
+                (getFleetUtilisation calling computeRoundCapacity(), the
+                reference pattern) or the WIDGET calls the report endpoint
+                directly (e.g. RevenueWidget → reportsService.
+                getRevenueReport(), same call RevenueReport.jsx itself
+                makes) — the Dashboard NEVER runs a second, independent
+                aggregation for a number a Report already computes
+         │
+         ▼
+  Click-through / drill-down → router.push() to the exact existing
+    report/list page (Section 7 of sprints/039-sprint.txt) — zero new
+    destination pages created by this sprint.
+
+  Two small genuinely-new endpoints (both loop-existing-rounds +
+    call-existing-function, same shape as getFleetUtilisation):
+      GET /dashboard/port-activity          (fleet-wide Voyage Cost byPort)
+      GET /dashboard/missing-final-loading  (voyages overdue for FL)
+
+================================================================================
+F-37 — BULK EXPORT UPDATE FLOW (Sprint 040)
+================================================================================
+
+  ExportPanel.jsx (module tile grid, now 13 tiles incl. manualBookings)
+    + optional Date Range (dateFrom/dateTo — NOW actually read by
+      expenses/invoices/rounds/auditLogs; before this sprint the UI
+      claimed this worked but no fetchData() case honored it)
+         │
+         ▼
+  POST /export/excel | /export/zip  (routes/controller UNCHANGED —
+    every fix in this sprint is internal to export.service.js)
+         │
+         ▼
+  export.service.js#fetchData(moduleName, filters, selectedIds)
+    — direct Mongoose query per module (NOT a Report/aggregation reuse
+    — record-level dumps stay separate from the Report layer, ADR-3)
+    Column/field fixes brought each module back in sync with its
+    CURRENT schema: vessels (+13 Particulars fields), voyages (+etp,
+    +isManual), bookings (+containerNumber, +vgm, +dg, +imdgCode,
+    +containerStatus, +remarks, −dead quantity), expenses (+portId
+    populate, +scope via deriveScope()), expenseTypes
+    (+costClassification), invoices (+orphanedCount)
+         │
+         ▼
+  buildExcelBuffer() → addMetadataSheet() FIRST (new "Export Info"
+    worksheet: Export Name, Generated At, Generated By — from
+    req.user?.name||email, Applied Filters, Record Count) → then the
+    data worksheet, unchanged
+         │
+         ▼
+  buildZipStream(exportList, res, generatedBy) — ⚠ STILL SEQUENTIAL
+    (for...of + await per module) — Sprint 041 flags this as a
+    Promise.all candidate, NOT YET implemented.
+
+================================================================================
+F-38 — RBAC/CACHING GAPS FLOW (Sprint 041 audit — NOT yet implemented)
+================================================================================
+
+  Confirmed by direct code inspection while writing this reference
+  (2026-07-24) — every item below is a REAL, CURRENT gap, not a
+  hypothetical:
+
+  GET /permissions/:roleId
+         │  no check that req.params.roleId === caller's own roleId
+         ▼
+  returns ANY role's full permission matrix to ANY authenticated user
+         │
+         ▼ (compounded by)
+  roles/[id]/page.jsx — no <PageGuard> — renders whatever
+    /permissions/:roleId returns for any URL, to anyone logged in
+    (PUT/save still correctly blocked server-side by rbac('roles'))
+
+  agents/[id]/page.jsx, agents/new/page.jsx — same missing-<PageGuard>
+    pattern; backend endpoints (GET .../financial-account, POST
+    /agents) are still correctly rbac('agents')-gated — only the page
+    SHELL is unguarded.
+
+  agent.service.js#getAgentFinancialAccount, vessel.service.js#
+    getVesselStats — confirmed NO cache.js usage anywhere in either
+    file (grep-verified) — the two most expensive reads in the system
+    (Round→Voyage→Booking statement tree; dual-layer vessel KPI
+    aggregate) recompute from scratch on every page load.
+
+  expense.model.js — {voyageId:1} standalone index confirmed still
+    present alongside {voyageId:1,portId:1} (the compound index already
+    covers voyageId-only queries via prefix — the standalone one is
+    write overhead with zero query benefit).
+
+  export.service.js#buildZipStream — confirmed still `for (const item
+    of exportList) { await exportSingle(...) }`, not Promise.all.
+
+  FIX APPROACH (per sprints/041-sprint.txt ADRs — do not implement
+  ad hoc without re-reading these):
+    permission fix must be ADDITIVE (allow through when roleId ===
+      caller's own, else require rbac('roles')) — must NOT simply
+      remove the self-service exemption, or every non-admin user's
+      own PermissionContext load breaks (chicken-and-egg deadlock).
+    PageGuard fixes: wrap in the exact existing <PageGuard module="...">
+      convention every sibling page already uses — no new component.
+    Caching fixes: reuse cache.js's exact TTL pattern (keys
+      agent:financial:<agentId> / vessel:stats:<vesselId>, 60-90s),
+      invalidated at the same mutation call-sites capacity.service.js's
+      invalidateRoundCache() convention already establishes.
+
+================================================================================
+F-39 — IMPORT TEMPLATE / UX CONVENTION / ROUND→VOYAGE CASCADE FLOW (Sprint 042)
+================================================================================
+
+  BOOKING IMPORT TEMPLATE (moved server-side — SheetJS CE cannot style cells)
+
+  Frontend "Download Template" button
+         │
+         ▼
+  GET /bookings/import/template-columns   ← single authoritative column +
+         │                                   required-flag list (also feeds
+         │                                   the "Expected Excel Columns" card)
+         ▼
+  GET /bookings/import/template
+         │
+         ▼
+  bookingImport.service.js#buildImportTemplate() — ExcelJS workbook
+         │  headerRow.fill: required → FFF8D7DA (red), optional → FFFFF3CD (yellow)
+         │  header CELL only, never the whole column
+         ▼
+  Blank .xlsx download
+
+  ─────────────────────────────────────────────────────────────────────────────
+  ERROR TOAST (every mutation site, ~30 files)
+
+  onError(e)
+         │
+         ▼
+  showErrorToast(e, actionType)   actionType = 'save'|'update'|'delete'
+         │
+         ├─ fixed title: "Couldn't save/update/delete"
+         ├─ body: e.response?.data?.message
+         └─ IF e.response?.data?.errors present (express-validator {field,message}[])
+               → list each one under the title, not just "Validation failed"
+
+  ─────────────────────────────────────────────────────────────────────────────
+  ROUND → ACTIVE CASCADE
+
+  round.service.js#create() [data.status==='Active'] OR
+  round.service.js#update() [Planned→Active transition]
+         │
+         ▼
+  Voyage.findOne({roundId, status:'Scheduled'}).sort({sequence:1})
+         │
+         ▼ (first/lowest-sequence match only)
+  voyage.status = 'Departed'; invalidateRoundCache(roundId)
+         │
+         ✗ later legs (sequence 2,3,…) stay Scheduled — advanced individually
+         ✗ not reversible; no TrackingHistory entry created
+
+  ─────────────────────────────────────────────────────────────────────────────
+  VOYAGES TAB — GROUPED BY ROUND
+
+  voyage.service.js#list() sort: {sequence,etd} → {roundId:1, sequence:1}
+         │
+         ▼
+  VoyageList.jsx groups the (now-contiguous) flat list client-side:
+    [Round label] → [that round's voyages table] → gap → [next Round label] → …
+    Round column removed from the per-row table (redundant with the label)
+    Empty-after-filter Rounds hidden entirely; pagination unchanged (20/page)
+  Delete action added next to Edit — reuses RoundVoyageList.jsx's existing
+    ConfirmDialog + voyagesService.remove(id) pattern, gated can('voyages','delete')
+
+  Full spec: sprints/042-sprint.txt.
+
+================================================================================
+F-40 — VOYAGE DISPLAY ORDER FLOW (Sprint 043 — display-only, capacity untouched)
+================================================================================
+
+  GET /voyages/round-ports/:roundId  (existing endpoint, already used by
+                                       VoyageAddForm.jsx — no new endpoint)
+         │
+         ▼
+  [{sequence, portId, name, code}, …]   ← one entry per route leg, ordered
+         │
+         ▼
+  For each voyage: resolve (polLegPos, podLegPos) from its own polId/podId
+         │
+         ▼
+  frontend/src/utils/voyageDisplayOrder.js  ← ONE shared sort function
+         │
+         ├─ forward group (podLegPos >= polLegPos):
+         │    sort by podLegPos ASC, tie-break polLegPos DESC
+         └─ backward group (podLegPos < polLegPos, real round-trip case):
+              same rule, always appended AFTER the forward group
+         ▼
+  Re-sorted COPY of the array, handed to:
+    VoyageList.jsx (Voyage Tab, within each Round's group)
+    RoundVoyageList.jsx (Round Details → Voyages, on load + after adding one)
+    RoundCapacityReport.jsx / VesselDetail.jsx → CapacityTimeline.jsx /
+      VoyageCapacityCard.jsx / CapacitySegmentTable.jsx (Capacity Engine tables)
+
+  ✗ Voyage.sequence in the database: NEVER written by this flow
+  ✗ capacity.service.js's own computed array/onboard math: NEVER reordered
+    — only a rendering-time COPY of its already-finished output is re-sorted
+
+  Full spec: sprints/043-sprint.txt.
+
+================================================================================
+F-41 — INVOICE BOOKING SUMMARY FLOW (Sprint 044)
+================================================================================
+
+  invoiceType === 'Booking'
+         │
+         ▼
+  flRows.map(...) radio list — now wrapped in max-h-[360px] overflow-y-auto
+         (no other change to this branch)
+
+  invoiceType === 'Voyage' | 'Round'
+         │
+         ▼
+  GET /invoices/eligible-bookings  ← now populates containerTypeId,
+         │                            returns +containerType field
+         ▼
+  useEffect: selected = eligible.map(b => b.bookingId)   ← ALL, no exclusions
+         │                                                  (EligibleBookingsTable
+         │                                                  checkbox UI deleted)
+         ▼
+  BookingsSummaryCard.jsx  ← booking count + total revenue + per-container-
+         │                    type breakdown (count+amount), NO booking numbers
+         ▼
+  POST /invoices  { bookingIds: selected, … }   ← unchanged, always the full set
+
+  SAME BookingsSummaryCard.jsx REUSED (not reimplemented) by:
+    AgentFinancialAccount.jsx's Bookings tab (was flat BookingsLedger, deleted)
+    AgentFinancialAccount.jsx's Rounds tab → expandable Voyage-level bookings
+      (was per-booking BookingRow, deleted)
+  agent.service.js#getAgentFinancialAccount also gained the same
+    containerTypeId populate + containerType field.
+
+  Full spec: sprints/044-sprint.txt.
+
+================================================================================
+F-42 — DISCHARGE IMPORT + CAPACITY REMAINING-ONBOARD FLOW (Sprint 045)
+================================================================================
+
+  Agent + Round + Voyage (REQUIRED) + importType='discharge' + Excel file
+         │
+         ▼
+  bookingImport.service.js#previewDischargeImport({rows,agentId,voyageId})
+         │
+         ├─ row's own POL/POD text checked against the selected voyage's
+         │    actual ports — mismatch = hard error
+         ├─ containerNumber matched against Round+Agent Final Loading bookings
+         │    (same matching key as every other import — no BOL field exists)
+         ├─ matched booking on a DIFFERENT voyage in the Round → error
+         └─ matched booking not 'Final Loading' → error
+         ▼
+  bookingImport.service.js#saveDischargeImport({rows,agentId,voyageId,createdBy})
+         │
+         ├─ matched rows        → Booking.dischargeStatus = 'Discharged'
+         ├─ NOT in manifest,
+         │    same agent+voyage → Booking.dischargeStatus = 'Remaining'
+         │    (scoped to ONE voyage — narrower than Final Loading's
+         │    round-wide reconciliation sweep)
+         └─ invalidateRoundCache(voyage.roundId)
+         ▼
+  Booking List "Discharged"/"Remaining" tabs
+    booking.service.js#list({dischargeStatus}) — same filter bar as Operational tab
+
+  CAPACITY ENGINE — only the discharge EVENT SOURCE changed, math untouched:
+  capacity.service.js Step C: l2Event.stuckRemaining = (booking.dischargeStatus==='Remaining')
+         │
+         ▼
+  Step E: IF stuckRemaining → remainingOnboardTEU[dischargeVoyageIdx] += teu
+          ELSE              → dischargedTEU[dischargeVoyageIdx] += teu   (unchanged path)
+         │
+         ▼
+  remainingOnboardTEU keeps that TEU inside onboardTEU at every LATER voyage
+  (the onboard recurrence onboardStart[n]=onboardTEU[n-1] itself: UNCHANGED)
+         │
+         ▼
+  New warning: REMAINING_ONBOARD_PAST_DISCHARGE (voyage-scoped)
+         │
+         ▼
+  Red highlight in CapacitySegmentTable.jsx / CapacityTimeline.jsx /
+  VoyageCapacityCard.jsx / CapacityWarnings.jsx wherever remainingOnboardTEU > 0
+
+  ✗ previewImport/saveImport (Booking + Final Loading import types): untouched
+  ✗ resolveDischargeIdx, l1Events, teuResolver.js: untouched
+
+  Full spec: sprints/045-sprint.txt.
+
+================================================================================
+F-43 — INVOICE STATUS OVERRIDE FLOW (Sprint 046)
+================================================================================
+
+  PUT /invoices/:id
+         │
+         ▼
+  invoice.controller.js#update()
+         │
+         ▼
+  canOverride = await rbac.hasPermission(req, 'invoices', 'override')
+         (new companion fn on the rbac() factory — same cached lookup,
+         non-gating, additive on top of the route's own rbac('invoices') gate)
+         │
+         ▼
+  invoice.service.js#update(id, data, updatedBy, canOverride)
+         │
+         ◆ canOverride === false (default, everyone without the grant)
+         │    │
+         │    ├─ paidAmount>0 or status Paid|Cancelled → 400 "cannot be modified"
+         │    └─ status change → validateManualTransition() whitelist enforced
+         │         (Draft→[Issued,Cancelled], Issued→[Cancelled] only)
+         │
+         ◆ canOverride === true (invoices:override permission, or SuperAdmin)
+              │
+              ├─ paidAmount>0 / Paid|Cancelled lock: SKIPPED — whole invoice editable
+              └─ status → ANY of the 6 INVOICE_STATUS values, no whitelist check
+
+  PermissionMatrix.jsx  ← new "Override" toggle column, any module row,
+                           only invoice.controller.js ever consults it
+
+  InvoiceForm.jsx#EditInvoiceForm: locked = !canOverride && wouldBeLocked;
+    allowedNext = canOverride ? INVOICE_STATUS : narrow-whitelist-per-status;
+    pink banner shown whenever canOverride && wouldBeLocked
+
+  ✗ recalcInvoiceStatus() (payment-driven, Partially Paid/Paid/Overdue): UNTOUCHED
+    — a later payment create/void still runs it and MAY overwrite a manual
+    override; this is intentional, not a bug (an override is a point-in-time
+    correction, not a sticky flag)
+
+  Full spec: sprints/046-sprint.txt.
+
+================================================================================
+F-44 — FLOW CHANGE LOG
+================================================================================
+
+  FORMAT: Sprint | Flow | What Changed | Old → New | Impact Files
+
+  ─────────────────────────────────────────────────────────────────────────────
+  Sprint 013 | F-05 Vessel / F-06 Agent / F-07 ExpenseCategory / F-08 Routes
+    See original system-flow.txt Sprint013 entries — still valid, unchanged.
+
+  Sprint 014 | F-19 Reports / F-20 Dashboard / F-18 Export ZIP
+    See original system-flow.txt Sprint014 entries — still valid, unchanged.
+
+  Sprint 016 | F-12 Voyage
+    Added: manual voyage create (POST /voyages), voyageCode, ETP field, isManual flag
+    Added: delete voyage (DELETE /voyages/:id, hard delete, blocked if has bookings)
+
+  Sprint 017 | F-13/F-14 Booking
+    Removed: slotCount field from booking model, import, export, reports
+    Added: carrierName (optional), 'Final Loading' status
+    Changed: shipper/consignee now optional (not required)
+    Final Loading import: marks saved rows FL + cancels others on same voyage
+
+  Sprint 018 | F-15 Tracking / Vessel Detail
+    Added: GET /tracking list endpoint with 7 filters
+    Added: GET /vessels/:id/stats endpoint
+    Changed: tracking/page.jsx from split-panel to filterable table + modal
+    Added: /vessels/:id VesselDetail page (was VesselForm edit)
+
+  Sprint 019 | F-02 RBAC
+    Added: permissionsLoaded flag in PermissionContext
+    Added: SuperAdmin fast-path (skip DB fetch)
+    Fixed: GET /permissions/:roleId had rbac('roles') guard → deadlock for non-admin
+           Removed the guard (self-service endpoint)
+    Added: import + export action fields to Permission model
+    Added: PageGuard + Can components for all 26 pages
+    Changed: Dashboard module added to MODULES[], SuperAdmin-only by role identity
+
+  ─────────────────────────────────────────────────────────────────────────────
+  Sprint 020 | F-01 Authentication
+    Changed:  JWT storage — localStorage → httpOnly cookie
+    Old:      login returns {token, user}; frontend stores in localStorage; axios reads it
+    New:      login sets cookie server-side; response has {user} only; browser sends cookie auto
+    Added:    GET /auth/me for session rehydration on mount
+    Changed:  AuthContext: useRef guard, /auth/me instead of localStorage token check
+    Changed:  axios: withCredentials:true, removed request interceptor
+    Added:    auth-only rate limiting (20 req/15min on 3 routes)
+    Impact:   auth.controller.js, auth.routes.js, auth.validation.js,
+              middleware/auth.js, frontend/axios.js, frontend/AuthContext.jsx,
+              frontend/(auth)/login/page.jsx, server.js (cookieParser)
+
+  Sprint 020 | F-02 RBAC
+    Changed:  Auth + permission lookups now cache-first
+    Old:      every request = User.findOne + Permission.findOne (2-3 DB queries)
+    New:      cache hit = 0 DB queries; TTL 60s (user) 120s (permission)
+    Added:    cache.js TtlCache, invalidation in user.service + permission.service
+    Impact:   middleware/auth.js, middleware/rbac.js, utils/cache.js,
+              modules/users/user.service.js, modules/permissions/permission.service.js
+
+  Sprint 020 | F-15 Expense File Serving
+    Changed:  File access
+    Old:      express.static('/uploads') — public URL, no auth, file path guessable
+    New:      GET /api/v1/expenses/:id/attachment — auth + rbac required
+    Added:    expense.service.getAttachmentPath(), expense.controller.getAttachment
+    Impact:   server.js (removed static), expense.routes.js, expense.controller.js, expense.service.js
+
+  Sprint 020 | F-15 Image Compression
+    Added:    Sharp compression on upload
+    Old:      multer saved raw file (could be 10MB JPEG)
+    New:      compressUpload = multer → Sharp (JPEG: 1920px/q80, PNG: compressionLevel 8)
+              PDF: passthrough
+    Impact:   middleware/upload.js, expense.routes.js, package.json (+sharp)
+
+  Sprint 020 | F-16 Invoice PDF
+    Added:    GET /invoices/:id/pdf endpoint
+    Tool:     PDFKit (pdfkit ^0.15.0)
+    Design:   clean minimal, one accent #0D4A6B, pale blue alt rows
+    Data:     deep populate booking→voyage→vessel→POL/POD, agent contacts
+    Frontend: downloadBlob via URL.createObjectURL in InvoiceList.jsx
+    Impact:   invoice.routes.js, invoice.controller.js, invoice.service.js,
+              utils/invoicePdfGenerator.js, frontend/invoices.service.js, InvoiceList.jsx
+
+  Sprint 020 | F-20 Dashboard Cache
+    Added:    90s in-memory cache for getDashboardStats()
+    Old:      15 DB queries per call, every 5 minutes per admin
+    New:      cache miss → compute + cache 90s; hit = instant
+    Impact:   modules/dashboard/dashboard.service.js, utils/cache.js
+
+  Sprint 020 | F-21 Audit Logger
+    Changed:  Audit write timing
+    Old:      res.json overridden as async, awaited AuditLog.create before response
+    New:      res.json called immediately; AuditLog.create fires in setImmediate after finish
+    Impact:   middleware/auditLogger.js
+
+  Sprint 020 | F-22 Auto-Number Batch
+    Added:    nextNumberBatch(key, count) — one DB round-trip for N numbers
+    Used by:  bookingImport.service.js for bulk import
+    Impact:   utils/autoNumber.js
+
+  Sprint 020 | F-26 Frontend Data Fetching
+    Added:    7 shared hooks in @/hooks/ (useAgents, useVoyages, useServices,
+              useRounds, useContainerTypes, usePorts, useVoyagePorts)
+    Changed:  QueryClient: module singleton → useState inside Providers
+    Changed:  staleTime default: 30s → 60s
+    Added:    Error boundaries: app/error.jsx + app/(dashboard)/error.jsx
+    Changed:  Chart.js: ...registerables → targeted registration (saves ~120KB)
+    Changed:  Chart data: useMemo + chart.update() (not destroy+recreate)
+    Impact:   Providers.jsx, dashboard/page.jsx, frontend/package.json
+
+  Sprints 021-032 | F-31 Dual-Layer Booking + Capacity Engine
+    Added:    ManualBooking (Layer 1), voyage-anchored Capacity Engine,
+              containerNumber as Booking's primary match key, Round-scoped
+              multi-voyage import resolution (Sprint 031)
+    Removed:  Booking.quantity (Sprint 025/026 — one booking = one container)
+    Changed:  POL/POD always server-derived from the resolved Voyage (Sprint 030)
+    Impact:   manualBooking.model.js (new), booking.model.js, capacity.service.js
+              (new), bookingImport.service.js, teuResolver.js (new)
+
+  Sprint 033 | F-32 Invoice & Payment Allocation
+    Changed:  Invoice restructured from 1:1-booking to header+lineItems[]
+              (invoiceType Booking|Voyage|Round)
+    Added:    Payment.allocations[] (explicit per-booking, never proportional),
+              Agent Financial Account (getAgentFinancialAccount)
+    Impact:   invoice.model.js (restructured), payment.model.js (new),
+              agent.service.js, migrate-invoice-v2.js (one-time migration)
+
+  Sprint 035-036 | F-33/F-34 Voyage Profitability + Expense Port Scope
+    Changed:  getRoundPnL/RoundPnlReport.jsx extended in place (+voyageId,
+              +summary/+voyages[]/+otherVoyageCost) — legacy fields KEPT
+    Added:    Expense.portId (Round/Voyage/Port scope, inferred via
+              deriveScope(), never stored), ExpenseCategory.costClassification
+    Impact:   reports.service.js, expense.model.js, expense.service.js,
+              expenseCategory.model.js, ExpenseForm.jsx, RoundPnlReport.jsx
+
+  Sprint 037-038 | F-35 Reporting Consolidation
+    Fixed:    dead $sum:'$quantity' (2 of 3 instances — 1 kept deliberately),
+              Revenue-definition drift (getRevenueReport narrowed to
+              Layer2+Final Loading), Expense Report Sprint 036 parity,
+              VGM kg→MT standardization
+    Added:    capacityBeforeLoading (additive), VoyageCapacityCard.jsx
+    Deferred: round.voyageIds vs Voyage.find({roundId}) in capacity.service.js
+              (deliberate — "reuse the engine, do not redesign it")
+    Impact:   reports.service.js, capacity.service.js (1 additive field only),
+              RoundCapacityReport.jsx, VoyagePerformanceReport.jsx,
+              RevenueReport.jsx, ExpenseReport.jsx
+
+  Sprint 039 | F-36 Dashboard Widget/Section Rebuild
+    Changed:  Monolithic dashboard page → DashboardFilterContext + 6
+              Sections + independent Widgets (own query/loading state each)
+    Fixed:    revenue30d/monthlyTrend/revByService (was Confirmed/any-status
+              → now Final Loading); totalBookedTEU (dead field) → totalLoadedTEU
+    Added:    GET /dashboard/port-activity, GET /dashboard/missing-final-loading
+    Impact:   dashboard.service.js, dashboard.routes.js,
+              frontend/src/modules/dashboard/** (new directory tree)
+
+  Sprint 040 | F-37 Bulk Export Update
+    Fixed:    schema drift across vessels/voyages/bookings/expenses/
+              expenseTypes/invoices (missing new fields, 1 dead column removed)
+    Added:    manualBookings export module (13th), Export Info metadata sheet,
+              working Date Range filter (expenses/invoices/rounds/auditLogs)
+    Not done: buildZipStream still sequential (flagged, Sprint 041)
+    Impact:   export.service.js, export.controller.js, ExportPanel.jsx,
+              BookingList.jsx (ExportButton wiring)
+
+  Sprint 041 | F-38 RBAC/Caching Gaps (PLANNING APPROVED, NOT YET IMPLEMENTED)
+    Found:    GET /permissions/:roleId missing caller-scoping check;
+              roles/[id], agents/[id], agents/new missing <PageGuard>;
+              getAgentFinancialAccount/getVesselStats uncached; redundant
+              Expense {voyageId:1} index; sequential buildZipStream
+    Status:   Audit + ADRs complete, ZERO code written as of this entry —
+              see sprints/041-sprint.txt before implementing any fix
+    Impact:   (when implemented) permission.controller.js, roles/[id]/page.jsx,
+              agents/[id]/page.jsx, agents/new/page.jsx, agent.service.js,
+              vessel.service.js, expense.model.js, export.service.js
+
+  Sprint 042 | F-39 Import Template/UX Convention/Round→Voyage Cascade
+    Added:    GET /bookings/import/template (ExcelJS, colored headers),
+              GET /bookings/import/template-columns (single source of truth);
+              utils/errorToast.jsx#showErrorToast() used by ~30 mutation sites;
+              Round→Active cascades its first Scheduled voyage to Departed;
+              Voyages tab grouped-by-Round + Delete action
+    Fixed:    ServiceForm.jsx's text-red-500 → text-red-400; every
+              (optional)/(opt) label variant removed system-wide
+    Impact:   bookingImport.service.js/.controller.js, round.service.js,
+              voyage.service.js (sort), VoyageList.jsx, utils/errorToast.jsx,
+              ~20 form modules (asterisk convention)
+
+  Sprint 043 | F-40 Voyage Display Order (display-only)
+    Added:    utils/voyageDisplayOrder.js — ONE shared sort function
+              (forward voyages by podLegPos asc/polLegPos desc tie-break;
+              backward/round-trip voyages always last)
+    Impact:   VoyageList.jsx, RoundVoyageList.jsx, RoundCapacityReport.jsx,
+              VesselDetail.jsx — all re-sort a rendering-time COPY only;
+              Voyage.sequence and capacity.service.js's own array untouched
+
+  Sprint 044 | F-41 Invoice Booking Summary
+    Changed:  Voyage/Round invoices auto-include EVERY eligible booking
+              (EligibleBookingsTable checkbox UI deleted); Booking-type radio
+              list gained max-h-[360px] overflow-y-auto
+    Added:    components/ui/BookingsSummaryCard.jsx (count/revenue/per-
+              container-type) — used by InvoiceForm.jsx, AgentFinancialAccount's
+              Bookings tab (BookingsLedger deleted) and Rounds tab's Voyage-
+              level bookings (BookingRow deleted); +containerType field on
+              getEligibleBookings/getAgentFinancialAccount (additive)
+    Impact:   invoice.service.js, agent.service.js, InvoiceForm.jsx,
+              AgentFinancialAccount.jsx, BookingsSummaryCard.jsx (new)
+
+  Sprint 045 | F-42 Discharge Import + Capacity Remaining-Onboard
+    Added:    Booking.dischargeStatus/dischargedAt; importType='discharge'
+              (previewDischargeImport/saveDischargeImport, Voyage-required,
+              match-only, no bookings created); "Discharged"/"Remaining"
+              Booking List tabs; capacity.service.js remainingOnboardTEU[]
+              (diverts 'Remaining' TEU out of dischargedTEU, keeps it in
+              onboardTEU at later voyages) + REMAINING_ONBOARD_PAST_DISCHARGE
+              warning + red UI highlight across all 4 capacity components
+    Not done: previewImport/saveImport (Booking/Final Loading types),
+              resolveDischargeIdx, l1Events, teuResolver.js — all untouched
+    Impact:   booking.model.js/.service.js/.controller.js,
+              bookingImport.service.js/.controller.js, capacity.service.js,
+              BookingImport.jsx, BookingList.jsx, 4 capacity UI components
+
+  Sprint 046 | F-43 Invoice Status Override
+    Added:    Permission actionSchema +override (Boolean); rbac.js
+              +hasPermission(req,module,action) (non-gating, programmatic);
+              invoice.service.js#update() skips the paidAmount/Paid|Cancelled
+              lock AND the MANUAL_TRANSITIONS whitelist when canOverride;
+              PermissionMatrix.jsx +Override toggle column
+    Unchanged: recalcInvoiceStatus() (payment-driven engine) — a later
+              payment event can still overwrite a manual override, by design
+    Impact:   permission.model.js, rbac.js, invoice.service.js/.controller.js/
+              .validation.js, PermissionMatrix.jsx, InvoiceForm.jsx
+
+================================================================================
+HOW TO USE THIS FILE WHEN MAKING A CHANGE
+================================================================================
+
+  1. Identify affected flow(s) in Table of Contents
+  2. Read the full flow section
+  3. Use F-24 to identify connected flows
+  4. Write change record in F-44:
+       Sprint | Flow | Changed | Old → New | Impact Files
+  5. Compare OLD FLOW vs NEW FLOW step-by-step before implementing
+  6. Implement: Backend (Model→Service→Controller→Routes→server.js) then Frontend
+  7. Update the relevant F-XX section to reflect new current state
+
+================================================================================
+END OF SYSTEM FLOW REFERENCE
+Last updated: Sprint 046 Complete (Sprint 041 still planning-only, NOT implemented) — 44 flows documented
+================================================================================
+================================================================================

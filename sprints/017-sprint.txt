@@ -1,0 +1,241 @@
+================================================================================
+SPRINT 017 — BOOKING MODEL REFINEMENTS + FINAL LOADING PURGE
+================================================================================
+
+STATUS: ⏳ Pending
+
+GOAL:
+  1. Booking model: make Shipper and Consignee optional (not required)
+  2. Booking model: remove slotCount field entirely (frontend + backend)
+  3. Booking model: add new carrierName field (optional, free text)
+  4. Import/Final Loading: after saving, soft-delete any existing voyage
+     bookings NOT present in the imported file
+  5. Keep all other booking behaviour unchanged
+
+================================================================================
+CHANGE DETAILS
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+CHANGE 1 — Shipper and Consignee: required → optional
+────────────────────────────────────────────────────────────────────────────────
+
+REASON: Not all bookings have confirmed shipper/consignee at time of entry.
+
+BACKEND:
+  booking.model.js:
+    shipper:   { type: String, trim: true, default: null, maxlength: 200 }
+    consignee: { type: String, trim: true, default: null, maxlength: 200 }
+    (remove: required: true from both)
+
+  booking.validation.js validateCreate:
+    shipper  → body('shipper').optional({nullable:true,checkFalsy:true}).trim().isLength({max:200})
+    consignee→ body('consignee').optional({nullable:true,checkFalsy:true}).trim().isLength({max:200})
+
+  booking.validation.js validateUpdate:
+    shipper  → body('shipper').optional({nullable:true,checkFalsy:true}).trim().isLength({max:200})
+    consignee→ body('consignee').optional({nullable:true,checkFalsy:true}).trim().isLength({max:200})
+
+  booking.service.js:
+    No change needed — shipper/consignee are not validated in service layer beyond model
+
+  bookingImport.service.js validateRow():
+    REMOVE these two lines:
+      if (!row.shipper)   errors.push('Shipper is required');
+      if (!row.consignee) errors.push('Consignee is required');
+    Shipper and Consignee become optional in import too.
+
+FRONTEND:
+  BookingForm.jsx:
+    Shipper field:   remove required: 'Shipper is required' from register() rules
+                     remove FieldLabel required prop
+                     placeholder stays: "Shipper company name (optional)"
+    Consignee field: same — remove required rule, update placeholder
+
+  BookingImport.jsx (preview table):
+    No structural change — cells remain editable, just not red-errored if empty
+
+────────────────────────────────────────────────────────────────────────────────
+CHANGE 2 — slotCount: removed entirely
+────────────────────────────────────────────────────────────────────────────────
+
+REASON: Business no longer tracks slot counts separately from quantity.
+
+BACKEND:
+  booking.model.js:
+    REMOVE:  slotCount: { type: Number, required: true, min: 1 }
+
+  booking.validation.js:
+    validateCreate: REMOVE body('slotCount') line
+    validateUpdate: REMOVE body('slotCount') line
+
+  booking.service.js update():
+    The slotCount field will naturally drop out since it's not in the model.
+    No other changes needed.
+
+  bookingImport.service.js:
+    validateRow():   REMOVE slotCount validation check
+    previewImport(): REMOVE slotCount from returned row object
+    saveImport():    REMOVE slotCount from Booking.create() payload
+                     REMOVE slotCount from update block
+
+  export/export.service.js — COLUMNS.bookings:
+    REMOVE: { header: 'Slot Count', key: 'slotCount', ... } column
+
+FRONTEND:
+  BookingForm.jsx:
+    REMOVE:  Slot Count input field from the grid (was in the 3-col grid with Qty and Rate)
+    CHANGE:  grid becomes 2 columns: Quantity | Freight Rate (no more Slot Count)
+    REMOVE:  slotCount from defaultValues
+    REMOVE:  slotCount from register() call
+
+  BookingImport.jsx:
+    EXCEL_COLUMN_MAP: REMOVE 'slot', 'slot count', 'slots' entries
+    Preview table: REMOVE 'Slots' column header and corresponding EditableCell
+    handleReValidate(): REMOVE slotCount from row mapping
+    Column guide: REMOVE Slot entry from the guide cards
+
+  BookingDetailCard.jsx (if it shows slotCount):
+    REMOVE slotCount display
+
+────────────────────────────────────────────────────────────────────────────────
+CHANGE 3 — carrierName: new optional field
+────────────────────────────────────────────────────────────────────────────────
+
+REASON: Users need to record the carrier name per booking.
+
+BACKEND:
+  booking.model.js:
+    ADD: carrierName: { type: String, trim: true, default: null, maxlength: 200 }
+
+  booking.validation.js:
+    validateCreate: ADD body('carrierName').optional({nullable:true,checkFalsy:true}).trim().isLength({max:200})
+    validateUpdate: ADD body('carrierName').optional({nullable:true,checkFalsy:true}).trim().isLength({max:200})
+
+  booking.service.js update():
+    carrierName is in safeData (passed through from client, not stripped), so no change needed.
+
+  bookingImport.service.js:
+    EXCEL_COLUMN_MAP: ADD 'carrier name' → 'carrierName', 'carrier' → 'carrierName'
+    previewImport():  ADD carrierName to returned row object: carrierName: row.carrierName || ''
+    saveImport():     ADD carrierName to Booking.create() payload: carrierName: row.carrierName || null
+                      ADD to update block: if (row.carrierName) booking.carrierName = row.carrierName
+
+  export/export.service.js — COLUMNS.bookings:
+    ADD: { header: 'Carrier Name', key: 'carrierName', width: 25 } after Agent column
+
+FRONTEND:
+  BookingForm.jsx:
+    ADD carrierName field in the Parties section, after Agent dropdown:
+      <FieldLabel>Carrier Name</FieldLabel>
+      <input {...register('carrierName')} placeholder="e.g. MSC, Maersk, COSCO" className={ic(false)} />
+    ADD to defaultValues: carrierName: item?.carrierName || ''
+
+  BookingImport.jsx:
+    Preview table: ADD 'Carrier' column header after 'Consignee'
+    ADD EditableCell for carrierName
+    Column guide: ADD Carrier Name card
+
+  BookingDetailCard.jsx:
+    ADD carrierName display in info grid (between Consignee and Commodity rows)
+    Show "—" if null
+
+────────────────────────────────────────────────────────────────────────────────
+CHANGE 4 — Final Loading: status-based reconciliation (no deletes)
+────────────────────────────────────────────────────────────────────────────────
+
+REASON: When doing a Final Loading import, the voyage booking list should reflect
+exactly what is in the import file. Instead of deleting, we use status changes:
+  - Bookings IN the import → status set to 'Final Loading'
+  - Bookings on the voyage NOT in the import → status set to 'Cancelled'
+This preserves all records and gives a clear audit trail.
+
+NEW STATUS VALUE:
+  Add 'Final Loading' to BOOKING_STATUS enum in constants.js
+  This is a terminal operational status meaning the booking is confirmed on manifest
+
+HOW IT WORKS in saveImport():
+  Only when importType === 'finalLoading':
+  1. Save/update all imported rows as usual (create or update)
+  2. After the loop: mark all saved rows with status = 'Final Loading'
+     (both newly created AND updated rows)
+  3. Collect the booking numbers of all saved rows (created + updated)
+  4. Find ALL existing non-deleted bookings for this voyageId that are
+     NOT in the saved set
+  5. Mark each of those bookings status = 'Cancelled'
+     (regardless of current status — they are not on the final manifest)
+  6. Return cancelled[] count in the result
+
+RESULT OBJECT CHANGES:
+  Before: { created[], updated[], failed[], total }
+  After:  { created[], updated[], failed[], markedFinalLoading[], cancelled[], total }
+  markedFinalLoading = booking numbers set to 'Final Loading' status
+  cancelled = booking numbers set to 'Cancelled' status (not in import)
+
+STATUS TRANSITION NOTE:
+  'Final Loading' is a valid destination from Pending and Confirmed
+  Bookings already Cancelled or already Final Loading stay as-is in the
+  cancelled pass (we just overwrite with 'Cancelled' for non-import ones)
+  No invoice guard needed — we are not deleting, just changing status
+
+FRONTEND RESULT CARD CHANGES:
+  Show markedFinalLoading count: "5 marked as Final Loading"
+  Show cancelled count if > 0: "2 cancelled (not in manifest)"
+  Full message example:
+    "3 created · 2 updated · 0 failed · 5 marked Final Loading · 2 cancelled"
+
+FINAL LOADING DESCRIPTION UPDATE:
+  Banner text:
+  "Bookings in this import are marked Final Loading. Existing voyage bookings
+   NOT in this file will be Cancelled."
+
+================================================================================
+FILES TO CREATE
+================================================================================
+
+NONE — all changes are modifications to existing files.
+
+================================================================================
+FILES TO MODIFY
+================================================================================
+
+BACKEND:
+  src/modules/bookings/booking.model.js          (shipper/consignee optional, remove slotCount, add carrierName)
+  src/modules/bookings/booking.validation.js     (shipper/consignee optional, remove slotCount, add carrierName)
+  src/modules/bookings/booking.service.js        (no structural change; slotCount drops naturally)
+  src/modules/bookings/bookingImport.service.js  (validateRow, previewImport, saveImport — all 4 changes)
+  src/modules/export/export.service.js           (COLUMNS.bookings: remove slotCount, add carrierName)
+
+FRONTEND:
+  src/modules/bookings/BookingForm.jsx           (shipper/consignee optional, remove slotCount, add carrierName)
+  src/modules/bookings/BookingDetailCard.jsx     (remove slotCount display, add carrierName display)
+  src/modules/bookings/BookingImport.jsx         (remove slotCount, add carrierName column + Excel map)
+
+================================================================================
+TESTING CHECKLIST
+================================================================================
+  [ ] Create booking without shipper → succeeds (no validation error)
+  [ ] Create booking without consignee → succeeds
+  [ ] Create booking with both → still works
+  [ ] Slot Count field not visible in BookingForm
+  [ ] Slot Count not in preview table
+  [ ] Slot Count not in booking detail card
+  [ ] Create booking with carrierName → saved and shown in detail card
+  [ ] carrierName editable in BookingForm
+  [ ] Import: carrierName column in Excel picked up correctly
+  [ ] Import: carrierName shown in preview table
+  [ ] Import Preview: shipper/consignee not flagged as error if blank
+  [ ] Final Loading import on voyage with 10 bookings, import 6 → 4 deleted
+  [ ] Final Loading: booking with invoice → NOT deleted, appears in skippedDeletion
+  [ ] Final Loading result card shows deleted + skipped counts
+  [ ] Export: slotCount column gone from Excel
+  [ ] Export: carrierName column present in Excel
+
+================================================================================
+ESTIMATED COMPLEXITY: Low-Medium
+  Changes 1-3 are straightforward field changes.
+  Change 4 (Final Loading purge) adds ~15 lines to saveImport() but requires
+  careful handling of the invoice guard and the response shape change.
+================================================================================
+END OF SPRINT 017 PLAN
+================================================================================

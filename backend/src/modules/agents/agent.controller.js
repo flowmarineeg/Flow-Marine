@@ -37,11 +37,4 @@ const remove = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-// Sprint 033 — Agent Financial Account (the financial engine's primary output)
-const getFinancialAccount = async (req, res, next) => {
-  try {
-    return success(res, await agentService.getAgentFinancialAccount(req.params.id));
-  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
-};
-
-module.exports = { list, getById, create, update, remove, getFinancialAccount };
+module.exports = { list, getById, create, update, remove };

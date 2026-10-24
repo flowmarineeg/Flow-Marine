@@ -52,7 +52,8 @@ const invoiceSchema = new mongoose.Schema(
     agentId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Agent',  required: true },
     voyageId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Voyage', default: null }, // required if invoiceType='Voyage'
     roundId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Round',  default: null }, // required if invoiceType='Round'
-    lineItems:     { type: [lineItemSchema], required: true, validate: v => Array.isArray(v) && v.length > 0 },
+    // Sprint051: credit/debit notes carry no booking snapshots
+    lineItems:     { type: [lineItemSchema], default: [], validate: function (v) { return (this.docKind && this.docKind !== 'Invoice') || (Array.isArray(v) && v.length > 0); } },
     invoiceDate:   { type: Date, required: true },
     dueDate:       { type: Date, required: true },
     currency:      { type: String, required: true, trim: true, uppercase: true, maxlength: 10 },
@@ -61,6 +62,21 @@ const invoiceSchema = new mongoose.Schema(
     status:        { type: String, enum: INVOICE_STATUS, default: 'Draft' },
     notes:         { type: String, trim: true, default: null },
     billTo:        { type: billToSchema, default: () => ({}) },
+    // ── Sprint051 V2 (additive; v2=false on every legacy invoice) ──────────────
+    v2:               { type: Boolean, default: false },
+    docKind:          { type: String, enum: ['Invoice', 'CreditNote', 'DebitNote'], default: 'Invoice' },
+    parentInvoiceId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
+    totalMinor:       { type: Number, default: 0, validate: Number.isSafeInteger },
+    paidMinor:        { type: Number, default: 0, validate: Number.isSafeInteger },
+    creditedMinor:    { type: Number, default: 0, validate: Number.isSafeInteger },
+    issuedAt:         { type: Date, default: null },
+    issuedBy:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    cancelledAt:      { type: Date, default: null },
+    cancelledBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    cancelReason:     { type: String, trim: true, default: null },
+    reason:           { type: String, trim: true, default: null }, // credit/debit note reason
+    ledgerEntryId:    { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
+    fx:               { rate: { type: Number, default: 1 }, baseTotalMinor: { type: Number, default: 0 } },
     createdBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -84,5 +100,6 @@ invoiceSchema.index({ roundId: 1 });
 // deliberately no field on Booking for this; see sprints/033-sprint.txt
 // "BOOKING–INVOICE OWNERSHIP".
 invoiceSchema.index({ 'lineItems.bookingId': 1 });
+invoiceSchema.index({ parentInvoiceId: 1 });
 
 module.exports = mongoose.model('Invoice', invoiceSchema);

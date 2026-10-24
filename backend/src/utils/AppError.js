@@ -13,9 +13,10 @@
  *   throw new AppError(403, 'Insufficient permissions');
  */
 class AppError extends Error {
-  constructor(statusCode, message) {
+  constructor(statusCode, message, code = null) {
     super(message);
     this.statusCode    = statusCode;
+    this.code          = code; // Sprint050 R7: stable machine-readable refusal code
     this.isOperational = true;  // distinguishes known errors from programmer bugs
     Error.captureStackTrace(this, this.constructor);
   }

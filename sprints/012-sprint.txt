@@ -1,0 +1,82 @@
+================================================================================
+SPRINT 012 — EXPORT MODULE (Excel & ZIP)
+================================================================================
+
+STATUS: ✅ COMPLETE
+
+GOAL:
+  Full export capability: every list table exports to Excel, multiple modules
+  bundle into ZIP. ExcelJS generates styled workbooks, Archiver handles ZIP.
+
+--------------------------------------------------------------------------------
+
+BACKEND TASKS:
+  [x] Rewrote /src/modules/export/export.service.js
+        - COLUMNS: complete definitions for all 12 modules:
+          vessels, agents, containerTypes, expenseTypes, services, rounds,
+          voyages, bookings, expenses, invoices, tracking, auditLogs
+        - buildExcelBuffer(moduleName, rows):
+            ExcelJS workbook, worksheet per module, styled header row
+            (navy #2E4057 background, white bold text, 22px height, frozen)
+            Alternating row fill (#FFFFFF / #F8F9FA), thin bottom borders
+        - fetchData(moduleName, filters, selectedIds):
+            Switch statement — one flat-mapped fetch per module
+            All populated refs resolved to human-readable names (no ObjectId in Excel)
+            selectedIds filter applied when non-empty
+            auditLogs capped at 10,000 rows for safety
+        - exportSingle(module, filters, selectedIds) → { buffer, filename, count }
+        - exportZip(exports[], res) → streams Archiver ZIP to response
+
+  [x] Updated /src/modules/export/export.controller.js
+        - Uses ALLOWED_MODULES from service (derived from COLUMNS keys)
+        - POST /export/excel: validates module, calls exportSingle, streams xlsx
+        - POST /export/zip: validates each module in array, calls exportZip
+        - X-Export-Count response header for client toast message
+
+FRONTEND TASKS:
+  [x] Created /src/services/export.service.js
+        exportExcel({ module, filters, selectedIds }) → responseType: 'blob'
+        exportZip(exports[]) → responseType: 'blob'
+
+  [x] Created /src/utils/exportHelper.js
+        downloadFile(blob, filename) — creates object URL, simulates <a> click
+        exportFilename(module, ext) — date-stamped filename builder
+
+  [x] Created /src/components/ui/ExportButton.jsx
+        Reusable dropdown button:
+          "Export All (filtered)" → all rows matching current filters
+          "Export Selected" → only checked rows (disabled if none)
+        Shows selected count badge in dropdown
+        Click-outside closes menu (useRef + mousedown handler)
+        Loading state with spinner, success toast with row count
+
+  [x] Created /src/modules/export/ExportPanel.jsx
+        Grid of 12 toggleable module cards (icon + label)
+        "Select All" / "Deselect All" shortcut
+        Optional date range filter
+        Smart output: 1 module → Excel, 2+ modules → ZIP
+        Warning banner for >5 modules selected
+        Loading spinner during generation
+
+  [x] Created /src/app/(dashboard)/export/page.jsx → ExportPanel
+
+  ExportButton added to list pages:
+  [x] RoundList — filters: status, serviceId
+  [x] BookingList — filters: voyageId, agentId, status
+  [x] VoyageList — filters: serviceId, status
+  [x] ExpenseList — filters: expenseTypeId, currency, dateFrom, dateTo
+  [x] InvoiceList — filters: agentId, status, dateFrom, dateTo
+  [x] AuditLogList — filters: module, action, dateFrom, dateTo
+  (VesselList already had export wired from Sprint 003)
+
+  Sidebar: [x] "Export" already in Analytics section
+
+NOTES:
+  - ALLOWED_MODULES whitelist derived from COLUMNS keys — prevents arbitrary access
+  - All refs resolved to human names before writing to Excel (e.g. agentId → agentName)
+  - Empty export (0 rows) returns valid Excel with headers only — never an error
+  - auditLogs export hard-capped at 10,000 rows
+  - ZIP uses archiver with zlib level 9 compression
+  - Single-module export skips ZIP and downloads Excel directly
+
+================================================================================

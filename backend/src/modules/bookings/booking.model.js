@@ -31,6 +31,11 @@ const bookingSchema = new mongoose.Schema(
     // booking's voyage yet) — distinct from both real outcomes below.
     dischargeStatus: { type: String, enum: ['Discharged', 'Remaining'], default: null },
     dischargedAt:    { type: Date, default: null },
+    // Sprint 051 (V2) - additive; old documents read as bill-to = their agent, source/term null.
+    billToPartyId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+    shipperSource:   { type: String, enum: ['Agent', 'Direct', null], default: null },
+    paymentTerm:     { type: String, enum: ['Prepaid', 'Collect', null], default: null }, // informational only (D2-A)
+    collectAgentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
     createdBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },

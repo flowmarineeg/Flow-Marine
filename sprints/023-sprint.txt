@@ -1,0 +1,1043 @@
+================================================================================
+  SPRINT 023 — Booking Layer 1/2 Refactor + Voyage-Based Capacity Correction
+  Date: 2026-07-19  (PLANNING — Revision 3, FINAL)
+  Status: COMPLETE — All 6 phases implemented
+================================================================================
+
+EXECUTIVE SUMMARY
+
+  Sprint 023 has exactly two objectives, executed with minimum change:
+
+  Goal 1 — Booking Module Layer 1/2 Refactor
+    Add a "Manual Booking" (Layer 1) path to the existing Booking module.
+    Layer 1 = commercial reservation with a multi-row cargo list.
+    Layer 2 = existing operational booking + Excel import (zero changes).
+    Both layers live inside the existing /bookings module, endpoint, RBAC
+    module, and sidebar entry.
+
+  Goal 2 — Capacity Engine: Per-Voyage Calculation
+    Replace the route-leg walking algorithm with a per-voyage one.
+    The capacity engine is the only thing that changes. Cache, endpoints,
+    and all consumers stay as-is wherever possible.
+
+================================================================================
+  PART 1 — ARCHITECTURAL DECISION: ONE SCHEMA OR TWO?
+================================================================================
+
+  This section documents the comparison required by the revised brief.
+  The decision must be based on the ACTUAL code, not preference.
+
+  ─────────────────────────────────────────────────────────────────────────
+  1.1 WHAT LAYER 1 REQUIRES vs WHAT THE CURRENT SCHEMA PROVIDES
+  ─────────────────────────────────────────────────────────────────────────
+
+  Layer 1 requirements (from revised spec):
+    Header:     voyageId, agentId, polId, podId
+    Cargo rows: array of { containerTypeId, quantity, rate, dg, dgValue,
+                           commodity, vgm }   ← one row per container type
+    totalFreight = SUM(row.quantity × row.rate)
+    NO: containerNumber, carrierName, consignee, shipper, containerStatus
+
+  Current Booking schema (confirmed from booking.model.js):
+    containerNumber   required:true, unique index   ← primary match key
+    containerTypeId   required:true                 ← single container type
+    quantity          required:true                 ← single number
+    freightRate       required:true                 ← single rate
+    totalFreight      required:true                 ← single computed value
+    No cargoRows array exists
+
+  ─────────────────────────────────────────────────────────────────────────
+  1.2 APPROACH A — EXTEND THE EXISTING BOOKING SCHEMA
+  ─────────────────────────────────────────────────────────────────────────
+
+  Proposed changes to booking.model.js:
+    - Add:  bookingType: enum ['manual','operational'], default:'operational'
+    - Add:  cargoRows: [{ containerTypeId, quantity, rate, dg, dgValue,
+                          commodity, vgm, rowTotal }]
+    - Change: containerNumber → required:false, default:null  (breaks index)
+    - Change: containerTypeId → required:false                 (conditional)
+    - Change: quantity, freightRate → required:false           (conditional)
+    - Change: totalFreight → required:false, compute from rows OR from qty×rate
+
+  Impact analysis on EACH consumer if Approach A is used:
+
+  a) bookingImport.service.js
+     - previewImport() builds: existingMap[b.containerNumber] = b
+       If containerNumber is null on Layer 1 docs, null maps to existingMap[null].
+       All Layer 1 docs overwrite each other in the map.
+       THE DEDUP CHECK SILENTLY BREAKS for all bookings with null containerNumber.
+     - validateRow() currently errors if containerNumber is missing.
+       Must be made conditional on importType or add a bookingType filter
+       to the Booking.find() query.
+     - Final Loading reconciliation:
+         Booking.updateMany({ containerNumber:{$nin:[...]} })
+       If Layer 1 docs (null containerNumber) exist on the same voyage,
+       $nin:['MSCU123',...] MATCHES nulls and cancels Layer 1 docs.
+       Final Loading reconciliation now incorrectly cancels manual bookings.
+
+  b) capacity.service.js
+     - Currently queries: Booking.find({voyageId, status, isDeleted}).
+       Selecting: quantity, containerTypeId.size
+     - Layer 1 docs have no quantity at the document level (it's in cargoRows).
+       The capacity engine reads b.quantity → undefined → NaN → 0 TEU for
+       all Layer 1 docs. Capacity is silently undercounted.
+     - Must add conditional logic to check cargoRows or quantity.
+
+  c) reports.service.js
+     - getRoundPnL: $group: { totalRevenue: {$sum:'$totalFreight'} }
+       Layer 1 totalFreight is computed from cargoRows, not from qty×rate.
+       If the field name is the same ('totalFreight'), this works IF the
+       server correctly computes and stores it. No change needed here.
+     - getVoyagePerformance: $group: { totalQty: {$sum:'$quantity'} }
+       Layer 1 has no top-level quantity. Sum returns 0 for all Layer 1 docs.
+       Reports silently undercount.
+
+  d) dashboard.service.js
+     - Booking.countDocuments — Layer 1 docs counted as bookings. Correct.
+     - Aggregate on $quantity → same problem as reports.
+
+  e) invoice.service.js — reads booking by id. No functional issue.
+
+  f) export.service.js — exports Booking fields. Layer 1 docs would export
+     with many null fields (containerNumber, containerTypeId etc). Misleading
+     but not breaking.
+
+  CONCLUSION ON APPROACH A:
+    The import service BREAKS (containerNumber dedup + Final Loading cancel).
+    The capacity engine SILENTLY UNDERCOUNTS (reads b.quantity which is null).
+    The reports SILENTLY UNDERCOUNT (totalQty from $quantity).
+    Fixing each of these requires branching on bookingType in every consumer.
+    That is a shotgun surgery: 6+ files each need if/else on bookingType.
+    The "minimum change" goal is violated — more files change than with Approach B.
+    Approach A is REJECTED on technical grounds, not preference.
+
+  ─────────────────────────────────────────────────────────────────────────
+  1.3 APPROACH B — SEPARATE ManualBooking SCHEMA, SAME MODULE
+  ─────────────────────────────────────────────────────────────────────────
+
+  A new manualBooking.model.js inside the SAME bookings/ module folder.
+  Separate MongoDB collection. Uses cargoRows[].
+
+  Impact analysis on EACH consumer if Approach B is used:
+
+  a) bookingImport.service.js → ZERO CHANGES. It queries Booking only.
+     The Final Loading reconciliation only touches Booking.
+     ManualBooking is invisible to the import flow.
+
+  b) capacity.service.js → TARGETED ADDITION: one extra query to sum
+     manualBooking cargoRows per voyage. The Booking query is unchanged.
+
+  c) reports.service.js → TARGETED ADDITION: one aggregate per report
+     function to add L1 revenue/counts. Existing aggregates unchanged.
+
+  d) dashboard.service.js → TARGETED ADDITION: one aggregate for L1 counts.
+     Existing Booking aggregates unchanged.
+
+  e) invoice, export, existing booking CRUD → ZERO CHANGES.
+
+  Files changed with Approach B vs Approach A:
+    Approach A: booking.model.js + booking.validation.js + booking.service.js
+                + bookingImport.service.js + capacity.service.js
+                + reports.service.js (3 functions) + dashboard.service.js
+                + BookingForm.jsx + BookingDetailCard.jsx = 9+ files, each with
+                conditional branching throughout.
+    Approach B: 4 new files (all inside bookings/) + targeted additions to
+                capacity, reports, dashboard = 7 files, no branching in existing code.
+
+  CONCLUSION ON APPROACH B:
+    Fewer files changed. Zero branching in existing consumers.
+    Import and Final Loading flow are completely unaffected.
+    Existing Booking schema stays exactly as Sprint 021 left it.
+    This satisfies minimum change + backward compatibility + no shotgun refactoring.
+
+  ─────────────────────────────────────────────────────────────────────────
+  1.4 FINAL DECISION: APPROACH B CHOSEN
+  ─────────────────────────────────────────────────────────────────────────
+
+  Separate ManualBooking collection. Same bookings/ module.
+
+  "One module, two schemas" — not two systems.
+
+  Everything user-facing stays inside the Booking module:
+    - Same sidebar entry ("Bookings")
+    - Same RBAC module ('bookings') — no new entry in MODULES[]
+    - Same /api/v1/bookings/* prefix
+    - Same existing BookingForm and BookingImport unchanged
+
+================================================================================
+  PART 2 — GOAL 1: MANUALBOOKING DESIGN
+================================================================================
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.1 SCHEMA — manualBooking.model.js
+  ─────────────────────────────────────────────────────────────────────────
+
+  Location: backend/src/modules/bookings/manualBooking.model.js
+
+  Fields:
+    bookingNumber   String, required, unique — auto-generated, prefix 'MB-'
+    voyageId        ObjectId → Voyage, required
+    agentId         ObjectId → Agent, required
+    polId           ObjectId → Port, required
+    podId           ObjectId → Port, required
+
+    cargoRows: [
+      {
+        _id:              ObjectId (auto)
+        containerTypeId:  ObjectId → ContainerType, required
+        quantity:         Number, required, min: 1
+        rate:             Number, required, min: 0
+        dg:               Boolean, default: false
+        dgValue:          String, trim, default: null, maxlength: 200
+                          (free text/number — not a percentage)
+        commodity:        String, trim, default: null
+        vgm:              Number, min: 0, default: null
+                          (estimated cargo weight at commercial stage)
+        rowTotal:         Number, server-computed = quantity × rate
+      }
+    ]
+
+    totalFreight    Number, server-computed = sum(cargoRows[].rowTotal)
+    totalTEU        Number, server-computed (sum qty × resolveTEU(size).teu)
+    totalUnits      Number, server-computed = sum(cargoRows[].quantity)
+    remarks         String, optional
+    status          String, enum: BOOKING_STATUS, default: 'Pending'
+    isDeleted       Boolean, default: false
+    deletedAt       Date, default: null
+    createdBy       ObjectId → User
+    updatedBy       ObjectId → User
+    timestamps
+
+  Indexes:
+    { bookingNumber: 1 }  unique (auto from unique:true)
+    { voyageId: 1, status: 1, isDeleted: 1 }
+    { agentId:  1, status: 1, isDeleted: 1 }
+    { isDeleted: 1, createdAt: -1 }
+
+  DG fields note:
+    Layer 1: dg (Boolean) + dgValue (free text, e.g. "Class 3, UN1203")
+    Layer 2: dg (Boolean) + dgPercent (Number 0-100, from Sprint 021)
+    Different field names on different collections. No conflict. No migration.
+
+  Commodity + VGM note:
+    Per revised spec, commodity and VGM belong to the cargo ROW in Layer 1,
+    not to the booking header. In Layer 2 they remain at header level
+    (booking.commodity, booking.vgm) — unchanged.
+
+  Auto-number:
+    Counter key: 'manualBooking'
+    Prefix: 'MB-' → produces MB-000001, MB-000002 etc.
+    Distinguishable from Layer 2 (BK-000001) in any list or report.
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.2 STATUS MACHINE (identical to Layer 2)
+  ─────────────────────────────────────────────────────────────────────────
+
+  Pending → Confirmed → Final Loading → Cancelled
+  Confirmed → Cancelled (direct)
+  Final Loading → Cancelled (only)
+  Locked for edits: Final Loading + Cancelled
+
+  Same BOOKING_STATUS enum. Same mental model for planners.
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.3 SERVICE — manualBooking.service.js
+  ─────────────────────────────────────────────────────────────────────────
+
+  Location: backend/src/modules/bookings/manualBooking.service.js
+
+  Shared dependency (not a new util file):
+    Both manualBooking.service.js and booking.service.js need
+    getVoyagePortIds(voyageId). This is currently a private function inside
+    booking.service.js. Extract it as a module-level export from
+    booking.service.js so manualBooking.service.js can require it:
+
+      // booking.service.js — add to module.exports:
+      module.exports = { list, getById, create, update, softDelete,
+                         getVoyagePorts, getVoyagePortIds }; // +getVoyagePortIds
+
+    manualBooking.service.js requires:
+      const { getVoyagePortIds } = require('./booking.service');
+    No new utility file. No new module. One require.
+
+  Functions:
+    list({ page, limit, search, voyageId, agentId, status })
+    getById(id)
+    create(data, createdBy)
+    update(id, data, updatedBy)
+    softDelete(id, deletedBy)
+
+  create() logic:
+    1. Fetch voyage; reject if Cancelled/Completed.
+    2. Reject if polId === podId.
+    3. Validate polId, podId in voyage's route port list (getVoyagePortIds).
+    4. cargoRows.length >= 1 (validation layer, confirmed again here).
+    5. Batch-fetch containerTypeId.size for all rows (one Mongoose query).
+    6. Compute row.rowTotal = qty × rate.
+    7. Compute totalFreight, totalUnits, totalTEU from rows.
+    8. Auto-number via nextNumber('manualBooking').
+    9. Insert → invalidateRoundCache(voyage.roundId).
+
+  update() logic:
+    - Lock if status ∈ ['Cancelled', 'Final Loading'] (same as booking.service.js).
+    - Recompute totals if cargoRows changed (replace entire cargoRows array
+      on update — simplest approach, avoids partial patch complexity).
+    - Same STATUS_TRANSITIONS constant (copied locally, 5 lines).
+    - invalidateRoundCache after save.
+
+  softDelete():
+    - No invoice guard needed (no invoice links ManualBooking in this sprint).
+    - isDeleted=true, deletedAt=now, invalidateRoundCache.
+
+  populate helper:
+    Function that does populate for all queries:
+      .populate('voyageId', 'voyageNumber polId podId etd eta status')
+      .populate('agentId', 'agentCode agentName')
+      .populate('polId', 'name code')
+      .populate('podId', 'name code')
+      .populate('cargoRows.containerTypeId', 'code size type')
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.4 VALIDATION — manualBooking.validation.js
+  ─────────────────────────────────────────────────────────────────────────
+
+  Location: backend/src/modules/bookings/manualBooking.validation.js
+
+  validateCreate:
+    voyageId:                    notEmpty, isMongoId
+    agentId:                     notEmpty, isMongoId
+    polId:                       notEmpty, isMongoId
+    podId:                       notEmpty, isMongoId
+    cargoRows:                   isArray, notEmpty
+    cargoRows.*.containerTypeId: isMongoId
+    cargoRows.*.quantity:        isInt({ min: 1 })
+    cargoRows.*.rate:            isFloat({ min: 0 })
+    cargoRows.*.dg:              optional, isBoolean
+    cargoRows.*.dgValue:         optional, string, maxlength: 200
+    cargoRows.*.commodity:       optional, string
+    cargoRows.*.vgm:             optional, isFloat({ min: 0 })
+    status:                      optional, isIn(BOOKING_STATUS)
+    remarks:                     optional, string
+
+  Server-only fields (rejected if sent in body):
+    totalFreight, totalTEU, totalUnits, rowTotal
+
+  validateUpdate: same fields, all optional.
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.5 CONTROLLER — manualBooking.controller.js
+  ─────────────────────────────────────────────────────────────────────────
+
+  Location: backend/src/modules/bookings/manualBooking.controller.js
+
+  Functions: list, getById, create, update, remove
+  Standard pattern identical to booking.controller.js — 5 functions,
+  each delegating to manualBooking.service.
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.6 ROUTES — ADDED TO EXISTING booking.routes.js
+  ─────────────────────────────────────────────────────────────────────────
+
+  File modified: backend/src/modules/bookings/booking.routes.js
+
+  Add at the TOP of the file, BEFORE the import routes and BEFORE /:id:
+    const manualCtrl = require('./manualBooking.controller');
+    const { validateCreate: validateManualCreate,
+            validateUpdate: validateManualUpdate } = require('./manualBooking.validation');
+
+    // Layer 1 — Manual Bookings (commercial reservation)
+    router.get   ('/manual',     rbac('bookings'), manualCtrl.list);
+    router.post  ('/manual',     rbac('bookings'), audit('bookings'), validateManualCreate, manualCtrl.create);
+    router.get   ('/manual/:id', rbac('bookings'), manualCtrl.getById);
+    router.put   ('/manual/:id', rbac('bookings'), audit('bookings'), validateManualUpdate, manualCtrl.update);
+    router.delete('/manual/:id', rbac('bookings'), audit('bookings'), manualCtrl.remove);
+
+  WHY /manual/* must be above /:id:
+    Express route-matching is sequential. Without this ordering, the string
+    'manual' would be captured by /:id as { id: 'manual' } and fail.
+    Placing /manual/* first prevents this. Existing routes are unaffected.
+
+  NO server.js change. NO new MODULES[] entry. NO new router file.
+  Audit logs auto-resolve to module 'bookings' from the route prefix.
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.7 FRONTEND — APPROACH: MINIMUM ADDITIONS INSIDE BOOKING MODULE
+  ─────────────────────────────────────────────────────────────────────────
+
+  No new sidebar entry.
+  No new RBAC check needed (uses existing 'bookings' permission).
+  Existing BookingForm.jsx, BookingDetailCard.jsx, BookingImport.jsx:
+    ZERO CHANGES.
+
+  New files (all in frontend/src/modules/bookings/):
+    ManualBookingForm.jsx
+    ManualBookingDetail.jsx
+
+  Modified files:
+    frontend/src/services/bookings.service.js  (+5 methods for manual)
+    frontend/src/modules/bookings/BookingList.jsx  (tab + button change)
+
+  New app router pages:
+    frontend/src/app/(dashboard)/bookings/new-manual/page.jsx
+    frontend/src/app/(dashboard)/bookings/manual/[id]/page.jsx
+
+  BookingList.jsx changes (MINIMAL):
+    1. Add a tab strip at the top with two tabs:
+         [Detail Bookings]  [Manual Bookings]
+       "Detail Bookings" tab = existing table, zero changes.
+       "Manual Bookings" tab = new table using listManual, similar columns.
+    2. Header action button becomes a split button:
+         Primary: "New Booking" → existing modal (unchanged)
+         Secondary dropdown item: "New Manual Booking" → router.push('/bookings/new-manual')
+    Estimated diff: ~40 lines added, 0 lines changed in existing logic.
+
+  bookings.service.js additions (5 new methods, existing 5 unchanged):
+    listManual:    (params) => api.get('/bookings/manual', { params }),
+    getManualById: (id)     => api.get(`/bookings/manual/${id}`),
+    createManual:  (data)   => api.post('/bookings/manual', data),
+    updateManual:  (id, d)  => api.put(`/bookings/manual/${id}`, d),
+    removeManual:  (id)     => api.delete(`/bookings/manual/${id}`),
+
+  ManualBookingForm.jsx design:
+    Voyage section:   same voyage selector as BookingForm (reuse the query)
+    Agent section:    same agent selector
+    Port section:     same port selector (reuse voyage-ports query)
+    Cargo section (NEW — repeater):
+      [+ Add Row] button
+      Row table headers: Container Type | Qty | Rate | DG | DG Value | Commodity | VGM | Row Total | ✕
+      Each row:
+        ContainerType select, qty input, rate input,
+        DG toggle (boolean), DG Value text input (only when DG=true),
+        commodity text input, vgm number input,
+        row total (read-only: qty × rate),
+        remove button
+      Row total is computed live in the browser (qty × rate).
+    Grand total strip: sum of all row totals (same teal box as BookingForm).
+    Remarks (optional).
+    Status selector (edit mode only).
+    Cancel + Submit buttons.
+    Uses react-hook-form with useFieldArray for the rows.
+
+  ManualBookingDetail.jsx design:
+    Header:       bookingNumber (MB- prefix), status badge, agent, voyage
+    Route strip:  POL → POD
+    Cargo table:  Container Type | Qty | Rate | DG | DG Value | Commodity | VGM | Row Total
+    Total freight banner (same style as BookingDetailCard)
+    Remarks
+
+  ─────────────────────────────────────────────────────────────────────────
+  2.8 CONSUMER IMPACT — REPORTS + DASHBOARD + CAPACITY
+  ─────────────────────────────────────────────────────────────────────────
+
+  Reports (targeted additions, existing aggregates unchanged):
+
+    getRoundPnL():
+      After existing revenueAgg, add:
+        const l1Agg = await ManualBooking.aggregate([
+          { $match: { voyageId:{$in:voyageIds}, isDeleted:false,
+                      status:{$ne:'Cancelled'} } },
+          { $group: { _id:null, totalRevenue:{$sum:'$totalFreight'},
+                      totalUnits:{$sum:'$totalUnits'} } }
+        ]);
+      Merge into result: totalRevenue += l1Agg revenue; bookingCount counts stay
+      as is (L1 counts are separate, not conflated with L2 booking counts).
+
+    getVoyagePerformance():
+      The existing $lookup on 'bookings' collection remains. Add a second
+      $lookup on 'manualbookings' per voyage, group by voyageId, merge the
+      L1 revenue into each row's totalFreight.
+
+    getRevenueReport():
+      Existing pipeline remains. After computing service-level totals from
+      Booking, run a second ManualBooking pipeline grouped by serviceId
+      (via voyage join), sum into the same service buckets.
+
+    getBookingReport():
+      NO CHANGE. Lists only Layer 2 Bookings. Manual bookings are on their
+      own tab in the UI. This report is not expected to merge both.
+
+  Dashboard (targeted additions):
+    computeStats() already runs ~20 parallel aggregations.
+    Add 2 more to the same Promise.all:
+      ManualBooking.countDocuments({ isDeleted: false })
+      ManualBooking.aggregate([revenue sum, non-cancelled])
+    Merge into kpis:
+      manualBookingCount, manualBookingRevenue30d (or combined into
+      totalBookings and revenue30d depending on product decision — flagged
+      as open question in §4 below).
+
+  Capacity engine (Goal 2 — detailed in Part 3):
+    The engine's Booking query is unchanged.
+    One additional ManualBooking query per voyage added (per §3.2).
+
+================================================================================
+  PART 3 — GOAL 2: VOYAGE-BASED CAPACITY ENGINE
+================================================================================
+
+  ─────────────────────────────────────────────────────────────────────────
+  3.1 THE EXACT PROBLEM WITH THE CURRENT ALGORITHM
+  ─────────────────────────────────────────────────────────────────────────
+
+  Current algorithm in capacity.service.js computeRoundCapacity():
+
+    Step A: loads Route + RouteLegs (ordered by sequence)
+    Step B: builds portSeqByPortId from leg sequence numbers
+    Step C: for each booking, emits load event at polSeq, discharge at podSeq
+    Step D: running sum across port sequences → onboardAfterTEU per port
+    Step E: derives "segments" from ADJACENT ROUTE LEG PAIRS
+    Step F: for each synthetic segment, looks for a voyage with matching
+            polId:podId → marks isManualJump:true if not found
+
+  Example where this goes wrong:
+    Route: Port1 → Port2 → Port3
+    Actual voyages in round: [Port1→Port3] (one manual voyage, Port2 skipped)
+    Booking: on voyageId = that Port1→Port3 voyage
+
+    Current result:
+      Synthetic segment 1: Port1→Port2 (isManualJump=true, no covering voyage)
+      Synthetic segment 2: Port2→Port3 (isManualJump=true, no covering voyage)
+      Booking's polSeq=1, podSeq=3 → events at seq 1 and seq 3
+      Segment 1 onboard = booking TEU  ← shows capacity used on a leg that
+                                           does not exist as an actual voyage
+      Segment 2 onboard = 0           ← incorrect
+
+    Correct result (voyage-based):
+      Voyage 1: Port1→Port3, onboardTEU = booking TEU, utilisationPct = X%
+      That is the only capacity row that should exist.
+
+  ─────────────────────────────────────────────────────────────────────────
+  3.2 REVISED ALGORITHM — VOYAGE-FIRST, MINIMUM CODE CHANGE
+  ─────────────────────────────────────────────────────────────────────────
+
+  The new algorithm replaces Steps A–F with a simpler voyage-first approach.
+
+  NEW Steps A–D:
+
+    Step A: Load round + voyages + bookings + manualBookings
+      REMOVED from load: Route, RouteLeg  (no longer needed)
+
+      const [voyages, bookings, manualBookings] = await Promise.all([
+        Voyage.find({ _id:{ $in: round.voyageIds } })
+              .populate('polId', 'name code')
+              .populate('podId', 'name code')
+              .sort({ sequence: 1 }).lean(),
+        Booking.find({ voyageId:{$in:round.voyageIds}, isDeleted:false,
+                       status:{$in:statuses} })
+               .select('quantity voyageId containerTypeId containerNumber status')
+               .populate('containerTypeId','code size isDeleted')
+               .lean(),
+        ManualBooking.find({ voyageId:{$in:round.voyageIds}, isDeleted:false,
+                             status:{$in:statuses} })
+                     .select('totalTEU totalFreight totalUnits voyageId status')
+                     .lean(),
+      ]);
+
+    Step B: Group Layer 2 bookings by voyageId, compute TEU per voyage
+      const l2ByVoyage = {};
+      for (const b of bookings) {
+        const vid = String(b.voyageId);
+        if (!l2ByVoyage[vid]) l2ByVoyage[vid] = { bookingCount:0, teu:0, units:0, revenue:0 };
+        const {teu, matched} = resolveTEU(b.containerTypeId?.size);
+        if (!matched) push MISSING_TEU_MAPPING warning;
+        l2ByVoyage[vid].teu          += b.quantity * teu;
+        l2ByVoyage[vid].units        += b.quantity;
+        l2ByVoyage[vid].bookingCount += 1;
+      }
+
+    Step C: Group Layer 1 manual bookings by voyageId
+      const l1ByVoyage = {};
+      for (const m of manualBookings) {
+        const vid = String(m.voyageId);
+        if (!l1ByVoyage[vid]) l1ByVoyage[vid] = { teu:0, units:0, revenue:0 };
+        l1ByVoyage[vid].teu     += m.totalTEU     || 0;
+        l1ByVoyage[vid].units   += m.totalUnits   || 0;
+        l1ByVoyage[vid].revenue += m.totalFreight || 0;
+      }
+
+    Step D: Build voyages[] array (replaces segments[])
+      const cap = vessel.capacity ?? null;
+      const voyageRows = voyages.map(v => {
+        const vid  = String(v._id);
+        const l1   = l1ByVoyage[vid] || { teu:0, units:0, revenue:0 };
+        const l2   = l2ByVoyage[vid] || { bookingCount:0, teu:0, units:0 };
+        const onboardTEU    = l1.teu + l2.teu;
+        const remainingTEU  = cap != null ? cap - onboardTEU : null;
+        const utilisationPct = cap != null ? Math.round(onboardTEU/cap*100) : null;
+        if (remainingTEU != null && remainingTEU < 0) push VOYAGE_OVERBOOKED warning;
+        return {
+          voyageId:      v._id,
+          voyageNumber:  v.voyageNumber,
+          sequence:      v.sequence,
+          isManual:      v.isManual || false,
+          fromPort:      { portId:String(v.polId?._id||v.polId), name:v.polId?.name, code:v.polId?.code },
+          toPort:        { portId:String(v.podId?._id||v.podId), name:v.podId?.name, code:v.podId?.code },
+          etd:           v.etd, eta: v.eta,
+          voyageStatus:  v.status,
+          layer1:        { unitCount:l1.units, teu:l1.teu, revenue:l1.revenue },
+          layer2:        { bookingCount:l2.bookingCount, unitCount:l2.units, teu:l2.teu },
+          onboardTEU, remainingTEU, utilisationPct,
+        };
+      });
+
+    Step E: Totals (same logic, different source array)
+      peakOnboardTEU    = Math.max(...voyageRows.map(v=>v.onboardTEU), 0)
+      peakVoyageIndex   = index of peak
+      avgUtilisationPct = mean of non-null utilisationPct values
+      totalBookedTEU    = sum of onboardTEU across voyages
+      totalBookedUnits  = sum of (l1.units + l2.units)
+
+  CODE REMOVED vs CURRENT:
+    - Route and RouteLeg queries (2 DB calls eliminated)
+    - portSeqByPortId map construction (~10 lines)
+    - Event list build loop (~15 lines)
+    - Running sum loop (~10 lines)
+    - Segment loop with voyage lookup (~25 lines)
+    - Port summary array (~10 lines)
+    Total removal: ~70 lines of algorithmic complexity
+    Replaced with: ~30 lines of straightforward group-by-voyageId
+
+  ─────────────────────────────────────────────────────────────────────────
+  3.3 PAYLOAD CHANGES — MINIMUM REQUIRED
+  ─────────────────────────────────────────────────────────────────────────
+
+  REMOVED from payload:
+    segments[]          → replaced by voyages[]
+    ports[]             → removed (port-level running sum no longer exists)
+    route{}             → removed (route legs not loaded)
+    isManualJump        → not a voyage-level concept
+    loadedTEU, dischargedTEU (leg/port-level concepts, gone)
+    netChangeTEU, onboardAfterTEU (port-level, gone)
+    peakSegmentIndex    → renamed peakVoyageIndex in totals
+
+  ADDED:
+    voyages[]           — new array, one entry per actual voyage in round
+    totals.peakVoyageIndex (replaces peakSegmentIndex)
+    voyages[].layer1, voyages[].layer2 (L1/L2 breakdown per voyage)
+
+  UNCHANGED:
+    round{}             UNCHANGED
+    vessel{}            UNCHANGED
+    service{}           UNCHANGED
+    totals.peakOnboardTEU         UNCHANGED (same field name)
+    totals.avgUtilisationPct      UNCHANGED
+    totals.totalBookedTEU         UNCHANGED
+    totals.totalBookedUnits       UNCHANGED
+    warnings[]          UNCHANGED (codes updated per §3.4)
+    Cache key, TTL, invalidation  UNCHANGED
+    Endpoint paths       UNCHANGED
+
+  ─────────────────────────────────────────────────────────────────────────
+  3.4 WARNING CODES — MINIMAL CHANGE
+  ─────────────────────────────────────────────────────────────────────────
+
+  KEPT (semantically valid in voyage model):
+    MISSING_CONTAINER_TYPE
+    DELETED_CONTAINER_TYPE
+    MISSING_TEU_MAPPING
+
+  RENAMED:
+    SEGMENT_OVERBOOKED  → VOYAGE_OVERBOOKED
+      (now carries voyageId, voyageNumber instead of segmentIndex)
+
+  REMOVED (only made sense for route-leg walking):
+    BOOKING_PORT_NOT_IN_ROUTE   — bookings validated at create time
+    INVALID_DIRECTION           — upstream validation handles this
+    BOOKING_INTO_UNCALLED_PORT  — no synthetic segments
+
+  ─────────────────────────────────────────────────────────────────────────
+  3.5 computeSegmentPreview → computeVoyagePreview
+  ─────────────────────────────────────────────────────────────────────────
+
+  Rename + simplify:
+
+    computeVoyagePreview(roundId, voyageId, quantity, containerTypeId)
+
+  Caller (booking.service.js create()):
+    Already has voyage from Voyage.findById(data.voyageId).
+    Change the call from:
+      computeSegmentPreview(voyage.roundId, polId, podId, qty, ctId)
+    To:
+      computeVoyagePreview(voyage.roundId, voyage._id, qty, ctId)
+    2-line change in booking.service.js. No cascade.
+
+  Logic: look up the voyage's current onboardTEU from the engine,
+  compute onboardAfterAdd = current + (qty × TEU), compare to vessel.capacity.
+  Returns { canFit, addedTEU, voyage:{ onboardBefore, onboardAfter, remaining } }
+
+  ─────────────────────────────────────────────────────────────────────────
+  3.6 FRONTEND UPDATES — MINIMUM REQUIRED (voyage-based payload)
+  ─────────────────────────────────────────────────────────────────────────
+
+  Three components currently read capacity payload:
+
+  a) CapacityTimeline.jsx
+     Currently reads: segments.map(s => s.onboardTEU)
+     Change to:       voyages.map(v => v.onboardTEU)
+     Labels currently: fromPort.code
+     Change to:        v.voyageNumber or fromPort.code → toPort.code
+     Estimate: 5-line change. Component KEPT.
+
+  b) CapacitySegmentTable.jsx
+     Currently reads: segments[].{segmentIndex, fromPort, toPort, loadedTEU,
+                       dischargedTEU, onboardTEU, remainingTEU, utilisationPct}
+     New source:      voyages[].{voyageNumber, fromPort, toPort,
+                       layer1.teu, layer2.teu, onboardTEU, remainingTEU, utilisationPct}
+     Column changes:
+       Rename "Seg#" → "Voyage"
+       Remove "Loaded TEU" and "Discharged TEU" columns (no longer in payload)
+       Add "L1 TEU" and "L2 TEU" columns (from layer1.teu, layer2.teu)
+       Remove "isManualJump" indicator
+     Estimate: 15-line change. Component KEPT.
+
+  c) VesselDetail.jsx
+     Pass voyages prop instead of segments:
+       activeRound.voyages instead of activeRound.segments
+     Remove reference to activeRound.ports (no longer in payload)
+     Estimate: 2-line change.
+
+  d) RoundCapacityReport.jsx
+     Same changes as VesselDetail — read voyages[] not segments[].
+     Estimate: 5-line change.
+
+  e) dashboard/page.jsx fleet widget
+     Reads: peakOnboardTEU (same field name) and peakPct (same field name).
+     NO CHANGE needed (payload totals are backward compatible on field names).
+     segmentCount → replaced by voyageCount in the payload.
+     The fleet widget currently reads `d.segments?.length ?? 0`.
+     Change to `d.voyages?.length ?? 0`. 1-line change.
+
+  f) CapacityWarnings.jsx
+     Reads `warnings[]` — structure unchanged.
+     SEGMENT_OVERBOOKED string becomes VOYAGE_OVERBOOKED — update the icon
+     lookup object key (1 line). Component KEPT.
+
+================================================================================
+  PART 4 — OPEN QUESTIONS (for product decision, not blocking)
+================================================================================
+
+  Q1: Should dashboard kpis merge L1 and L2 booking counts into one number
+      (totalBookings = L1 + L2), or show them separately?
+      Recommendation: show combined total in the main KPI card, with a
+      sub-label "(incl. X manual bookings)". Decide during Phase 5.
+
+  Q2: Should the Booking Report include a separate section for Manual Bookings,
+      or remain Layer 2 only?
+      Recommendation: remain Layer 2 only this sprint. L1 is on its own tab.
+
+  Q3: If a Final Loading import is run on a voyage that has Manual Bookings,
+      should the Manual Bookings be cancelled (as Layer 2 non-manifest
+      bookings are)?
+      Recommendation: NO. Final Loading reconciliation touches only Booking
+      collection. ManualBookings are a separate commercial layer and should
+      not be auto-cancelled by an operational import. Confirm with owner.
+
+================================================================================
+  PART 5 — PHASE BREAKDOWN
+================================================================================
+
+  Phase 1 — ManualBooking backend (inside bookings module)
+    Files changed:
+      backend/src/modules/bookings/manualBooking.model.js      NEW
+      backend/src/modules/bookings/manualBooking.service.js     NEW
+      backend/src/modules/bookings/manualBooking.validation.js  NEW
+      backend/src/modules/bookings/manualBooking.controller.js  NEW
+      backend/src/modules/bookings/booking.service.js          MINOR
+        (export getVoyagePortIds)
+      backend/src/modules/bookings/booking.routes.js           MODIFIED
+        (+5 /manual/* routes + 2 require lines at top)
+    Estimate: 5h
+
+  Phase 2 — Capacity engine: voyage-based algorithm
+    Files changed:
+      backend/src/modules/capacity/capacity.service.js         REWRITE CORE
+        (algorithm Steps A–F replaced; warnings updated;
+         computeSegmentPreview → computeVoyagePreview)
+      backend/src/modules/bookings/booking.service.js          MINOR
+        (computeSegmentPreview call → computeVoyagePreview, 2 lines)
+    Estimate: 4h
+
+  Phase 3 — Vessel detail + capacity frontend update
+    Files changed:
+      frontend/src/modules/vessels/components/CapacityTimeline.jsx     MINOR (5 lines)
+      frontend/src/modules/vessels/components/CapacitySegmentTable.jsx  MODERATE (15 lines)
+      frontend/src/modules/vessels/components/CapacityWarnings.jsx      MINOR (1 line)
+      frontend/src/modules/vessels/VesselDetail.jsx                     MINOR (2 lines)
+      frontend/src/modules/reports/RoundCapacityReport.jsx              MINOR (5 lines)
+      frontend/src/app/(dashboard)/dashboard/page.jsx                   MINOR (1 line)
+    Estimate: 3h
+
+  Phase 4 — Frontend ManualBooking module (inside bookings module)
+    Files changed:
+      frontend/src/modules/bookings/ManualBookingForm.jsx      NEW
+      frontend/src/modules/bookings/ManualBookingDetail.jsx    NEW
+      frontend/src/services/bookings.service.js               MODIFIED (+5 methods)
+      frontend/src/modules/bookings/BookingList.jsx            MODIFIED (~40 lines added)
+      frontend/src/app/(dashboard)/bookings/new-manual/page.jsx       NEW
+      frontend/src/app/(dashboard)/bookings/manual/[id]/page.jsx      NEW
+    Estimate: 6h
+
+  Phase 5 — Reports + Dashboard L1 inclusion
+    Files changed:
+      backend/src/modules/reports/reports.service.js      MODIFIED
+        (targeted l1Agg additions to 3 functions)
+      backend/src/modules/dashboard/dashboard.service.js  MODIFIED
+        (2 aggregation additions to computeStats)
+    Estimate: 3h
+
+  Phase 6 — Docs + rollback validation
+    Files changed:
+      claude.md, system-report.txt, STATUS.md, 023-sprint.txt
+    Estimate: 1.5h
+
+  Total estimate: ~22.5 hours.
+
+================================================================================
+  PART 6 — COMPLETE FILE CHANGE LIST
+================================================================================
+
+  BACKEND — NEW (inside existing bookings module):
+    backend/src/modules/bookings/manualBooking.model.js
+    backend/src/modules/bookings/manualBooking.service.js
+    backend/src/modules/bookings/manualBooking.validation.js
+    backend/src/modules/bookings/manualBooking.controller.js
+
+  BACKEND — MODIFIED:
+    backend/src/modules/bookings/booking.routes.js
+      +2 require lines at top; +5 /manual/* route declarations
+    backend/src/modules/bookings/booking.service.js
+      +getVoyagePortIds to module.exports (+1 line)
+      computeSegmentPreview call → computeVoyagePreview (+2 lines changed)
+    backend/src/modules/capacity/capacity.service.js
+      Full rewrite of computeRoundCapacity algorithm (Steps A–F replaced)
+      computeSegmentPreview renamed computeVoyagePreview + simplified
+      ManualBooking model required at top of file
+      Warning codes updated
+    backend/src/modules/reports/reports.service.js
+      ManualBooking require at top
+      getRoundPnL: +l1Agg block (~8 lines)
+      getVoyagePerformance: +l1 group by voyageId (~10 lines)
+      getRevenueReport: +l1 service-level agg (~10 lines)
+    backend/src/modules/dashboard/dashboard.service.js
+      ManualBooking require at top
+      computeStats: +2 aggregations in Promise.all
+
+  BACKEND — NOT CHANGED:
+    booking.model.js        ← Layer 2 schema unchanged
+    booking.validation.js   ← Layer 2 validation unchanged
+    booking.controller.js   ← Layer 2 controller unchanged
+    bookingImport.service.js← Import flow zero changes
+    bookingImport.controller.js ← zero changes
+    capacity.controller.js  ← endpoint paths unchanged
+    capacity.routes.js      ← unchanged
+    reports.controller.js   ← unchanged
+    reports.routes.js       ← unchanged
+    dashboard.controller.js ← unchanged
+    dashboard.routes.js     ← unchanged
+    server.js               ← no new mounts
+
+  FRONTEND — NEW (inside existing bookings module folder):
+    frontend/src/modules/bookings/ManualBookingForm.jsx
+    frontend/src/modules/bookings/ManualBookingDetail.jsx
+    frontend/src/app/(dashboard)/bookings/new-manual/page.jsx
+    frontend/src/app/(dashboard)/bookings/manual/[id]/page.jsx
+
+  FRONTEND — MODIFIED:
+    frontend/src/services/bookings.service.js
+      +5 manual booking methods (no existing methods changed)
+    frontend/src/modules/bookings/BookingList.jsx
+      +tab strip (~20 lines), +split button (~10 lines)
+    frontend/src/modules/vessels/components/CapacityTimeline.jsx
+      ~5 lines (data source: voyages not segments, labels update)
+    frontend/src/modules/vessels/components/CapacitySegmentTable.jsx
+      ~15 lines (column names/sources updated)
+    frontend/src/modules/vessels/components/CapacityWarnings.jsx
+      ~1 line (warning code key rename)
+    frontend/src/modules/vessels/VesselDetail.jsx
+      ~2 lines (prop name voyages not segments)
+    frontend/src/modules/reports/RoundCapacityReport.jsx
+      ~5 lines (voyages not segments)
+    frontend/src/app/(dashboard)/dashboard/page.jsx
+      ~1 line (segmentCount → voyageCount)
+
+  FRONTEND — NOT CHANGED:
+    BookingForm.jsx         ← unchanged
+    BookingDetailCard.jsx   ← unchanged
+    BookingImport.jsx       ← unchanged
+    Sidebar.jsx             ← no new entry
+    Any other page          ← unchanged
+
+================================================================================
+  PART 7 — ROLLBACK STRATEGY
+================================================================================
+
+  Phase 1 (ManualBooking backend):
+    Delete the 4 new files in bookings/.
+    Remove the 7 new lines from booking.routes.js.
+    Remove the +getVoyagePortIds export from booking.service.js.
+    Drop the ManualBooking MongoDB collection (empty unless data was entered).
+    Risk: NONE.
+
+  Phase 2 (capacity engine):
+    git checkout capacity.service.js to Sprint 022 version.
+    Revert the 2-line change in booking.service.js (preview call).
+    Phase 3 must also be reverted simultaneously (frontend reads old payload).
+    Risk: LOW — atomic pair of backend + frontend files.
+
+  Phase 3 (vessel detail + capacity frontend):
+    git checkout the 5 modified component files.
+    Components are small, isolated. Trivial revert.
+    Risk: NONE.
+
+  Phase 4 (frontend ManualBooking):
+    Delete the 2 new module files + 2 new page files.
+    Revert bookings.service.js additions (5 methods, no existing methods changed).
+    Revert BookingList.jsx additions (no existing logic changed).
+    Risk: NONE.
+
+  Phase 5 (reports/dashboard L1):
+    Remove the l1Agg blocks from 3 report functions and 1 dashboard function.
+    Each is a self-contained addition (~8-10 lines). Targeted removal.
+    Risk: NONE.
+
+  Phase 6: trivial.
+
+  ALL ROLLBACKS ARE ADDITIVE REVERSALS. No data migration destruction.
+
+================================================================================
+  PART 8 — MANUAL TESTING STRATEGY
+================================================================================
+
+  ── Layer 1 — ManualBooking ──────────────────────────────────────────────
+
+  T1   Create with 1 row (10× 20ft, rate $1000, DG false).
+       Expected: bookingNumber starts 'MB-', rowTotal=10000,
+       totalFreight=10000, totalTEU=10, totalUnits=10.
+
+  T2   Create with 3 rows (10×20ft, 5×40ft, 3×40HC), different rates.
+       Expected: rowTotals summed correctly.
+       totalTEU = 10×1 + 5×2 + 3×2 = 10+10+6 = 26.
+
+  T3   Create with cargoRows=[] → 400 validation error.
+
+  T4   Create with polId === podId → 400.
+
+  T5   Create with invalid containerTypeId → 400.
+
+  T6   DG=true + dgValue="Class 3, UN1965" → saved verbatim, no coercion.
+       DG=false → dgValue field absent/null. No input shown.
+
+  T7   commodity and vgm on each row → saved per row in cargoRows.
+
+  T8   Update: add a row → totalFreight, totalTEU, totalUnits recomputed.
+
+  T9   Update: remove a row → totals recomputed.
+
+  T10  Status: Pending→Confirmed→Final Loading→Cancelled → all OK.
+       Confirmed→Pending → rejected (400).
+
+  T11  Edit on Locked booking (Final Loading or Cancelled) → 400.
+
+  T12  Soft delete → isDeleted=true, capacity cache invalidated.
+
+  T13  BookingList page: Manual tab shows MB- bookings only.
+       Detail tab shows BK- bookings only. No mixing.
+
+  T14  New Manual Booking button → navigates to /bookings/new-manual.
+
+  T15  Existing Excel Import still works on the Import tab (zero regression).
+
+  ── Capacity — voyage-based ────────────────────────────────────────────
+
+  T16  Round with 3 voyages, no bookings, no manual bookings.
+       Expected: 3 voyage rows in payload, all onboardTEU=0, utilisationPct=0.
+
+  T17  1 Layer 2 booking on voyage 2 (10×40ft = 20 TEU).
+       Expected: voyages[1].onboardTEU=20, voyages[0] and [2] unchanged.
+
+  T18  1 Layer 1 manual booking on voyage 2 (5×20ft = 5 TEU).
+       Expected: voyages[1].onboardTEU=25, layer1.teu=5, layer2.teu=20.
+
+  T19  Manual voyage Port1→Port3 (skipping Port2). No synthetic rows.
+       Expected: exactly 1 voyage row in the payload. No "isManualJump"
+       concept. No phantom Port1→Port2 row.
+
+  T20  Overbook a voyage beyond vessel.capacity.
+       Expected: utilisationPct > 100, remainingTEU < 0,
+       warnings contains VOYAGE_OVERBOOKED with voyageId+voyageNumber.
+
+  T21  vessel.capacity = null.
+       Expected: onboardTEU numeric; remainingTEU=null; utilisationPct=null.
+
+  T22  Payload shape: no 'segments', no 'ports', no 'route' keys.
+       'voyages' key present. Vessel detail page renders correctly.
+
+  T23  fleet-utilisation widget on dashboard: peakPct reflects combined TEU.
+       voyageCount shows correct count (not segmentCount).
+
+  ── Reports + Dashboard ────────────────────────────────────────────────
+
+  T24  Round P&L: totalRevenue includes L1 manual booking totalFreight.
+
+  T25  Voyage Performance: each voyage row includes L1 contribution in freight.
+
+  T26  Dashboard totalBookings includes manual bookings count.
+
+  T27  Existing booking report (Layer 2 only) — no regression, no mixing.
+
+================================================================================
+  PART 9 — RISK ANALYSIS
+================================================================================
+
+  R1   Capacity payload shape change breaks frontend consumers
+       Severity: Medium. All 4 frontend consumers (VesselDetail, Capacity
+       components, RoundCapacityReport, dashboard widget) update in Phase 3
+       in the same deploy. There are no external API consumers.
+       Mitigation: update all in one atomic release.
+
+  R2   /bookings/manual route captured by /:id
+       Severity: Low. Fully mitigated by placing /manual/* routes ABOVE /:id
+       in booking.routes.js. Express first-match semantics guarantee correct
+       routing. Must be verified in T14 test.
+
+  R3   ManualBooking TEU stored in totalTEU — becomes stale if size changes
+       Severity: Low. ContainerType.size is a hard enum (CONTAINER_SIZES).
+       Changing size of a container type after bookings exist is a data ops
+       concern. Engine invalidation is cache-based (60s TTL). Acceptable.
+
+  R4   Reports double-count if L1 + L2 added naively
+       Severity: Low. L1 and L2 come from different collections via separate
+       aggregations. As long as the $sum operations are on different data,
+       there is no double-count. Code review verifies during Phase 5.
+
+  R5   Layer 2 Final Loading cancels Layer 1 bookings on same voyage
+       Severity: Low. Final Loading reconciliation queries Booking collection
+       only. ManualBookings are in a different collection — invisible to it.
+       No cancel can happen. Confirmed by Q3 in §4 above.
+
+================================================================================
+  PART 10 — FINAL READINESS CHECKLIST
+================================================================================
+
+  [x] Approach A vs B formally compared using real code evidence
+  [x] Approach B (separate model, same module) chosen with justified reasons
+  [x] Layer 2: booking.model.js, booking.validation.js, booking.controller.js
+      bookingImport.service.js, BookingForm.jsx, BookingDetailCard.jsx,
+      BookingImport.jsx — ALL UNCHANGED
+  [x] ManualBooking: 4 new files, all in /bookings/ folder
+  [x] Routes added to booking.routes.js only — no server.js change
+  [x] RBAC: reuses 'bookings' — no MODULES[] change, no migration
+  [x] Sidebar: no new entry
+  [x] Capacity engine: algorithm rewritten voyage-first, cache unchanged,
+      endpoint paths unchanged, payload shape documented in §3.3
+  [x] All frontend capacity components kept (not replaced), minimum edits
+  [x] Layer 1 consumer impact documented per consumer (§2.8)
+  [x] Reports and dashboard: targeted additions, no restructuring
+  [x] DG: per-row free text in Layer 1; per-booking percentage in Layer 2
+  [x] Commodity + VGM: per-row in Layer 1; per-booking in Layer 2
+  [x] Rollback plan: all phases are additive reversals
+  [x] Open questions identified for product decision (§4)
+  [x] 27 manual test cases covering both goals
+
+================================================================================
+  STATUS: PLANNING COMPLETE — reply "Approve" to begin Phase 1
+================================================================================

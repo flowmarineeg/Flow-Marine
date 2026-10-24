@@ -160,6 +160,7 @@ const create = async (data, createdBy) => {
     status:    data.status || 'Planned',
     notes:     data.notes || null,
     voyageIds: [],
+    v2: true,
     createdBy,
     updatedBy: createdBy,
   });
@@ -187,6 +188,7 @@ const create = async (data, createdBy) => {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 const update = async (id, data, updatedBy) => {
+  await require('./roundLock').assertRoundOpen(id);
   const round = await Round.findOne({ _id: id });
   if (!round) throw { status: 404, message: 'Round not found' };
 
@@ -255,6 +257,7 @@ const update = async (id, data, updatedBy) => {
 // invoiced Booking blocks this Round delete transitively) — narrow,
 // exclusive-ownership cleanup, not a generic cascade.
 const hardDelete = async (id) => {
+  await require('./roundLock').assertRoundOpen(id);
   const round = await Round.findOne({ _id: id });
   if (!round) throw { status: 404, message: 'Round not found' };
 
@@ -286,6 +289,14 @@ const hardDelete = async (id) => {
     const hasExpense = await Expense.exists({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }] });
     if (hasExpense) throw { status: 400, message: 'Cannot delete — expenses are recorded against this round or its voyages' };
   }
+
+  // Audit H5: ledger lines / settlements / reserve / posted expenses / invoiced items block the delete
+  const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
+  await assertNoDependents('round', id, DEPENDENTS.round);
+  await assertNoDependents('voyage', { $in: voyageIds }, DEPENDENTS.voyage);
+  await require('mongoose').model('PartnerTransfer').deleteMany({ roundId: id, status: 'Suggested' }).catch(() => {});
+  await require('mongoose').model('PartnerSettlement').deleteMany({ roundId: id, status: 'Draft' }).catch(() => {});
+  await require('mongoose').model('BookingItem').deleteMany({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }], locked: false }).catch(() => {});
 
   if (voyageIds.length) await Voyage.deleteMany({ _id: { $in: voyageIds } });
   await Round.findByIdAndDelete(id);

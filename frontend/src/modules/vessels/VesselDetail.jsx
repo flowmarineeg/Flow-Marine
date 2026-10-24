@@ -14,6 +14,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import CapacityTimeline from './components/CapacityTimeline';
 import CapacitySegmentTable from './components/CapacitySegmentTable';
 import CapacityWarnings from './components/CapacityWarnings';
+import VesselPartnersPanel from './components/VesselPartnersPanel';
 
 // Sprint 043 — Capacity Engine rows use fromPort/toPort, same adapter as
 // RoundCapacityReport.jsx. Display-only: never touches the underlying
@@ -580,6 +581,9 @@ export default function VesselDetail({ id }) {
           </div>
         )}
       </div>
+
+      {/* Sprint050 P6 - JV partner shares (flag: partners) */}
+      <VesselPartnersPanel vesselId={id} />
     </div>
   );
 }

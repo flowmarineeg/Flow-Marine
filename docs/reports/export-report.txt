@@ -1,0 +1,584 @@
+EXPENSE MODULE — FULL SYSTEM REPORT
+Covers: Expense, ExpenseType, ExpenseCategory — how the three collections
+work together, end to end (schema -> service -> route -> validation ->
+frontend -> reports -> export).
+Generated: 2026-08-04, against the current state of the `version3` branch.
+Source files read for this report:
+  backend/src/modules/expenses/{expense.model,expense.service,
+    expense.controller,expense.routes,expense.validation}.js
+  backend/src/modules/expenseTypes/{expenseType.model,expenseCategory.model,
+    expenseType.service,expenseType.controller,expenseType.routes,
+    expenseType.validation}.js
+  backend/src/modules/reports/reports.service.js (getRoundPnL, getExpenseReport)
+  backend/src/modules/export/export.service.js (expenses, expenseTypes cases)
+  backend/src/config/constants.js (EXPENSE_COST_CLASSIFICATIONS)
+  frontend/src/modules/expenses/{ExpenseList,ExpenseForm}.jsx
+  frontend/src/modules/expenseTypes/ExpenseTypeForm.jsx
+  frontend/src/services/{expenses.service,expenseTypes.service}.js
+
+================================================================================
+1. THE THREE COLLECTIONS AT A GLANCE
+================================================================================
+
+  ExpenseCategory  (standalone collection, "expensecategories")
+      name                 String, required, unique, trim, max 50
+      costClassification   enum ['Voyage Cost','Other Voyage Cost'],
+                            default 'Other Voyage Cost'
+      createdBy            User ref
+
+  ExpenseType  (collection "expensetypes")
+      name        String, required, unique, trim, max 100
+      category    String, required, trim, max 50   <- FREE TEXT, not a ref
+      createdBy / updatedBy
+
+  Expense  (collection "expenses")
+      roundId / voyageId / portId   mutually-constrained scope (see §3)
+      expenseTypeId   ObjectId ref ExpenseType, required
+      agentId         ObjectId ref Agent, optional
+      port            String (legacy free-text port, kept for old records)
+      amount, currency, expenseDate, description
+      attachmentUrl / attachmentOriginalName
+      createdBy / updatedBy
+
+Relationship shape:
+  ExpenseCategory  <-- (by name, case-insensitive) --  ExpenseType.category
+  ExpenseType      <-- (by _id, expenseTypeId ref)   --  Expense.expenseTypeId
+
+IMPORTANT — this is NOT a normal ref chain. ExpenseType.category is a plain
+string, not a Mongoose ref to ExpenseCategory._id. ExpenseCategory exists
+purely as a side-table of "known category names + their business
+classification"; the actual link from an Expense back to its category is
+always resolved by STRING MATCH (case-insensitive) against
+ExpenseType.category, never by an ObjectId join. This is deliberate — see
+§4 for why.
+
+================================================================================
+2. ExpenseCategory — WHAT IT ACTUALLY DOES
+================================================================================
+
+ExpenseCategory (backend/src/modules/expenseTypes/expenseCategory.model.js)
+is a small standalone lookup collection with exactly one business-meaningful
+field beyond its name: `costClassification`. That field was added in
+Sprint 035 for one purpose only — telling the Voyage Profitability report
+(getRoundPnL) whether every expense filed under this category should count
+as "Voyage Cost" (broken out per-port, per-voyage) or "Other Voyage Cost"
+(one lump total for the whole scope). See §7 for exactly how that's used.
+
+Categories are created two ways:
+  a) Explicitly, via POST /expense-types/categories (the "Add type" chip
+     button in ExpenseTypeForm.jsx) — the user names it and picks its
+     classification (Voyage / Other) up front.
+  b) Implicitly, via expenseType.service.js#syncCategory() — every time an
+     ExpenseType is created or updated with a `category` string that
+     doesn't already exist (case-insensitive match) in ExpenseCategory, a
+     new ExpenseCategory row is silently upserted for it with
+     costClassification defaulted to 'Other Voyage Cost'. This means a
+     category can come into existence with NO explicit classification
+     decision — an admin who types a brand-new category name straight into
+     an ExpenseType's category field (rather than using the chip UI) gets
+     an 'Other Voyage Cost' category by default and has to remember to go
+     flip it later (via the same chip's Voyage/Other toggle, or
+     PUT /expense-types/categories/:id).
+
+Categories are NEVER renameable — createCategory/updateCategoryClassification
+only ever touches costClassification; the `name` field has no update path
+at all (documented explicitly in both expenseType.service.js and
+expenseType.routes.js as "same deliberate limitation as before Sprint 035").
+The only way to fix a typo'd category name is to delete it (if unused) and
+recreate it — which also means every ExpenseType still referencing the old
+string keeps that string; nothing cascades a rename.
+
+Delete guard (expenseType.service.js#deleteCategory): blocked if ANY
+ExpenseType's `category` string case-insensitively matches this category's
+`name`. No guard exists against Expense rows directly — since Expense never
+references ExpenseCategory at all (only ExpenseType), deleting a category
+can never orphan an Expense; the ExpenseType guard is the only line of
+defense needed.
+
+================================================================================
+3. ExpenseType — WHAT IT ACTUALLY DOES
+================================================================================
+
+ExpenseType (backend/src/modules/expenseTypes/expenseType.model.js) is the
+thing an Expense actually points to (expenseTypeId). It's a flat
+{name, category} pair — `name` is the specific cost item ("Port Dues",
+"Stevedoring", "Hire Rate", "Bunker Adjustment Factor", etc.), `category`
+is the coarser grouping string used everywhere for reporting/summarizing
+(e.g. "Port Charges", "Vessel Operating Costs").
+
+`category` has NO enum constraint (expenseType.validation.js explicitly
+comments "category is now a free string — no enum constraint") — any
+non-empty string up to 50 chars is accepted. The only thing keeping the
+category space from sprawling into inconsistent near-duplicates is the
+syncCategory() auto-upsert (§2b) plus the chip-picker UI nudging users
+toward reusing an existing chip instead of hand-typing a new string.
+
+One special ExpenseType name is load-bearing for a totally separate
+business rule: an ExpenseType literally named "Hire Rate" (case-
+insensitive, trimmed) is detected by getRoundPnL (reports.service.js) and
+its cost is computed as `rate x voyage duration in days`, NOT the raw
+`amount` field — see §7.3. This is a name-string special case, not a
+schema flag; renaming that ExpenseType would silently break the Hire Rate
+cost calculation in Voyage Profitability.
+
+Create/update (expenseType.service.js#create/update):
+  - name uniqueness enforced case-insensitively (regex, escaped via
+    utils/escapeRegex.js — see the Post-Audit Fixes section of CLAUDE.md;
+    this file was one of the 13 ReDoS-vulnerable sites fixed, and actually
+    had MORE unescaped `${x}` regex-interpolation sites than the audit's
+    own grep initially found — 8 total in this one file: syncCategory,
+    createCategory, deleteCategory, create, update, list, getAll, plus the
+    category-match in list()).
+  - both create() and update() call syncCategory() whenever a category
+    string is supplied, so ExpenseCategory always ends up containing every
+    category string any ExpenseType currently uses (or ever used —
+    syncCategory never removes a row, only adds).
+
+Delete guard (expenseType.service.js#hardDelete): blocked if ANY Expense
+document has expenseTypeId === this type's _id (a plain
+Expense.findOne({expenseTypeId: id}) existence check). This is the ONE
+real foreign-key-shaped guard in the whole trio — Expense really does hold
+a hard ObjectId ref to ExpenseType, unlike the category link.
+
+getAll(filters, selectedIds) exists purely for the Export module (§8) —
+same filter shape as list() but no pagination, used by
+export.service.js's `expenseTypes` case... actually note: export.service.js
+re-implements its own ExpenseType.find() rather than calling getAll() (see
+§8) — getAll() is exposed on the service but the export path queries the
+model directly and separately re-attaches costClassification via
+getCostClassificationMap(). getAll() itself appears to be legacy/unused by
+the current export path; it is still exported from the service, just not
+the code path export.service.js#fetchData('expenseTypes') actually calls.
+
+getCostClassificationMap() (§7) is the ONE place any other module is
+supposed to translate "a category string" into "Voyage Cost or Other
+Voyage Cost" — reports.service.js and export.service.js both call it
+directly rather than re-reading ExpenseCategory themselves.
+
+================================================================================
+4. Expense — WHAT IT ACTUALLY DOES
+================================================================================
+
+4.1 SCOPE — Round / Voyage / Port (never a stored field)
+--------------------------------------------------------
+An Expense always belongs to exactly one of three scopes, and the scope is
+NEVER stored directly — it's always inferred at read time from which of
+roundId/voyageId/portId are non-null (expense.service.js#deriveScope,
+Sprint 036):
+
+    portId  set  ->  scope = 'Port'    (portId is ALWAYS paired with voyageId)
+    voyageId set  ->  scope = 'Voyage'  (no portId)
+    roundId set  ->  scope = 'Round'   (no voyageId, no portId)
+
+deriveScope() is exported from expense.service.js specifically so every
+other consumer (reports.service.js#getExpenseReport, export.service.js's
+`expenses` case, ExpenseList.jsx's scope badge) reuses the exact same
+inference instead of re-implementing it — the comment in expense.model.js
+calls this out explicitly: "an inconsistent state ... is rejected at write
+time instead of being representable at rest."
+
+Write-time validation lives in expense.service.js#resolveScopeIds(), run
+by both create() and update():
+    hasPort && !hasVoyage           -> 400 "A Port expense must also
+                                        specify its Voyage"
+    hasRound && (hasVoyage||hasPort) -> 400 "cannot be linked to both a
+                                        Round and a Voyage/Port"
+    !hasRound && !hasVoyage         -> 400 "must be linked to a Round, a
+                                        Voyage, or a Port"
+    hasPort -> the given portId must be EXACTLY the selected voyage's own
+               polId or podId (a Voyage models one leg with exactly two
+               ports; there's no "list of ports for this voyage" endpoint
+               because there's nothing to list beyond those two) — 400
+               "portId must be this voyage's POL or POD" otherwise.
+
+update() re-runs resolveScopeIds() by merging any submitted
+roundId/voyageId/portId over the EXISTING document's current values (so a
+partial PUT that only changes amount, say, still re-validates using the
+expense's own existing scope) — then unconditionally overwrites all three
+fields with whatever resolveScopeIds() returned (so scope fields can never
+drift out of the three valid shapes even via update()).
+
+4.2 THE LEGACY `port` FIELD
+----------------------------
+`port` (free-text string) predates Sprint 036's real portId. It is still
+writable on create/update, still displayed in ExpenseList's Port column as
+a fallback (`exp.portId?.name || exp.port`), and export.service.js's
+`portName` column does the same fallback — but the Port link-type in
+ExpenseForm.jsx (the "⚓ Port" toggle) writes portId, never `port`. The form
+only exposes a free-text `port` input when linkType is 'round' or
+'voyage' (i.e. NOT already Port-scoped), explicitly labelled "Port (free
+text, legacy)" with a hint pointing the user at the real Port link type
+for anything that needs to be reportable. So `port` today is best read as
+"a free-text annotation an admin can add to a Round- or Voyage-scoped
+expense," not a competing scope mechanism.
+
+4.3 CREATE / UPDATE / FILE ATTACHMENT
+---------------------------------------
+create(data, file, createdBy):
+  1. resolveScopeIds(data) — validates/normalizes the three scope IDs.
+  2. Builds the Expense payload (expenseTypeId, agentId, scope IDs, port,
+     amount, currency (uppercased), expenseDate, description).
+  3. If a file was uploaded (via the compressUpload middleware — same
+     Sharp-compression + magic-byte-validation pipeline used by every
+     other file-accepting route in the system, post-audit-hardened), sets
+     attachmentUrl = `/uploads/expenses/${file.filename}` and
+     attachmentOriginalName = file.originalname.
+  4. Expense.create(payload), then re-fetches via getById() so the
+     response is fully populated + scope-tagged.
+
+update(id, data, file, updatedBy): same resolveScopeIds() re-validation
+(see 4.1), replaces the attachment file on disk (deleteFile() removes the
+old one first) if a new file was uploaded, whitelists which plain fields
+can change (expenseTypeId, agentId, port, amount, currency, expenseDate,
+description) — anything not in that list in the request body is silently
+ignored, not an error.
+
+4.4 DELETE (Sprint 047 hard delete)
+-------------------------------------
+hardDelete(id): NO guard at all (unlike ExpenseType/ExpenseCategory above)
+— any Expense can always be deleted. The only side effect handled is
+deleteFile(expense.attachmentUrl), which best-effort removes the uploaded
+file from disk (wrapped in try/catch — a missing/already-gone file never
+blocks the delete). This matches the Deletion Rules table in CLAUDE.md §9:
+"Expense | Hard | Removes file from disk + DB record" — no relationship
+guard, because nothing else in the system holds a reference TO an Expense
+(Invoices/Payments never point at Expense; the reverse direction —
+Round/Voyage -> Expense — is what the ROUND delete guard checks, not the
+other way around; see CLAUDE.md's Round hardDelete entry: Round is blocked
+from deleting if any of its voyages has an Expense against them).
+
+4.5 ATTACHMENT SERVING
+-------------------------
+GET /expenses/:id/attachment is placed BEFORE GET /expenses/:id in the
+route file specifically to avoid Express route-shadowing (documented
+inline). It requires auth + rbac('expenses') same as every other route on
+this router — there is no public /uploads static mount (removed
+system-wide in Sprint020 for exactly this reason). getAttachmentPath()
+resolves the on-disk absolute path from the stored URL's basename (so a
+manipulated `id` can't path-traverse outside UPLOAD_DIR — the filename
+alone is taken from the DB record, not from user input) and infers
+mimetype from the file extension for the Content-Type header.
+
+================================================================================
+5. ROUTES & RBAC SUMMARY
+================================================================================
+
+Expense routes (all require auth + rbac('expenses'), all under
+/api/v1/expenses):
+  GET    /:id/attachment   <- placed first, see §4.5
+  GET    /                 list (filters: roundId, voyageId, portId,
+                            expenseTypeId, currency, dateFrom, dateTo)
+  GET    /:id
+  POST   /                 compressUpload -> audit -> validateCreate -> create
+  PUT    /:id               compressUpload -> audit -> validateUpdate -> update
+  DELETE /:id               audit -> remove (hardDelete)
+
+ExpenseType routes (all require auth + rbac('expenseTypes'), under
+/api/v1/expense-types) — category sub-routes deliberately placed BEFORE
+/:id to avoid the same shadowing issue:
+  GET    /categories
+  POST   /categories        (name, costClassification)
+  PUT    /categories/:id    (costClassification ONLY — see §2)
+  DELETE /categories/:id
+  GET    /
+  GET    /:id
+  POST   /                  audit -> validateCreate -> create
+  PUT    /:id                audit -> validateUpdate -> update
+  DELETE /:id                audit -> remove (hardDelete)
+
+Both modules are gated by the standard rbac(module) middleware — there is
+no `expenseCategories` MODULES[] entry; category management rides entirely
+on the `expenseTypes` permission (a role with expenseTypes:create/update/
+delete can manage categories too; there's no finer-grained split).
+
+================================================================================
+6. VALIDATION SUMMARY
+================================================================================
+
+Expense (expense.validation.js):
+  expenseTypeId  required, isMongoId
+  amount         required, isFloat({min:0})
+  currency       required, non-empty, max 10 chars
+  expenseDate    required, isISO8601
+  agentId / roundId / voyageId / portId   all optional isMongoId (the
+                                           REAL scope-exclusivity rules —
+                                           "exactly one of Round/Voyage/
+                                           Port" — are NOT expressible in
+                                           express-validator and are
+                                           enforced entirely in
+                                           expense.service.js#resolveScopeIds,
+                                           §4.1)
+
+ExpenseType (expenseType.validation.js):
+  name       required, max 100
+  category   required, max 50 (free string, no enum — see §3)
+
+Category creation (inline in expenseType.routes.js, not a separate
+validation file): name required max 50; costClassification optional but
+if present must be one of EXPENSE_COST_CLASSIFICATIONS
+(['Voyage Cost','Other Voyage Cost'], constants.js). Category update
+requires costClassification to be present AND one of those two values —
+there is no "clear classification back to unset" path; every category
+always has one of the two values (schema default 'Other Voyage Cost'
+covers rows that never got an explicit classification).
+
+================================================================================
+7. HOW costClassification DRIVES REPORTING (reports.service.js)
+================================================================================
+
+7.1 The single source of truth
+--------------------------------
+expenseTypeService.getCostClassificationMap() builds
+`{ CATEGORY_NAME_UPPERCASE: 'Voyage Cost' | 'Other Voyage Cost' }` from
+ExpenseCategory. Both getRoundPnL and getExpenseReport call this ONE
+function and NEVER hardcode a category name — this is stated as an
+explicit, repeated business rule across both functions' comments ("NEVER
+decided by a hardcoded category name").
+
+7.2 getRoundPnL (Voyage Profitability report)
+------------------------------------------------
+For every Expense in the round/voyage scope, classifyExpense(e) looks up
+`classificationMap[e.expenseTypeId.category.trim().toUpperCase()]`,
+defaulting to 'Other Voyage Cost' if the category was never registered in
+ExpenseCategory (shouldn't normally happen given syncCategory, but is a
+safe fallback for old/orphaned data).
+
+  Voyage Cost expenses:
+    - If the expense has a voyageId -> added to that voyage's own
+      voyageCost.total, AND broken out further by port (portId if
+      present, else the legacy free-text `port`, else 'Unspecified') —
+      this happens even when the report itself is Round-scoped (each
+      voyage in the round gets its own Voyage Cost breakdown).
+    - If the expense has NO voyageId (i.e. it's Round-scoped) -> it can't
+      be attributed to one specific voyage, so it goes into a SEPARATE
+      "roundLevelVoyageCost" bucket, grouped by ExpenseType, added to the
+      grand totalVoyageCost but never shown as belonging to any one
+      voyage row.
+
+  Other Voyage Cost expenses:
+    - Aggregated as ONE total for the whole report scope — never broken
+      out per voyage, even in Round scope (an explicit, deliberate
+      asymmetry vs. Voyage Cost, called out multiple times in comments so
+      nobody "fixes" it into matching Voyage Cost's per-voyage shape).
+    - SPECIAL CASE: if the ExpenseType's name is literally "Hire Rate"
+      (case-insensitive) AND it has a voyageId, its contribution isn't
+      the raw `amount` — it's `amount x voyageDurationDays(voyage)`
+      (rate-per-day x days). Every other Other-Voyage-Cost expense
+      contributes its raw amount.
+
+  bunkerCost is always null — a reserved, permanently-inert placeholder
+  field (Bunker Cost was never implemented; excluded from every formula).
+
+  Summary = totalRevenue - totalVoyageCost - totalOtherVoyageCost =
+  netProfit, plus profitPerTEU and profitMarginPct.
+
+7.3 getExpenseReport
+------------------------
+Simpler — one row per Expense (filtered by category/expenseTypeId/round/
+voyage/port/date/currency), each row tagged with `scope` via the exact
+same deriveScope() import. Two summary dimensions are computed
+side-by-side:
+  a) summary: grouped by (category, currency) — a straightforward totals
+     breakdown by category.
+  b) classificationSummary: grouped by (costClassification, currency) —
+     via the same classificationMap as getRoundPnL, so THIS report's
+     Voyage Cost / Other Voyage Cost totals are guaranteed to reconcile
+     exactly with getRoundPnL's totals for the same round (both draw from
+     the identical classification source and the identical Expense
+     population, just aggregated two different ways).
+
+================================================================================
+8. EXPORT MODULE INTEGRATION (export.service.js)
+================================================================================
+
+Two of the 13 exportable modules touch this trio directly:
+
+  `expenseTypes` export — columns: Name, Category, Cost Classification,
+  Created At. Cost Classification is NOT a stored field on ExpenseType —
+  it's computed at export time exactly like reports.service.js does:
+  fetch getCostClassificationMap(), look up by the row's own `category`
+  string (uppercased/trimmed), default 'Other Voyage Cost'. Note this
+  export path builds its own `ExpenseType.find(q)` query directly rather
+  than calling expenseType.service.js#getAll() — the two are functionally
+  similar (same filter shape) but are two separate code paths, not one
+  shared function call.
+
+  `expenses` export — columns: Expense Date, Expense Type, Category,
+  Scope, Round Number/Name, Voyage Number/Name, Port, Agent, Amount,
+  Currency, Description, Created At. Scope column calls
+  expense.service.js#deriveScope(r) directly (imported, not
+  reimplemented) — same guarantee as the report: export's Scope column
+  will never disagree with the app's own scope badge or the Expense
+  Report's Scope column, because all three call the identical function.
+  Port column falls back the same way as ExpenseList.jsx: portId's
+  populated name, else the legacy free-text `port` field.
+
+Both exports honor dateFrom/dateTo (via the shared dateRange() helper,
+Sprint 040) and get an auto-generated "Export Info" metadata worksheet
+ahead of the data (Export Name, Generated At, Generated By, Applied
+Filters, Record Count) — same as every other module in the Export panel.
+
+================================================================================
+9. FRONTEND — HOW A USER ACTUALLY WORKS WITH THIS
+================================================================================
+
+9.1 Category + Expense Type management — ExpenseTypeForm.jsx
+------------------------------------------------------------------
+This one form does double duty: it's the ExpenseType create/edit form,
+AND it's the entire category-management UI (no separate ExpenseCategory
+list page exists). Categories render as removable chips below the
+Category dropdown:
+  - Click a chip's name  -> selects that category for the ExpenseType
+    being edited (writes into the RHF `category` field).
+  - Click the chip's Voyage/Other badge -> PUT
+    /expense-types/categories/:id toggling costClassification, live,
+    without needing to submit the whole ExpenseType form (a direct
+    mutation against the category, independent of whatever ExpenseType
+    is currently being edited).
+  - Click the chip's ✕ -> DELETE /expense-types/categories/:id (blocked
+    server-side per §2's guard if any ExpenseType still uses it — the
+    frontend has no separate "in use" check of its own, it just surfaces
+    whatever 400 the backend returns via showErrorToast).
+  - "+ Add type" button -> inline name input + a Voyage/Other classifier
+    select, POST /expense-types/categories on save, auto-selects the new
+    category into the form afterward.
+There is a second, silent category-creation path a user can trigger
+without ever seeing this chip UI: just typing a brand-new string directly
+would NOT be possible here since `category` is a <select>, not a free
+text input — so in THIS form, every category actually used must already
+exist as a chip/option. The silent auto-create path (syncCategory, §2b)
+is only reachable via a DIRECT API call to POST/PUT /expense-types (e.g.
+an import script, a future bulk-edit feature, or manual API use) that
+supplies a category string bypassing this dropdown-constrained form.
+
+9.2 Expense create/edit — ExpenseForm.jsx
+----------------------------------------------
+The "Link To" toggle (Round / Voyage / Port) is pure client-side UI state
+(`linkType`) — it decides which combination of roundId/voyageId/portId
+gets appended to the submitted FormData; there is no `scope` field sent
+at all (server infers it, §4.1). Selecting Voyage or Port triggers a
+Round -> Voyage cascade (mirrors BookingForm.jsx's established pattern):
+picking a Round narrows the Voyage <select> (voyagesService.list({roundId})),
+and for Port scope, the Port <select> options are exactly
+`[selectedVoyage.polId, selectedVoyage.podId]` — no separate ports-of-a-
+voyage endpoint exists because a Voyage only ever has those two ports.
+Switching the selected Voyage resets any already-chosen Port (a
+useRef-guarded useEffect that explicitly skips firing on the very first
+render, so an existing item's portId survives when the form first loads
+in edit mode).
+
+File attachment: client-side pre-validates type (jpeg/png/pdf only) and
+size (<=10MB) before submit, but the REAL enforcement is server-side
+(compressUpload middleware — Sharp compression for images, magic-byte
+signature check for all three types since the post-audit fix, §11).
+
+9.3 Expense list — ExpenseList.jsx
+----------------------------------------
+Filters: Expense Type, Currency (free-text, uppercased client-side), Date
+range. No Round/Voyage/Port filter widget exists directly on this page
+(unlike the Report's equivalent) — filtering by scope happens through the
+Expense Report instead. Table shows a Scope badge (Port=amber, Voyage=
+purple, Round=teal) sourced straight from `exp.scope`, which the LIST
+endpoint already computed server-side via withScope()/deriveScope() — the
+frontend never re-derives it. Bulk select + "Delete Selected" (Sprint 047
+Part A) loops the existing single DELETE /expenses/:id endpoint
+sequentially per selected row, same pattern as every other bulk-delete
+table in the app — no new backend route.
+
+================================================================================
+10. DELETE-ORDER DEPENDENCY CHAIN (bottom-up, what blocks what)
+================================================================================
+
+  ExpenseCategory  <-x-  blocked if any ExpenseType.category matches its name
+        ^
+        | (string match, not a ref)
+  ExpenseType      <-x-  blocked if any Expense.expenseTypeId === its _id
+        ^
+        | (real ObjectId ref, required)
+  Expense          <-x-  no guard of its own; but an Expense referencing a
+                          Round/Voyage is itself what blocks ROUND/VOYAGE
+                          delete (Round hardDelete checks
+                          Expense.exists({roundId} OR {voyageId: in round's
+                          voyages}); Voyage hardDelete's own guard is
+                          booking-based, not expense-based, per CLAUDE.md §9)
+
+Practical order to fully remove a category from the system: delete every
+Expense using an ExpenseType under that category (or reassign their
+expenseTypeId) -> delete the ExpenseType(s) -> delete the ExpenseCategory.
+There is no cascade anywhere in this chain — every step is a manual,
+independent admin action, consistent with Sprint 047's system-wide
+"no cascade delete, no generic delete engine" rule (CLAUDE.md §9).
+
+================================================================================
+11. SECURITY / PERFORMANCE NOTES SPECIFIC TO THIS MODULE
+================================================================================
+
+(from the post-audit fixes documented in CLAUDE.md and
+system-audit-2026-8-3.md, restated here in the context of this module)
+
+  - ReDoS (MEDIUM, fixed): expenseType.service.js had 8 sites building
+    MongoDB $regex filters from unescaped user input (category/search
+    strings, including `` `^${x}$` `` exact-match patterns for
+    case-insensitive lookups) — all 8 now route through
+    utils/escapeRegex.js. expense.model.js/service.js itself doesn't
+    build any $regex queries (list() uses exact-match query fields only),
+    so it wasn't part of this fix.
+  - File upload spoofing (MEDIUM, fixed): compressUpload (used by both
+    the Expense attachment upload here and every other file-upload route)
+    now verifies the actual on-disk file bytes against known magic-byte
+    signatures for JPEG/PNG/PDF, rejecting (400, file deleted from disk)
+    any file whose real content doesn't match its declared Content-Type —
+    closes a spoofing gap that existed for expense attachments same as
+    everywhere else compressUpload is used.
+  - Neither getRoundPnL's nor getExpenseReport's Expense queries are
+    currently cached (unlike the Capacity Engine's 60s / Dashboard's 90s
+    caches) — this predates and is unrelated to the Sprint 041 caching
+    gaps called out for getAgentFinancialAccount/getVesselStats, but is
+    the same general class of "uncached, business-rule-heavy aggregation"
+    read. Not flagged as broken, just noted as consistent with the rest
+    of the Reports module's current caching posture (none).
+
+================================================================================
+12. WORKED EXAMPLE — FROM ZERO TO A REPORTABLE PORT EXPENSE
+================================================================================
+
+1. Admin opens Expense Types page, clicks "+ Add type" chip, types
+   "Port Charges", picks classification "Voyage" (Voyage Cost), saves.
+   -> POST /expense-types/categories {name:"Port Charges",
+      costClassification:"Voyage Cost"} creates one ExpenseCategory row.
+
+2. Admin fills Expense Type Name = "Berth Dues", selects the new
+   "Port Charges" chip, submits.
+   -> POST /expense-types {name:"Berth Dues", category:"Port Charges"}.
+      syncCategory("Port Charges") runs but finds the category already
+      exists (case-insensitive match from step 1) — no duplicate created.
+      A new ExpenseType row is created, expenseTypeId now exists.
+
+3. Admin opens Expenses -> New Expense, sets Link To = "⚓ Port", picks a
+   Round, then a Voyage (cascaded), then a Port (one of that voyage's own
+   POL/POD), picks Expense Type = "Berth Dues", enters amount/currency/
+   date, optionally attaches a PDF invoice, submits.
+   -> POST /expenses with {voyageId, portId, expenseTypeId, amount,
+      currency, expenseDate, ...}. resolveScopeIds() confirms portId is
+      one of that voyage's own two ports. Expense created with
+      roundId:null, voyageId:<id>, portId:<id>.
+
+4. That Expense now:
+   - Shows in Expense List with Scope badge "Port" (amber), Round/Voyage
+     column showing the Voyage.
+   - Appears in the Expense Report, tagged scope:'Port', counted under
+     both the (category, currency) summary AND the (classification,
+     currency) summary as "Voyage Cost" / that currency.
+   - Appears in Voyage Profitability (getRoundPnL) for that Round (and
+     that specific Voyage if voyage-scoped): added to that voyage's
+     voyageCost.total, broken out further under voyageCost.byPort keyed
+     on the real portId (not the legacy free-text port).
+   - Is exportable via the Bulk Export "Expenses" module, with Scope
+     column reading "Port" and Port column reading the port's real name
+     (not falling back to legacy free text, since portId is populated).
+   - Cannot be deleted-around: deleting "Port Charges" or "Berth Dues"
+     now is blocked (ExpenseType guard) as long as this Expense exists.
+
+================================================================================
+END OF REPORT
+================================================================================

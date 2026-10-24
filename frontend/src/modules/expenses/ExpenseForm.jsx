@@ -12,6 +12,7 @@ import { agentsService }       from '@/services/agents.service';
 import { roundsService }       from '@/services/rounds.service';
 import { voyagesService }      from '@/services/voyages.service';
 import { getVoyageLabel } from '@/utils/voyageLabel';
+import { partnersService } from '@/services/partners.service';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:5000';
 
@@ -49,9 +50,19 @@ export default function ExpenseForm({ item }) {
       currency:      item?.currency       || 'USD',
       expenseDate:   item?.expenseDate    ? item.expenseDate.slice(0, 10) : '',
       description:   item?.description   || '',
+      kind:          item?.kind          || 'FDA',
+      paidBy:        item?.paidBy        || '',
+      paidByPartnerId: item?.paidByPartnerId?._id || item?.paidByPartnerId || '',
     },
   });
   const selectedVoyageId = watch('voyageId');
+  const watchedPaidBy = watch('paidBy');
+  const { data: partnerList = [] } = useQuery({
+    queryKey: ['partners-dropdown'],
+    queryFn: () => partnersService.list({ limit: 100, status: 'Active' }).then(r => r.data.data),
+    enabled: watchedPaidBy === 'Partner',
+  });
+  const postedLocked = !!item?.ledgerEntryId;
 
   /* ── Dropdown data ───────────────────────────────────────────────────────── */
   const { data: etData }  = useQuery({ queryKey: ['expense-types-dd'], queryFn: () => expenseTypesService.list({ limit: 200 }).then(r => r.data.data) });
@@ -127,6 +138,13 @@ export default function ExpenseForm({ item }) {
     fd.append('currency',      data.currency.toUpperCase());
     fd.append('expenseDate',   data.expenseDate);
     fd.append('description',   data.description   || '');
+    {
+      fd.append('kind', data.kind || 'FDA');
+      if (!postedLocked) {
+        fd.append('paidBy', data.paidBy || '');
+        fd.append('paidByPartnerId', data.paidBy === 'Partner' ? (data.paidByPartnerId || '') : '');
+      }
+    }
     if (file) fd.append('attachment', file);
 
     mutation.mutate(fd);
@@ -281,6 +299,38 @@ export default function ExpenseForm({ item }) {
             <p className="mt-1 text-[10px] text-gray-400">
               For structured, reportable per-port costing use the &quot;⚓ Port&quot; link type above instead.
             </p>
+          </div>
+        )}
+
+        {/* Sprint 052 V2 - estimate vs final, and who paid */}
+        {(
+          <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 grid grid-cols-3 gap-3">
+            {postedLocked && <p className="col-span-3 text-[11px] text-amber-700">Posted to the ledger - amount, type, agent, date and paid-by are locked. Reverse it from the Expenses list to change them.</p>}
+            <div>
+              <label className={lc}>Kind</label>
+              <select {...register('kind')} disabled={!!item?.pdaExpenseId || postedLocked} className={`${ic(false)} cursor-pointer`}>
+                <option value="FDA">Final (FDA)</option>
+                <option value="PDA">Estimate (PDA)</option>
+              </select>
+            </div>
+            <div>
+              <label className={lc}>Paid by</label>
+              <select {...register('paidBy')} disabled={postedLocked} className={`${ic(false)} cursor-pointer`}>
+                <option value="">Not set</option>
+                <option value="PortAgent">Port agent (we owe them)</option>
+                <option value="Company">Company</option>
+                <option value="Partner">A partner directly</option>
+              </select>
+            </div>
+            {watchedPaidBy === 'Partner' && (
+              <div>
+                <label className={lc}>Partner</label>
+                <select {...register('paidByPartnerId')} disabled={postedLocked} className={`${ic(false)} cursor-pointer`}>
+                  <option value="">Select partner...</option>
+                  {partnerList.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
           </div>
         )}
 

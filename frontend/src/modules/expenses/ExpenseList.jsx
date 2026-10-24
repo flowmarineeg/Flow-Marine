@@ -1,5 +1,6 @@
 'use client';
 
+import ExpenseV2Actions, { ExpenseKindBadge } from './ExpenseV2Actions';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -159,6 +160,7 @@ export default function ExpenseList() {
                     <td className="text-xs text-gray-600">{fmt(exp.expenseDate)}</td>
                     <td>
                       <span className="text-sm font-medium text-gray-700">{exp.expenseTypeId?.name}</span>
+                      <ExpenseKindBadge exp={exp} />
                     </td>
                     <td>
                       <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
@@ -200,6 +202,7 @@ export default function ExpenseList() {
                     </td>
                     <td>
                       <div className="flex items-center gap-3">
+                        <ExpenseV2Actions exp={exp} />
                         {can('expenses', 'update') && (
                           <button onClick={() => router.push(`/expenses/${exp._id}`)}
                             className="text-xs font-medium text-teal-600 hover:text-teal-800 transition">Edit</button>

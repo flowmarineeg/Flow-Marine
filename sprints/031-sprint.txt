@@ -1,0 +1,534 @@
+# Sprint 031 — Layer 2 Excel Import: Multi-Voyage-Per-Round Workflow (FINAL — REVISION 3)
+Status: ✅ IMPLEMENTED (architecture approved, Phases 1–3 delivered) — Phase 4
+(verification pass) is a manual/QA exercise against a real multi-voyage
+Round and is not a code change; not executed as part of this pass.
+Revision: 3 — supersedes Revision 2 in full. Revision 2's per-row
+auto-resolution architecture (Round-scoped matching, manual fallback only
+for unresolved/ambiguous rows) is CARRIED FORWARD UNCHANGED — it was not
+in question in this pass. This revision closes the two items Revision 2
+left open: (1) Final Loading's reconciliation scope, now confirmed as a
+business rule, and (2) the polId/podId storage-source decision, which
+this revision analyzes in full and decides — not deferred.
+
+Confirmed business decision driving this revision:
+> Final Loading represents the entire Round for a single Agent.
+
+This directly resolves the highest-priority open risk flagged in
+Revision 2 §9 and is now written into the architecture as a firm rule
+(§3), not a proposal.
+
+Scope guardrails (unchanged across all revisions):
+- Planning only — do NOT write code in this pass.
+- Do NOT redesign unrelated modules.
+- Do NOT change the Capacity Engine (`capacity.service.js`,
+  `teuResolver.js`, `capacity.controller.js`) — read only, for
+  downstream-impact verification. Confirmed again in this revision
+  (§7) that no line of the Capacity Engine needs to change.
+
+Files re-read/re-verified for this revision: `bookingImport.service.js`
+(`previewImport`, `saveImport`, existing Sprint 026 reconciliation query),
+`booking.model.js`, `voyage.model.js`, `round.model.js`,
+`capacity.service.js` (`resolveDischargeIdx`, `exactSegment`, Sprint
+028/029), `booking.service.js#create` / `manualBooking.service.js#create`
+(Sprint 030 — the existing "polId/podId always derived from voyage"
+precedent, used as the primary comparison point for §5).
+
+---
+
+## 1. WHAT CARRIES FORWARD FROM REVISION 2 (unchanged)
+
+- User selects Agent + **Round** (no file-wide Voyage selector).
+- Each row auto-resolves its own target voyage by matching its own
+  resolved `polId`/`podId` against the Round's actual voyage list —
+  exactly one match auto-resolves silently; zero matches → `unresolved`;
+  2+ matches → `ambiguous`. Manual voyage selection is surfaced ONLY for
+  `unresolved`/`ambiguous` rows, never for the default case.
+- This reuses the same port-based forward-matching principle already
+  established and trusted in Sprint 028's `resolveDischargeIdx` —
+  applied one step earlier, at import time, before any `voyageId` is
+  written.
+- `saveImport` writes each row with its OWN resolved `voyageId`, not one
+  shared file-wide value.
+
+Nothing in §1 is reopened by this revision. What follows is new.
+
+## 2. THE ONE REMAINING ARCHITECTURE DECISION — Booking.polId/podId SOURCE
+
+Once a row's voyage is resolved (auto-matched or manually chosen for an
+`unresolved`/`ambiguous` row), the question is: where do the `polId`/
+`podId` values written onto the saved `Booking` document actually come
+from?
+
+**Option A — Copied from the resolved Voyage** (single source of truth).
+`booking.polId = resolvedVoyage.polId`, `booking.podId =
+resolvedVoyage.podId`, always, unconditionally, regardless of how the
+voyage was resolved (auto-match, or manual override on an
+unresolved/ambiguous row). The row's own free-text-resolved `polId`/
+`podId` are used ONLY as matching input to find the candidate voyage(s)
+— once a voyage is chosen, the row's own resolved ports are discarded and
+never independently persisted.
+
+**Option B — Stored from the Excel row after validation.**
+`booking.polId`/`podId` are the row's own free-text-resolved port IDs
+(the same `_resolvedPol`/`_resolvedPod` values already computed by
+today's system-wide port-name lookup), kept as-is once validated,
+independent of whichever voyage ends up in `booking.voyageId`.
+
+### 2.1 Where A and B actually diverge
+
+For the overwhelming majority of rows — every auto-resolved row, and
+every `ambiguous` row (by definition, an ambiguous match means 2+ voyages
+in the Round share the exact same `(polId, podId)` pair as the row) — **A
+and B produce byte-identical results.** The row's resolved ports and the
+matched voyage's own ports are, by construction, the same two ObjectIds.
+There is no daylight between the two options for these cases.
+
+The two options diverge in exactly one place: an `unresolved` row (zero
+voyages in the Round match the row's own POL/POD text) where the user
+manually assigns *some* voyage from the Round anyway — e.g. because the
+Excel had a typo in the POL/POD column but every other field on the row
+is correct and the correct voyage is obvious to a human, or because the
+row genuinely belongs to a voyage whose port master data was renamed/
+re-coded since the Round was planned. In that one case:
+- Option A would overwrite the booking's `polId`/`podId` to the manually-
+  chosen voyage's actual ports.
+- Option B would keep the row's original (mismatched, by definition —
+  that's why it was unresolved) `polId`/`podId`, producing a Booking
+  whose `voyageId` and `polId`/`podId` do not agree with each other.
+
+### 2.2 Comparison
+
+**Data integrity**
+- A: A saved Booking's `polId`/`podId` are *guaranteed* to equal its own
+  `voyageId`'s actual route, with no exception, for every row in every
+  import, forever. This is a structural guarantee, not a validation rule
+  that could later be bypassed or forgotten.
+- B: Guaranteed only for the common (auto/ambiguous) case. For the one
+  divergent case (§2.1), B reintroduces the EXACT data-integrity bug this
+  entire sprint exists to fix (Revision 1 §2/§3): a Booking whose
+  `voyageId` says one route and whose `polId`/`podId` say another. Adopting
+  B would mean solving the multi-voyage workflow problem while leaving one
+  small, still-open door back into the original bug.
+
+**Consistency (with the rest of the system)**
+- A: Matches the invariant already established and enforced for both
+  other booking-entry paths — `booking.service.js#create` and
+  `manualBooking.service.js#create` (Sprint 030) both force
+  `polId: voyage.polId, podId: voyage.podId`. Adopting A makes Import the
+  **third and final** entry point to honor this rule, closing the gap
+  Revision 1 identified ("Import is the one remaining place... where
+  polId/podId can be saved independently of its own voyageId").
+- B: Leaves Import as a permanent, deliberate exception to a rule every
+  other booking-creation path in the system already follows — a
+  standing inconsistency that every future engineer touching booking
+  code has to remember and reason about ("except during import, where it
+  might not match").
+
+**Future maintainability**
+- A: One rule, everywhere, no exceptions: `polId`/`podId` are always
+  derived from `voyageId`'s own Voyage document, never independently
+  supplied by any caller (form, manual entry, or import). Anyone reading
+  `booking.service.js`, `manualBooking.service.js`, or
+  `bookingImport.service.js` sees the same pattern in all three places.
+- B: Requires every future reader of `bookingImport.service.js` to
+  understand and preserve a special case ("import trusts the row's own
+  text even when it disagrees with the resolved voyage") that has no
+  equivalent anywhere else in the codebase — a documented exception is
+  still a maintenance cost, and an easy one to accidentally break by
+  "fixing" it to match the other two paths later, which would then be a
+  silent behavior change to historical import semantics.
+
+**Auditability**
+- A: The stored Booking always tells a complete, self-consistent story
+  (voyage + its own real ports), which is what invoices, reports, and the
+  capacity table actually display and rely on. The one thing A does NOT
+  preserve is the raw Excel text for a row that got manually corrected —
+  but that text is not silently lost: it lived in the Excel file the
+  user uploaded (retained by the user, outside this system, exactly as
+  it is today — this system has never stored the raw uploaded file), and
+  the row-level correction itself is a user action that the existing
+  fire-and-forget `auditLogger.js` (Sprint 020) already records against
+  the `bookings` module on the resulting create/update. No new field is
+  needed to retain this.
+- B: Preserves the row's original text on the Booking record itself, but
+  at the cost of that record then actively disagreeing with its own
+  `voyageId` — which is a worse audit outcome, not a better one: a report
+  or invoice reader has no way to know, just by looking at the Booking,
+  which of `voyageId` or `polId`/`podId` is "correct" for that shipment.
+
+**Performance**
+- Identical for both options. The resolved Voyage document is already
+  loaded in memory during `previewImport`/`saveImport` for every row
+  (it's the very thing being matched against) — copying two ObjectId
+  fields from an object already in hand versus keeping two ObjectId
+  fields already computed is the same cost, effectively zero either way.
+  Neither option changes a query, an index, or a round-trip.
+
+**Risk of inconsistent data**
+- A: Zero residual risk — inconsistency is structurally impossible by
+  the time a Booking is saved, for every row, without exception.
+- B: Residual risk is narrow (only the manually-overridden-unresolved-row
+  case) but real, and it is precisely the highest-value case to get
+  right, since it is the one place a human is actively intervening
+  because the automatic system couldn't figure it out — exactly the
+  moment a data-entry mistake is most likely, and exactly the moment B
+  offers no protection against it (A does).
+
+**Impact on Capacity Engine**
+- Confirmed by re-reading `capacity.service.js`: `resolveDischargeIdx`
+  anchors on `booking.voyageId` (`loadIdx`) and then walks forward
+  matching `booking.podId` against each subsequent voyage's own `podId`
+  (Sprint 028); the Sprint 029 `exactSegment` "Loaded" display flag
+  compares `booking.polId`/`podId` directly against
+  `voyages[loadIdx].polId`/`podId`. **Under Option A, `exactSegment` is
+  guaranteed `true` for every booking whose load voyage is its own
+  anchor** — which is the correct, intended outcome (a booking's own
+  load leg should always show as "Loaded" on its own voyage). **Under
+  Option B, a manually-corrected `unresolved` row would have
+  `booking.podId` disagree with `anchorVoyage.podId`, causing
+  `exactSegment` to evaluate `false` even though the booking is
+  genuinely, entirely loaded on that leg** — silently miscategorizing a
+  correct booking as a transit-through, and (per the Sprint 028 forward
+  walk) potentially causing `resolveDischargeIdx` to walk PAST the
+  correct voyage looking for a match that may not exist ahead of it,
+  producing a `BOOKING_PORT_NOT_IN_ROUND` warning and excluding a valid,
+  correctly-placed booking from capacity calculations entirely. This is
+  a concrete, demonstrable regression risk under B that does not exist
+  under A — confirmed by tracing the actual `capacity.service.js` logic,
+  not assumed. The Capacity Engine's code does not change under either
+  option, but its *output correctness* materially depends on which one is
+  chosen.
+- Neither option requires touching a single line of
+  `capacity.service.js`/`capacity.controller.js`/`teuResolver.js` — this
+  is purely a question of what Import writes, not what the engine reads.
+
+**Impact on Booking workflow**
+- A: Booking's editing rules are already voyage-anchored — Sprint 030
+  made `voyageId` immutable post-creation on the single-entry forms
+  specifically because `polId`/`podId` follow it and must stay immutable
+  with it. Option A makes Import's output indistinguishable, in shape and
+  guarantee, from a booking created through either of the other two
+  entry points. Downstream booking edit/status-transition logic
+  (`booking.service.js#update`, which already strips `polId`/`podId` from
+  the editable field set per Sprint 030) requires zero special-casing for
+  imported bookings.
+- B: Would require `booking.service.js#update` (or the reviewer/support
+  team) to know that imported bookings might carry a `polId`/`podId` that
+  disagrees with their `voyageId`, forever — a special case that
+  compounds every time someone edits or investigates an imported booking
+  later.
+
+**Long-term scalability**
+- A: One rule to teach, one rule to enforce, one rule to test, across
+  three entry points (manual Layer 2, manual Layer 1, Import) as the
+  system adds more of them in the future (e.g. an API integration, a
+  future EDI feed) — every new entry point simply follows "polId/podId
+  come from voyageId's own Voyage document," full stop.
+  - B: Every new entry point built later has to make its own independent
+  decision about whether it follows Import's exception or the other two
+  paths' rule — a compounding, avoidable source of drift as the system
+  grows past this one sprint.
+
+### 2.3 Is there a better architecture than A or B?
+
+No — but Option A benefits from one small, additive refinement that
+strengthens auditability without reopening the data-integrity question
+Option B fails: **when a row's resolved voyage differs from its own
+originally-parsed POL/POD text** (which, per §2.1, only happens for a
+manually-corrected `unresolved` row), append a plain note to that
+Booking's existing free-text `remarks` field — e.g. `Imported (booking) —
+POL/POD auto-corrected from Excel text "Singapore → Jeddah" to match
+selected Voyage V3 (Ningbo → Singapore)"` — reusing the `remarks` field
+Import already writes to today (`remarks: 'Imported (${importType})'`,
+`bookingImport.service.js` line 215) rather than adding any new schema
+field. This gives a human-readable audit trail for the one case that
+needs one, at zero schema cost, while keeping Option A's structural
+guarantee fully intact. This refinement is a should-have polish, not a
+new option — the core decision remains Option A.
+
+## 3. FINAL RECOMMENDATION — Option A, decided, not left open
+
+**Booking.polId and Booking.podId are ALWAYS copied from the row's
+resolved Voyage document — for every row, in every import, regardless of
+whether that voyage was auto-matched or manually assigned. This becomes
+the system-wide standard, on par with the identical rule already
+enforced in `booking.service.js#create` and
+`manualBooking.service.js#create` since Sprint 030.**
+
+This is decided based on §2.2's comparison being one-sided on every axis
+except auditability, where the gap is closed for free by the §2.3
+refinement (a remarks note) without reintroducing any of Option B's
+integrity risk. Option B is rejected outright — it would fix the
+multi-voyage workflow problem this sprint exists to solve while leaving a
+narrow but real path back into the exact bug (mismatched `voyageId` vs
+`polId`/`podId`) that started this investigation in Revision 1.
+
+## 4. BUSINESS RULES (final, superseding Sprint 026 for Import scope)
+
+The confirmed decision — **"Final Loading represents the entire Round for
+a single Agent"** — requires updating the Sprint 026 Layer 2 Import
+scope rule, which was voyage-scoped. The new rule, specific to the
+Round-based architecture introduced in this sprint:
+
+```
+IMPORT SCOPE (both importType='booking' and importType='finalLoading')
+  =  (Round + Agent)
+MATCHING KEY  =  Container Number
+BUSINESS IDENTITY  =  (Round + Agent + Container Number)
+
+An existing Booking is matched for UPDATE by containerNumber, scoped to
+the AGENT and to ANY voyage belonging to the SELECTED ROUND — not to one
+specific voyageId. This is a deliberate broadening of the Sprint 026 rule
+(which was Voyage+Agent scoped, back when one import targeted exactly one
+voyage) and is required by the Round-scoped architecture: a container's
+resolved voyage can legitimately be corrected between import runs within
+the same Round (e.g. Voyage 1 → Voyage 3, if the POL/POD data or the
+Round's own voyage plan changed) — reusing the existing containerNumber
+identity to UPDATE that booking's voyageId/polId/podId in place, rather
+than leaving a stale record under the old voyage and creating a duplicate
+under the new one.
+
+Booking Import (importType = 'booking'):
+  Container Number found in (Round + Agent) scope     -> UPDATE
+    (updates voyageId/polId/podId to the row's newly-resolved voyage,
+     per §3, if it has changed since the last import)
+  Container Number not found in (Round + Agent) scope -> CREATE
+  No cancellations. No reconciliation. (unchanged from Sprint 026)
+
+Final Loading Import (importType = 'finalLoading'):
+  Container Number found in (Round + Agent) scope     -> UPDATE
+  Container Number not found in (Round + Agent) scope -> CREATE
+  After save: ALL (Round + Agent) bookings, across every voyage in the
+    Round, NOT present in this manifest -> Cancelled.
+  This is the direct implementation of "Final Loading represents the
+  entire Round for a single Agent": a Final Loading import is a
+  statement of the complete, authoritative manifest for that Agent's
+  cargo across the WHOLE Round, not just one voyage within it. Any
+  booking for that agent, on ANY voyage in that Round, whose container is
+  absent from this manifest is understood to have been withdrawn/
+  cancelled.
+  Other agents' bookings: NEVER affected (agentId filter preserved
+  exactly as Sprint 026).
+
+Booking.polId / Booking.podId:
+  ALWAYS copied from the row's resolved Voyage document (§3). Never
+  independently stored from the Excel row's own text. This applies
+  identically to both importType values and to both auto-resolved and
+  manually-resolved rows.
+
+DO NOT scope the import match/cancel query to a single voyageId — always
+(Round's voyage set) + agentId, per this revision.
+DO NOT store polId/podId from row text independently of the resolved
+voyage, per §3.
+```
+
+## 5. UPDATED ARCHITECTURE — reconciliation query, concretely
+
+```
+Given: roundVoyageIds = all Voyage._id in the selected Round (already
+  loaded during previewImport/saveImport for per-row voyage matching —
+  no new query needed, this list is already in memory).
+
+Final Loading save, after insert/update of all resolved rows:
+
+  1. Mark Final Loading:
+     Booking.updateMany(
+       { containerNumber: { $in: [...savedContainerNumbers] },
+         voyageId: { $in: roundVoyageIds }, agentId, isDeleted: false },
+       { $set: { status: 'Final Loading', updatedBy } }
+     )
+
+  2. Cancel everything else in scope not in the manifest:
+     Booking.updateMany(
+       { voyageId: { $in: roundVoyageIds }, agentId, isDeleted: false,
+         status: { $nin: ['Cancelled'] },
+         containerNumber: { $nin: [...savedContainerNumbers] } },
+       { $set: { status: 'Cancelled', updatedBy } }
+     )
+
+Both queries are structurally identical to today's Sprint 026 queries,
+with `voyageId` (a single value) replaced by `voyageId: { $in:
+roundVoyageIds }` (the Round's voyage set) — same index usage
+(`{voyageId:1, status:1, isDeleted:1}`, already defined on `Booking`),
+same shape, no new index required. `roundVoyageIds` is bounded by the
+Round's own voyage count (same low-cardinality assumption the Capacity
+Engine already relies on for its own per-round computation) — no
+performance concern.
+```
+
+## 6. IMPLEMENTATION PHASES (final — proposed, awaiting approval, not started)
+
+**Phase 1 — Backend: Round-scoped preview resolution** (unchanged from
+Revision 2 Phase 2):
+`previewImport` loads `Voyage.find({ roundId })`; per-row POL/POD →
+voyage matching; `_resolvedVoyage`/candidate list; `unresolved`/
+`ambiguous` row states. Preview-only, verifiable against real Round data
+before touching save.
+
+**Phase 2 — Backend: Round-scoped save, Option A polId/podId rule, and
+final reconciliation semantics** (supersedes Revision 2 Phase 3 with the
+decisions from §3/§4/§5 now final, not pending):
+- `saveImport` groups insert/update by each row's own resolved
+  `voyageId`.
+- `polId`/`podId` on every inserted/updated Booking are copied from that
+  row's resolved Voyage document — no exception, per §3.
+- Existing-booking match broadened to `(containerNumber, agentId,
+  voyageId ∈ roundVoyageIds)` per §4 — an update may change a Booking's
+  `voyageId`/`polId`/`podId` if the container's resolved voyage changed
+  since a prior import in the same Round.
+- Final Loading reconciliation implemented exactly per §5
+  (`voyageId: { $in: roundVoyageIds }`, not a single value).
+- §2.3's `remarks` audit note added for any row whose manually-resolved
+  voyage differs from its own originally-parsed POL/POD text.
+- `bookingImport.controller.js` / `booking.routes.js`: accept `roundId`
+  in place of `voyageId` in both `preview` and `save`.
+
+**Phase 3 — Frontend** (unchanged from Revision 2 Phase 4):
+`BookingImport.jsx` Voyage selector removed from settings; per-row
+Voyage column (read-only for auto-resolved rows, inline `<select>` for
+`unresolved`/`ambiguous` rows only); new row-status styling;
+`bookings.service.js` payload updated to `roundId`. Ships together with
+Phase 2 (breaking contract, no independent rollout).
+
+**Phase 4 — Verification pass** (expanded from Revision 2 Phase 5 to
+cover the newly-closed decisions):
+- Re-run the Round-15 example: confirm all three rows auto-resolve with
+  zero manual intervention, and each saved Booking's `polId`/`podId`
+  exactly equal its own `voyageId`'s route (§3).
+- Synthetic ambiguous-match case: confirm the fallback selector appears
+  and a manual choice correctly overrides.
+- Synthetic unresolved-row case: confirm the manual override correctly
+  overwrites `polId`/`podId` to the chosen voyage's own ports (not the
+  original Excel text) and that the `remarks` audit note (§2.3) is
+  present.
+- Cross-Round-voyage container correction: import the same container
+  under Voyage 1, then re-import a corrected file resolving it to Voyage
+  3 within the same Round — confirm the existing booking is UPDATED
+  in place (voyageId/polId/podId change to V3), not duplicated (§4).
+- Final Loading full-Round reconciliation: confirm a container's booking
+  on Voyage 2 is correctly cancelled when a Final Loading manifest for
+  the same Round + Agent omits it, even though the manifest's other rows
+  target Voyage 1 and Voyage 3 (§5) — the concrete proof that Final
+  Loading now represents the whole Round, not one voyage within it.
+- Capacity Engine spot-check (read-only verification, no engine changes):
+  confirm `exactSegment`/`resolveDischargeIdx` output for the affected
+  Round is correct given now-guaranteed-consistent `voyageId`/`polId`/
+  `podId` on every imported booking (§2.2, Capacity Engine impact).
+
+Each phase depends on the one before it; Phases 2 and 3 must ship
+together (breaking API contract, unchanged conclusion from Revision 2).
+No phase touches `capacity.service.js`, `capacity.controller.js`,
+`teuResolver.js`, `booking.model.js`/`manualBooking.model.js` schema, or
+the single-entry booking flows (`booking.service.js`/
+`manualBooking.service.js` `create`/`update`) established in Sprint 030.
+
+## 7. RISKS (final — all previously-open items now closed)
+
+- **Final Loading reconciliation semantics**: CLOSED by the confirmed
+  business decision (§4/§5) — no longer an open risk.
+- **polId/podId storage source**: CLOSED by §3's decision — no longer an
+  open risk. The Capacity Engine miscategorization risk identified in
+  §2.2 under Option B is fully avoided by choosing Option A.
+- **Cross-Round container reassignment** (a container's containerNumber
+  reused for an unrelated shipment in a *different* Round): out of scope
+  for this sprint — the Round+Agent scope (§4) only reconciles/matches
+  within the selected Round, exactly as intended; a genuinely different
+  Round is a different scope entirely and is unaffected.
+- **Ambiguous-match rows with no clear source-data signal** (unchanged
+  from Revision 2): the manual-fallback selector remains the correct,
+  and only, mitigation — no worse than today's fully-manual workflow, and
+  the residual risk is a human judgment call, not a system defect.
+- **Breaking API/UI contract** (unchanged from Revision 2): `voyageId` →
+  `roundId`; Phases 2 and 3 must ship together; no graceful degradation
+  for a mismatched deploy. Flagged plainly, accepted as a necessary
+  trade-off of the Round-based architecture.
+- **No risk to the Capacity Engine**: confirmed again in this revision —
+  it continues to consume `voyageId`/`polId`/`podId` per booking in the
+  same shape; Option A (§3) can only improve the accuracy of its output,
+  never regress it (§2.2).
+
+## 8. IMPLEMENTATION NOTES (Phases 1–3, as actually delivered)
+
+Architecture approved as-is — no deviations from §1–§6 during implementation.
+
+- **`bookingImport.service.js`**: `previewImport(rows, agentId, roundId,
+  importType)` now loads `Voyage.find({ roundId })` (populated `polId`/
+  `podId`) instead of a single `Voyage.findById(voyageId)`. Resolution
+  candidates for auto-matching/manual override are restricted to
+  non-Cancelled voyages (`activeVoyages`); the existing-booking lookup and
+  the Final Loading reconciliation scope use ALL voyages in the Round
+  (including Cancelled), per §4/§5. `resolveRowVoyage()` implements the
+  exactly-one/zero/multiple-match resolution from §2 and honors a per-row
+  `voyageOverrideId` for manual fallback, validating it against the
+  Round's active voyage set (an invalid/cancelled override id is treated
+  as still-unresolved, not silently accepted). `validateRow()` no longer
+  raises "POL/POD not found in system" as a hard blocking error — that
+  case now flows into the `unresolved` voyage-resolution status instead
+  (§2.1's typo-recovery case), while `containerNumber`/`pol`/`pod`
+  presence, container type, rate, containerStatus, and imdgCode rules are
+  unchanged. Each preview row now carries `_resolvedVoyage`
+  (`{_id, voyageNumber, status, polId, podId}`), `_voyageManual`, and
+  `_voyageCandidates` (populated only for `ambiguous` rows).
+- **`saveImport(rows, agentId, roundId, importType, createdBy)`**:
+  replaces the shared `voyageId` with each row's own `r._resolvedVoyage`
+  for both `insertMany` and `bulkWrite` — `polId`/`podId` are read
+  exclusively from `r._resolvedVoyage.polId`/`.podId` (the Booking
+  Storage Rule, §3), never from `r._resolvedPol`/`_resolvedPod`. The
+  existing-booking match / Final Loading reconciliation queries were
+  rescoped from a single `voyageId` to `voyageId: { $in: roundVoyageIds }`
+  exactly per §5's proposed query shape — no new index required (reuses
+  the existing `{voyageId:1, status:1, isDeleted:1}` compound index).
+  `invalidateRoundCache(roundId)` is now called unconditionally (`roundId`
+  is a required, validated input rather than something derived from a
+  since-removed `affectedVoyage` lookup).
+  `remarksFor()` implements §2.3's audit-note refinement: appended to
+  `remarks` only when a row's voyage was manually resolved AND its own
+  free-text-resolved POL/POD disagree with the resolved voyage's actual
+  ports — on insert this is always applied; on update, `remarks` is left
+  untouched unless that specific condition applies (preserving today's
+  behavior of not touching `remarks` on ordinary updates).
+- **`bookingImport.controller.js`**: `preview`/`save` destructure
+  `roundId` instead of `voyageId` from the request body and pass it
+  straight through. `booking.routes.js` required no change — the Final
+  Loading permission-check middleware only reads `req.body.importType`.
+- **`BookingImport.jsx`**: the file-wide Voyage `<select>` and the
+  "voyage info strip" were removed from the Import Settings panel;
+  Agent/Round/Import Type/File is now a 4-column grid. The Round's
+  active-voyage list (`voyages-import-dd` query, unchanged endpoint) is
+  now consumed only inside the preview table, to populate the per-row
+  fallback `<select>` for `unresolved`/`ambiguous` rows — auto-resolved
+  rows render their matched Voyage as read-only text. Two new row states
+  (`unresolved` "Needs Voyage", `ambiguous` "Confirm Voyage", both
+  amber/orange, visually distinct from `invalid` red) were added to
+  `ROW_STYLES`, the summary badges, the legend, and the saveable-count
+  exclusion (`needsVoyageCount`, alongside `invalid`/`duplicate`, is
+  excluded from `saveableCount` and called out in the "Ready to save"
+  copy). `handlePreview`/`handleReValidate`/`saveMutation` all send
+  `roundId` in place of `voyageId`; `handleReValidate`'s row payload
+  additionally forwards `voyageOverrideId` so a user's manual pick
+  survives the edit → re-validate loop already established for every
+  other editable cell. The "Import type description" and "Final Loading
+  warning" copy were updated from "on this voyage" to "on any voyage in
+  this Round" / "across this Round + Agent", matching §4's business rule.
+  `bookings.service.js` needed no change — it already forwards an
+  arbitrary payload object.
+- **Not implemented in this pass — explicitly deferred to Phase 4**: the
+  end-to-end verification checklist in §6 (Round-15 auto-resolve
+  reproduction, synthetic ambiguous/unresolved cases, cross-Round-voyage
+  container reassignment, full-Round Final Loading reconciliation,
+  Capacity Engine spot-check) is a QA exercise against real/seeded Round
+  data, not a further code change — flagged here so it isn't mistaken for
+  "done" versus "written."
+- **Confirmed untouched, per the approved scope**: `capacity.service.js`,
+  `capacity.controller.js`, `teuResolver.js`, `booking.model.js`,
+  `manualBooking.model.js` (no schema change), `booking.service.js`/
+  `manualBooking.service.js` (`create`/`update`, Sprint 030's single-entry
+  POL/POD derivation), `BookingForm.jsx`, `ManualBookingForm.jsx`,
+  `BookingList.jsx`, `CapacitySegmentTable.jsx`. No new database fields
+  were introduced (§7 of the approval — the audit note reuses the
+  existing `remarks` field).
+
+---
+END OF FINAL PLAN — approved and implemented (Phases 1–3); Phase 4
+(verification) remains to be run against real data before this import
+flow is considered production-verified.

@@ -1,0 +1,87 @@
+# Sprint 051 (V2 S2) - Revenue cycle - implementation log
+Status: IMPLEMENTED in the working tree, NOT committed. Plan: sprints/049-sprint.txt section 5.
+Gate: flag v2Invoices (items, drafts) + flag accounting (issue, settle, notes, cancel of issued).
+With both OFF nothing changes for V1 invoices.
+
+DESIGN (modules/billing, V1 invoice code left in place)
+ R1  BookingItem        derived pricing group = bill-to agent + voyage + container type + freight rate;
+                        loadedQty = Final Loading bookings in the group (one booking = one container).
+                        syncForVoyages() recomputes unlocked items; locked items (owned by a live invoice
+                        line) are never edited. Bookings already on a legacy non-cancelled invoice are
+                        excluded. Hooked (flag-gated, async, never throws) into booking create/update/
+                        delete and the Final Loading import save.
+ R2  Booking fields     billToPartyId, shipperSource, paymentTerm, collectAgentId - schema only; no UI yet.
+                        Old bookings bill their agent (D10 default).
+ R3  Invoice fields     v2, docKind (Invoice|CreditNote|DebitNote), parentInvoiceId, totalMinor/paidMinor/
+                        creditedMinor, issuedAt/By, cancelledAt/By/Reason, reason, ledgerEntryId, fx
+                        {rate, baseTotalMinor}. Legacy float totalAmount/paidAmount are kept in step so V1
+                        lists still read. InvoiceLine collection: partial unique index
+                        one_live_line_per_item {bookingItemId} where cancelled:false = the DB-level
+                        "one invoice per item" guarantee (E11000 -> DUPLICATE_BILLING).
+                        Lines are created with the DRAFT (not at issue), so a second draft cannot grab the
+                        same item either. Invoice number is also assigned at draft creation (as V1).
+ R4  Wizard             /invoices/new shows the 4-step wizard when v2Invoices is on (Party&scope, Items with
+                        auto-select + summary card, Terms, Review -> Save as Draft / Create & Issue).
+ R4  Issue              one transaction: claim Draft->Issued with a conditional update, lock fx rate,
+                        post DR 1100 Agent Receivable / CR 4000 Freight Revenue, accrue commission.
+                        Issued = read-only (INVOICE_LOCKED), even for invoices:override (D15 applied as
+                        recommended - confirm).
+ R5  NOT_FINAL_LOADED   items only exist for Final Loading bookings; zero-qty items are rejected.
+ R6  Cancel             reverses the ledger entry, cancels lines, frees items. Refused while settlements /
+                        credit notes / debit notes exist (INVOICE_HAS_SETTLEMENTS). Draft delete removes
+                        lines and frees items; issued invoices cannot be hard-deleted (INVOICE_POSTED).
+ R7  Commission         on issue, from the agent's active AgentAgreement (fixedPerContainer, fixedPerBooking,
+                        percentOfRate in basis points); DR 5400 / CR 2000. Cancelling the invoice does NOT
+                        cancel it.
+ R8  Settlements        InvoiceSettlement (Cash). Over-payment guard is the filter of one atomic
+                        findOneAndUpdate (paid + credited + amount <= total), so concurrent requests can't
+                        both pass (SETTLEMENT_EXCEEDS_BALANCE) - this closes audit H3 for V2. Posts
+                        DR bank (1010 company / 1020 cash / 1200 partner account tagged partnerId) /
+                        CR 1100. Void = whole settlement, reversing entry. Legacy POST payments on a V2
+                        invoice is refused (USE_SETTLEMENTS). 'Offset' kind is reserved for the netting
+                        engine (Sprint 052).
+ R9  Credit / debit     credit note reduces the parent's open balance (CREDIT_EXCEEDS_BALANCE if it would
+                        go negative): DR 4000 / CR 1100. Debit note is its own receivable (DN-), can be
+                        settled: DR 1100 / CR 4000. Numbers CN-/DN-.
+ R10 Overdue            computed lazily on read (D16 recommended), persisted on the next write.
+ R11 Frontend           wizard, InvoiceV2Panel (issue, delete draft, settle, void, credit/debit note,
+                        cancel). New permission actions on invoices: issue, cancel, record (D7) with
+                        columns in the permission matrix.
+ V1 guards              V1 invoice create is refused while v2Invoices is on (V2_INVOICES_ACTIVE);
+                        V1 update/override refused on a V2 invoice.
+
+ENDPOINTS (all /api/v1/invoices-v2, flag v2Invoices)
+ GET /items | POST / | PUT /:id | POST /:id/issue | /:id/cancel | GET,POST /:id/settlements |
+ POST /:id/settlements/:sid/void | POST /:id/credit-note | /:id/debit-note
+ (delete a draft with the existing DELETE /invoices/:id)
+
+NEW ERROR CODES
+ V2_INVOICES_ACTIVE 409 | DUPLICATE_BILLING 409 | ITEM_CHANGED 409 | NO_ITEMS 400 | SCOPE_REQUIRED 400
+ DATE_ORDER 400 | ITEM_PARTY_MISMATCH 400 | ITEM_OUT_OF_SCOPE 400 | NOT_FINAL_LOADED 400 | BOOKING_SCOPE 400
+ INVOICE_NOT_FOUND 404 | INVOICE_LOCKED 409 | INVOICE_POSTED 409 | INVOICE_NOT_DRAFT 409 | INVOICE_ZERO 400
+ INVOICE_CANCELLED 409 | INVOICE_HAS_SETTLEMENTS 409 | INVOICE_NOT_PAYABLE 409 | INVOICE_NOT_POSTED 409
+ SETTLEMENT_EXCEEDS_BALANCE 409 | SETTLEMENT_NOT_FOUND 404 | AMOUNT_INVALID 400 | PARTNER_REQUIRED 400
+ OFFSET_NOT_AVAILABLE 400 | CREDIT_EXCEEDS_BALANCE 409 | NOTE_KIND 400 | REASON_REQUIRED 400
+
+VERIFIED
+ - npm test: 21 pass (new test/billing.test.js: item grouping, exact line amounts, status derivation,
+   commission rules incl. the OGA 12 x 250 example).
+ - All billing/invoice/booking files load; Invoice schema accepts a note with no lines and still rejects
+   a normal invoice with none; frontend lint clean on new files and `next build` passes.
+
+NOT VERIFIED (no test database)
+ - Everything that needs MongoDB: the transactions, the unique-index double-billing proof, the atomic
+   over-payment filter, ledger postings, item sync, commission accrual. The acceptance tests in the plan
+   (two concurrent issues -> exactly one wins; partial then full payment; issue + cancel = net-zero ledger;
+   credit note reduces receivable) must be run on a copy of the DB or a local replica set.
+
+NOT DONE / DECISIONS
+ - Credit/debit note PDF variants and the invoice PDF for V2 invoices (the V1 generator reads lineItems and
+   still prints, but has no V2 layout).
+ - Agent Financial Account "Payments" tab still reads legacy payments, not settlements.
+ - No UI for the new Booking fields (bill-to party, shipper source, payment term).
+ - Commission basis 'FinalLoading' accrues at issue like 'Invoice' (no separate trigger yet).
+ - A locked item whose Final Loading quantity later changes is not auto-adjusted (credit/debit note).
+ - Credit/debit notes cannot be cancelled yet.
+ - Open from before: D-1/D-2/D-3 (sprint 049), D11 currencies, D6 cutover date. Non-USD invoices need the
+   fx flag and an exchange rate.

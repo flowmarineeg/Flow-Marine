@@ -1,5 +1,6 @@
 'use client';
 
+import RoundAccountingPanel from './RoundAccountingPanel';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -170,6 +171,9 @@ export default function RoundDetailPage({ roundId }) {
       </div>
 
       {/* Edit Modal */}
+      {/* Sprint 053 V2 - financial close, partner settlement, reserve (flag-gated inside) */}
+      <RoundAccountingPanel round={round} />
+
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Round" size="md">
         {editOpen && (
           <RoundForm

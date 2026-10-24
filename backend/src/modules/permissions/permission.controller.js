@@ -10,6 +10,7 @@ const getByRoleId = async (req, res, next) => {
 
 const saveByRoleId = async (req, res, next) => {
   try {
+    if (!Array.isArray(req.body.permissions)) return error(res, 'permissions must be an array of { module, actions }', 400);
     const data = await permService.saveByRoleId(req.params.roleId, req.body.permissions, req.user._id);
     return success(res, data, 'Permissions saved');
   } catch (e) { if (e.status) return error(res, e.message, e.status); next(e); }

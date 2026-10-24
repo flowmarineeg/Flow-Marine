@@ -1,0 +1,731 @@
+================================================================================
+  SPRINT 025 — Layer 2 Stabilization: Quantity Removal + Capacity Fix
+  Date: 2026-07-21  (Revision 2 — based on manual test results)
+  Status: PLANNING COMPLETE — Awaiting Approval
+================================================================================
+
+================================================================================
+  OBJECTIVE
+================================================================================
+
+Two goals confirmed by manual testing:
+
+  Goal 1 — Remove every Quantity reference from the Layer 2 user interface.
+    Quantity may remain internally for TEU calculation.
+    From the user's perspective it must not appear anywhere.
+
+  Goal 2 — Fix Layer 2 → Capacity integration.
+    Manual test confirmed: 3 bookings (20ft + 40ft + 40ft = 5 TEU expected)
+    produce ZERO TEU on the capacity page.
+    Root cause identified by full code trace (documented below).
+
+Do NOT touch Layer 1 (ManualBooking).
+Do NOT touch Reports.
+Do NOT touch Dashboard.
+
+================================================================================
+  FINDING A — COMPLETE QUANTITY AUDIT: EVERY REMAINING REFERENCE IN LAYER 2
+================================================================================
+
+The following is an exhaustive list of every place quantity still appears in
+the Layer 2 user interface after Sprint 024.
+
+────────────────────────────────────────────────────────────────────────────────
+A1 — BookingDetailCard.jsx: Total Freight sub-label (wrong formula displayed)
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingDetailCard.jsx
+Location: Total Freight banner section
+Code:
+  <p className="text-xs text-teal-500 mt-0.5">
+    {booking.quantity} × {fmtMoney(booking.freightRate)} / unit
+  </p>
+
+What the user sees: "1 × $1,500.00 / unit" (or whatever quantity is stored)
+What it should say: "Rate per container"
+
+Root Cause: This sub-label was not updated in Sprint 024. It still uses the
+pre-Sprint-024 formula. Since totalFreight now equals freightRate, the formula
+is both incorrect and confusing.
+
+────────────────────────────────────────────────────────────────────────────────
+A2 — BookingDetailCard.jsx: Quantity InfoRow in the info grid
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingDetailCard.jsx
+Location: Info grid
+Code:
+  <InfoRow label="Quantity" value={booking.quantity?.toLocaleString()} />
+
+What the user sees: A "Quantity" field showing "1" for every manually created
+booking (because the schema default is 1).
+
+Root Cause: This InfoRow was not removed in Sprint 024. Quantity is no longer
+a meaningful business concept for the user in Layer 2. Each booking IS the
+container — a quantity of 1 is always implied and adds no information.
+
+────────────────────────────────────────────────────────────────────────────────
+A3 — BookingList.jsx: "Qty" column header in the operational table
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingList.jsx
+Location: Table header row (Operational Bookings tab)
+Code:
+  {['Booking No','Voyage','Agent','Shipper / Consignee','Container',
+    'Qty','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
+
+What the user sees: A "Qty" column header in the operational bookings table.
+
+────────────────────────────────────────────────────────────────────────────────
+A4 — BookingList.jsx: "Qty" cell value rendered per row
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingList.jsx
+Location: Table body, per booking row
+Code:
+  <td className="mono text-xs text-gray-600">{b.quantity}</td>
+
+What the user sees: A "1" in the Qty column for every manually created booking.
+For import bookings, it shows whatever quantity was in the Excel file.
+
+Root Cause (A3 + A4): The "Qty" column was not removed from BookingList in
+Sprint 024. The column header and cell still exist.
+
+────────────────────────────────────────────────────────────────────────────────
+A5 — BookingImport.jsx: "Qty" column in import column guide (shown as required)
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingImport.jsx
+Location: Column guide (before upload)
+Code:
+  { col: 'Quantity', note: 'Number of containers', req: true },
+
+What the user sees: Quantity listed as a required column (red asterisk) in the
+expected Excel columns guide.
+
+Root Cause: The column guide was not updated in Sprint 024. Quantity is now
+optional in the backend but is shown as required here.
+
+────────────────────────────────────────────────────────────────────────────────
+A6 — BookingImport.jsx: "Qty" column header in import preview table
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingImport.jsx
+Location: Import preview table headers
+Code:
+  {['#', 'Status', 'Booking No', 'Cntr No *', 'Type', 'Size', 'Cntr Status',
+    'POL', 'POD', 'Qty', 'Rate', ...].map(h => (
+    <th key={h} className="!py-2 whitespace-nowrap">{h}</th>
+  ))}
+
+What the user sees: A "Qty" column header in the import preview table.
+
+────────────────────────────────────────────────────────────────────────────────
+A7 — BookingImport.jsx: Qty EditableCell in import preview table
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingImport.jsx
+Location: Import preview table body, per-row quantity cell
+Code:
+  <td className="px-1.5 py-1 min-w-[45px]">
+    <EditableCell
+      value={row.quantity}
+      onChange={v => updateRow(idx, 'quantity', v)}
+      hasError={row._errors?.some(e => e.includes('Quantity'))}
+    />
+  </td>
+
+What the user sees: An editable "Qty" cell for each import row.
+
+Root Cause (A5 + A6 + A7): The import flow still exposes quantity to the user
+across column guide, table header, and editable preview cell.
+
+────────────────────────────────────────────────────────────────────────────────
+A8 — BookingImport.jsx: Qty included in re-validate payload
+────────────────────────────────────────────────────────────────────────────────
+
+File: frontend/src/modules/bookings/BookingImport.jsx
+Location: handleReValidate() function
+Code:
+  const res = await bookingsService.importPreview({
+    rows: preview.map(r => ({
+      ...
+      quantity: r.quantity,   ← still sent in re-validate payload
+      ...
+    })),
+    ...
+  });
+
+Root Cause: Even though quantity is now optional on the backend, the re-validate
+payload still explicitly sends it. This is functionally harmless but is
+inconsistent with the business decision to remove quantity from the user flow.
+If the Qty column is removed from the UI, this field can be removed from the
+re-validate payload as well.
+
+────────────────────────────────────────────────────────────────────────────────
+SUMMARY — ALL QUANTITY LOCATIONS IN LAYER 2 UI
+────────────────────────────────────────────────────────────────────────────────
+
+  FRONTEND (8 locations):
+  A1  BookingDetailCard.jsx — Total Freight sub-label: "{qty} × {rate} / unit"
+  A2  BookingDetailCard.jsx — "Quantity" InfoRow in detail grid
+  A3  BookingList.jsx       — "Qty" column header in operational table
+  A4  BookingList.jsx       — {b.quantity} cell in each table row
+  A5  BookingImport.jsx     — Column guide: Quantity marked as required
+  A6  BookingImport.jsx     — "Qty" header in import preview table
+  A7  BookingImport.jsx     — Qty EditableCell in import preview rows
+  A8  BookingImport.jsx     — quantity: r.quantity in re-validate payload
+
+  BACKEND (quantity stays — internal only):
+  booking.model.js          — quantity field (internal, TEU source) ← DO NOT REMOVE
+  bookingImport.service.js  — stores quantity=1 default (internal)  ← DO NOT REMOVE
+  capacity.service.js       — reads b.quantity for TEU calc          ← DO NOT REMOVE
+  booking.service.js        — reads data.quantity for TEU preview    ← DO NOT REMOVE
+
+================================================================================
+  FINDING B — CAPACITY DOES NOT REFLECT LAYER 2 BOOKINGS: EXACT ROOT CAUSE
+================================================================================
+
+Manual test result:
+  3 bookings created: 20ft (1 TEU) + 40ft (2 TEU) + 40ft (2 TEU)
+  Expected onboardTEU: 5
+  Actual onboardTEU on capacity page: 0
+
+The following is a complete code trace of exactly why this happens.
+
+────────────────────────────────────────────────────────────────────────────────
+B1 — The capacity engine queries L2 by STATUS, not by Pending
+────────────────────────────────────────────────────────────────────────────────
+
+File: backend/src/modules/capacity/capacity.service.js
+Lines (the L2 query in computeRoundCapacity):
+
+  const L2_STATUSES = ['Confirmed', 'Final Loading'];
+
+  Booking.find({
+    voyageId:  { $in: voyageIds },
+    isDeleted: false,
+    status:    { $in: l2Statuses },   ← l2Statuses = ['Confirmed', 'Final Loading']
+  })
+
+The capacity engine ONLY counts Layer 2 bookings with status = Confirmed or
+Final Loading.
+
+File: backend/src/modules/bookings/bookingImport.service.js
+Lines (saveImport, insert block):
+  status: 'Pending',  ← ALL newly imported bookings start as Pending
+
+File: backend/src/modules/bookings/booking.service.js
+Lines (create function):
+  status: data.status === 'Cancelled' ? 'Pending' : (data.status || 'Pending'),
+  ← ALL manually created bookings start as Pending (unless explicitly set otherwise)
+
+CONCLUSION:
+  Every new Layer 2 booking starts with status = 'Pending'.
+  The capacity engine ignores Pending bookings.
+  Therefore: capacity shows 0 TEU for all newly created bookings.
+
+This is the sole and complete root cause of the manual test failure.
+
+────────────────────────────────────────────────────────────────────────────────
+B2 — Contrast with Layer 1 behavior (which DID work)
+────────────────────────────────────────────────────────────────────────────────
+
+File: backend/src/modules/capacity/capacity.service.js
+Lines:
+  const L1_STATUSES = ['Pending', 'Confirmed', 'Final Loading'];
+
+Layer 1 (ManualBooking) counts ALL statuses including Pending. This is
+intentional: "capacity is a commercial planning indicator" (Sprint 023 spec).
+
+Layer 2 was intentionally designed to only count Confirmed + Final Loading
+because operational bookings were considered "committed" only once confirmed.
+
+────────────────────────────────────────────────────────────────────────────────
+B3 — The business decision that must be made
+────────────────────────────────────────────────────────────────────────────────
+
+There are exactly two options:
+
+  OPTION A — Include Pending in L2_STATUSES:
+    Change L2_STATUSES = ['Pending', 'Confirmed', 'Final Loading']
+    Effect: Every new booking (Pending) immediately contributes to capacity.
+    This matches how Layer 1 behaves.
+    Risk: Very low. One constant change.
+
+  OPTION B — Keep L2 at Confirmed + Final Loading only:
+    L2_STATUSES stays as-is.
+    Effect: Users must manually change booking status to Confirmed for capacity
+    to reflect it. This requires a workflow change.
+    Risk: Zero code change; but the test scenario (Pending bookings showing 0
+    TEU) would remain the expected behavior by design.
+
+The manual test described 3 bookings that were NEWLY CREATED and never
+confirmed. If the intent is for all Layer 2 bookings to count toward capacity
+immediately (same rule as Layer 1), then OPTION A is the correct fix.
+
+If the intent is that Layer 2 only counts committed cargo (Confirmed +
+Final Loading), then the behavior is already correct and the capacity page
+showing 0 for Pending is the expected result — the manual test expectation
+was wrong.
+
+This requires a product decision from you before implementation.
+
+────────────────────────────────────────────────────────────────────────────────
+B4 — Verification: the rest of the L2 capacity flow is correct
+────────────────────────────────────────────────────────────────────────────────
+
+Assuming the status filter is resolved, the rest of the flow is correct:
+
+  Step C (capacity.service.js): TEU calculation:
+    const { teu, matched } = resolveTEU(b.containerTypeId.size);
+    const effectiveTEU = b.quantity * teu;
+    ← b.quantity = 1 for manual form bookings (schema default)
+    ← teu = 1 for 20ft, 2 for 40ft
+    ← effectiveTEU = 1 for 20ft booking, 2 for 40ft booking ✓
+
+  portAsFrom / portAsTo mapping: Correct — polId/podId on the booking
+  document are set at create time from the form selections. ✓
+
+  loadIdx / dischargeIdx lookup: Correct — provided the booking's polId
+  matches a voyage fromPort and podId matches a voyage toPort. ✓
+
+  allEvents aggregation and cumulative carry: Correct. ✓
+
+  invalidateRoundCache: Called correctly after create/update/delete. ✓
+
+  The ONLY thing blocking L2 from showing in capacity is the status filter.
+
+────────────────────────────────────────────────────────────────────────────────
+B5 — Additional note: capacity.service.js quantity reference is still needed
+────────────────────────────────────────────────────────────────────────────────
+
+capacity.service.js line:
+  const effectiveTEU = b.quantity * teu;
+
+After Sprint 024, booking.model.js removed quantity from the schema
+(confirmed by reading booking.model.js — quantity field is gone from the
+current model). However:
+
+  bookingImport.service.js still stores quantity in insert and bulkWrite.
+  booking.service.js does not default quantity since the field is gone.
+
+If booking.model.js no longer has a quantity field, then b.quantity from a
+manually created booking document will be undefined, and:
+  undefined * teu = NaN → NaN is not added correctly, defaults to 0 in
+  the accumulation (NaN + 0 = NaN, but 0 + NaN = NaN).
+
+Actually in JavaScript: 0 + NaN = NaN. So the running accumulation becomes
+NaN for the first L2 booking, and remains NaN.
+
+HOWEVER: if the model has no quantity field but imports store it, then:
+  - Import bookings: quantity is stored as a number in the document
+    (because insertMany passes it even without schema enforcement) ✓
+  - Manual form bookings: quantity field is absent from the document.
+    b.quantity = undefined.
+    effectiveTEU = undefined * teu = NaN → 0 after || 0 guard.
+
+Wait — capacity.service.js has NO || 0 guard on effectiveTEU. The line is:
+  const effectiveTEU = b.quantity * teu;
+
+If b.quantity is undefined (not in schema, not in doc), then effectiveTEU
+is NaN. NaN is pushed into l2Events as the teu value.
+
+Then in Step E:
+  loadedTEU[ev.loadVoyageIdx] += ev.teu;  ← += NaN = NaN
+  onboardTEU = onboardStart + loaded - discharged;  ← NaN if any loaded is NaN
+
+This means: for bookings created via the manual form (no quantity in doc),
+the onboardTEU becomes NaN for that voyage. NaN is not > 0, so the capacity
+display may show 0 or NaN depending on how the frontend handles it.
+
+This is a SECOND root cause that compounds with B1. Even if L2_STATUSES were
+changed to include Pending, manual form bookings without a quantity field
+would still produce NaN TEU.
+
+HOWEVER: Re-reading booking.model.js as it actually exists today:
+
+  The current booking.model.js (confirmed by direct file read above) does NOT
+  have a quantity field at all. The field was removed at some point. But
+  bookingImport.service.js still stores quantity in the documents it creates.
+
+This means:
+  - Bookings from import: have quantity in the MongoDB document (stored even
+    though the schema doesn't declare it — Mongoose ignores extra fields by
+    default unless strictMode is false, and if strict:true is the default,
+    Mongoose would STRIP quantity from the document on save).
+
+IMPORTANT: Mongoose strict mode (default: true) strips fields not in the
+schema on save. If quantity is not in booking.model.js schema, then:
+  - insertMany via Mongoose: quantity is STRIPPED from the document.
+  - The stored document has NO quantity field.
+  - b.quantity from any L2 booking = undefined.
+  - effectiveTEU = undefined * teu = NaN.
+
+This means ALL L2 bookings (both manual form and import) produce NaN TEU in
+the capacity engine regardless of status.
+
+CONCLUSION FOR B5:
+  The capacity engine reads b.quantity, which is guaranteed to be undefined
+  for all L2 bookings because:
+    1. booking.model.js does not declare a quantity field.
+    2. Mongoose strict mode strips undeclared fields on save.
+    3. Therefore b.quantity is always undefined in a retrieved document.
+    4. effectiveTEU = undefined * teu = NaN.
+    5. NaN corrupts the cargo-flow accumulation for any voyage containing
+       an L2 booking.
+
+This is the ACTUAL primary root cause of 0/NaN TEU in the capacity display,
+independent of the status filter issue in B1.
+
+────────────────────────────────────────────────────────────────────────────────
+B6 — Complete root cause summary
+────────────────────────────────────────────────────────────────────────────────
+
+There are TWO stacked problems:
+
+  Problem 1 (B1): L2_STATUSES = ['Confirmed', 'Final Loading']. Newly created
+  bookings are Pending and are excluded from the capacity query.
+
+  Problem 2 (B5): booking.model.js has no quantity field. Mongoose strict mode
+  strips quantity from all saved documents. The capacity engine reads b.quantity
+  → undefined → effectiveTEU = NaN → capacity calculation corrupted.
+
+  Both must be fixed together. Fixing only Problem 1 (status filter) would
+  still show NaN/0 because of Problem 2.
+  Fixing only Problem 2 (add quantity back to schema) would still show 0
+  because Pending bookings are excluded.
+
+================================================================================
+  FINDINGS SUMMARY
+================================================================================
+
+  ISSUE-01: 8 UI locations still show quantity in Layer 2 screens.
+            Must be removed from all user-facing surfaces.
+            Quantity stays in backend/DB for TEU calculation only.
+
+  ISSUE-02: capacity.service.js excludes Pending L2 bookings from TEU count.
+            L2_STATUSES = ['Confirmed', 'Final Loading'] must be reviewed.
+            Product decision required: should Pending L2 bookings count?
+
+  ISSUE-03: booking.model.js has no quantity field.
+            Mongoose strict mode strips quantity from all saved documents.
+            capacity.service.js reads b.quantity → undefined → NaN TEU.
+            Fix: add quantity back to schema with default:1.
+
+================================================================================
+  SCOPE
+================================================================================
+
+IN SCOPE:
+  ISSUE-01 (A1–A8): Remove all quantity references from Layer 2 UI.
+  ISSUE-02: Add 'Pending' to L2_STATUSES (if approved).
+  ISSUE-03: Restore quantity field to booking.model.js with default:1.
+
+OUT OF SCOPE:
+  - Layer 1 (ManualBooking) — DO NOT TOUCH
+  - Reports — DO NOT TOUCH
+  - Dashboard — DO NOT TOUCH
+  - Capacity service algorithm — ONLY the L2_STATUSES constant changes
+  - Booking controller, routes — DO NOT TOUCH
+  - Import controller — DO NOT TOUCH
+
+================================================================================
+  FILES TO REVIEW BEFORE IMPLEMENTATION
+================================================================================
+
+  Must re-read before touching:
+  1. backend/src/modules/bookings/booking.model.js
+  2. backend/src/modules/capacity/capacity.service.js
+  3. frontend/src/modules/bookings/BookingDetailCard.jsx
+  4. frontend/src/modules/bookings/BookingList.jsx
+  5. frontend/src/modules/bookings/BookingImport.jsx
+
+================================================================================
+  FILES THAT WILL REQUIRE MODIFICATION
+================================================================================
+
+  BACKEND (2 files):
+
+  1. backend/src/modules/bookings/booking.model.js
+     ISSUE-03: Add quantity field back to schema.
+       quantity: { type: Number, default: 1, min: 1 }
+       Note: required:false (not required:true) — the form never sends it.
+       The default:1 ensures all new documents have quantity=1 in the DB,
+       so b.quantity in the capacity engine is always 1, not undefined.
+
+  2. backend/src/modules/capacity/capacity.service.js
+     ISSUE-02: Change L2_STATUSES constant.
+       FROM: const L2_STATUSES = ['Confirmed', 'Final Loading'];
+       TO:   const L2_STATUSES = ['Pending', 'Confirmed', 'Final Loading'];
+       (Conditional on product approval — see OPEN QUESTION below.)
+
+  FRONTEND (3 files):
+
+  3. frontend/src/modules/bookings/BookingDetailCard.jsx
+     ISSUE-01 A1: Change Total Freight sub-label from
+       "{booking.quantity} × {fmtMoney(booking.freightRate)} / unit"
+       to: "Rate per container"
+     ISSUE-01 A2: Remove the Quantity InfoRow from the info grid.
+
+  4. frontend/src/modules/bookings/BookingList.jsx
+     ISSUE-01 A3: Remove "Qty" from the table headers array.
+     ISSUE-01 A4: Remove the <td>{b.quantity}</td> cell from table rows.
+     Note: When removing a column header, the corresponding <td> must also
+     be removed to keep column alignment. Both change in the same file.
+
+  5. frontend/src/modules/bookings/BookingImport.jsx
+     ISSUE-01 A5: Remove req:true from Quantity in column guide.
+                  Update note to: "Not required — used internally for TEU"
+                  OR remove Quantity from the column guide entirely.
+     ISSUE-01 A6: Remove "Qty" from the import preview table headers array.
+     ISSUE-01 A7: Remove the Qty EditableCell <td> from preview rows.
+     ISSUE-01 A8: Remove quantity: r.quantity from the re-validate payload.
+
+  DOCS (1 file after approval and implementation):
+    sprints/025-sprint.txt (this file — already updated)
+    sprints/STATUS.md
+    claude.md
+
+================================================================================
+  FILES THAT WILL NOT BE MODIFIED
+================================================================================
+
+  backend/src/modules/bookings/booking.service.js
+  backend/src/modules/bookings/booking.controller.js
+  backend/src/modules/bookings/booking.routes.js
+  backend/src/modules/bookings/booking.validation.js
+  backend/src/modules/bookings/bookingImport.service.js
+  backend/src/modules/bookings/bookingImport.controller.js
+  backend/src/modules/bookings/manualBooking.model.js
+  backend/src/modules/bookings/manualBooking.service.js
+  backend/src/modules/bookings/manualBooking.validation.js
+  backend/src/modules/bookings/manualBooking.controller.js
+  backend/src/modules/capacity/capacity.controller.js
+  backend/src/modules/capacity/capacity.routes.js
+  backend/src/modules/reports/reports.service.js
+  backend/src/modules/dashboard/dashboard.service.js
+  frontend/src/modules/bookings/BookingForm.jsx
+  frontend/src/modules/bookings/ManualBookingForm.jsx
+  frontend/src/modules/bookings/ManualBookingDetail.jsx
+  frontend/src/modules/vessels/components/CapacityTimeline.jsx
+  frontend/src/modules/vessels/components/CapacitySegmentTable.jsx
+  frontend/src/modules/vessels/components/CapacityWarnings.jsx
+  frontend/src/services/bookings.service.js
+
+================================================================================
+  OPEN QUESTION — PRODUCT DECISION REQUIRED BEFORE IMPLEMENTATION
+================================================================================
+
+  QUESTION: Should Layer 2 Pending bookings count toward vessel capacity?
+
+  Currently (and by design in Sprint 023):
+    L1 (ManualBooking): Pending counts → rationale: "commercial planning indicator"
+    L2 (Booking):       Only Confirmed + Final Loading count → rationale:
+                        "committed operational cargo"
+
+  The manual test used 3 Pending bookings and expected 5 TEU in capacity.
+  This implies the desired behavior is: Pending L2 bookings SHOULD count.
+
+  If Pending L2 should count:
+    → Change L2_STATUSES to ['Pending', 'Confirmed', 'Final Loading']
+    → Both layers now use the same status inclusion rule
+    → Capacity reflects all non-cancelled bookings immediately
+
+  If Pending L2 should NOT count (workflow: confirm before capacity shows):
+    → L2_STATUSES stays as-is ['Confirmed', 'Final Loading']
+    → Users must confirm a booking for it to appear in capacity
+    → The manual test expectation would be "incorrect" by design
+
+  Recommendation based on the test scenario: change L2_STATUSES to include
+  Pending. This makes the system consistent (same rule for L1 and L2) and
+  gives planners immediate visibility of all booked cargo.
+
+  Awaiting your decision before this line is changed.
+
+================================================================================
+  RISKS
+================================================================================
+
+  R1 — booking.model.js: adding quantity: { type: Number, default: 1 }
+       Adding a new field with a default value is safe. Existing documents
+       in MongoDB that do not have a quantity field will return undefined
+       when read via Mongoose, but the schema default applies at save time
+       only. For the capacity engine (which reads existing documents), we
+       must ensure the default works at READ time, not just save time.
+
+       IMPORTANT: Mongoose schema defaults apply at document creation time,
+       NOT when reading existing documents. A document saved without a
+       quantity field will still return undefined for b.quantity when read.
+
+       This means: for existing Pending bookings already in the database
+       (without a quantity field), the capacity engine will still get NaN
+       until those bookings are re-saved. New bookings created after this
+       fix will have quantity=1 and will compute correctly.
+
+       For a clean fix that works on existing documents too:
+         Option A: In capacity.service.js Step C, add a guard:
+           const effectiveTEU = (b.quantity || 1) * teu;
+           This is a safe one-line change that makes the engine robust
+           against missing quantity on any document, old or new.
+
+         Option B: Run a migration to set quantity=1 on all existing
+           Booking documents that lack it.
+
+       Recommendation: Apply Option A (|| 1 guard in capacity.service.js)
+       as the robust solution. This is a 1-character change, completely
+       safe, and future-proof. Pair it with the schema default.
+
+       If Option A is chosen, it means capacity.service.js IS modified —
+       specifically only the effectiveTEU line. This is the minimum change.
+
+  R2 — BookingList.jsx: removing Qty column
+       The table has 9 columns currently including Qty. Removing Qty drops
+       it to 8. The minWidth style on the table must be reviewed (currently
+       800px). After removal, 700–750px is more appropriate. Minor cosmetic.
+
+  R3 — BookingImport.jsx: removing Qty column from preview table
+       The preview table has 20 columns. Removing Qty drops it to 19.
+       The re-validate payload must also drop quantity to stay consistent.
+       No backend change needed (backend already ignores missing quantity).
+
+  R4 — L2_STATUSES change in capacity.service.js
+       If Pending is added, capacity will immediately reflect bookings the
+       moment they are created. This is the intended behavior based on the
+       test scenario. The cache (60s TTL) is already correctly invalidated
+       after every create/update/delete. No additional invalidation needed.
+
+================================================================================
+  TESTING PLAN
+================================================================================
+
+  T1  [ISSUE-03 + ISSUE-02] Create 3 bookings: 20ft, 40ft, 40ft (all Pending).
+      GET /api/v1/capacity/round/:roundId
+      Expected: voyages[0].onboardTEU = 5 (if Pending included)
+                layer2.loadedTEU = 5
+
+  T2  [ISSUE-03] Create 1 booking via form. Inspect the MongoDB document.
+      Expected: document has quantity: 1 (from schema default).
+
+  T3  [ISSUE-03] Existing documents without quantity field.
+      GET /api/v1/capacity/round/:roundId after adding b.quantity || 1 guard.
+      Expected: no NaN in the response, all existing bookings compute correctly.
+
+  T4  [ISSUE-01 A1] Open any booking detail page.
+      Expected: Total Freight shows "Rate per container", not "{qty} × {rate}".
+
+  T5  [ISSUE-01 A2] Open any booking detail page.
+      Expected: No "Quantity" row in the info grid.
+
+  T6  [ISSUE-01 A3 + A4] Open Operational Bookings list.
+      Expected: No "Qty" column header. No quantity cell in any row.
+
+  T7  [ISSUE-01 A5] Open the import page before uploading a file.
+      Expected: Quantity column guide entry has no red asterisk (or is removed).
+
+  T8  [ISSUE-01 A6 + A7] Upload a file and preview.
+      Expected: No "Qty" column in the preview table. No Qty editable cell.
+
+  T9  [ISSUE-01 A8] Trigger a re-validate after editing a cell.
+      Expected: quantity is not included in the re-validate request payload.
+      Verify via browser network tab.
+
+  T10 Confirm a Pending booking (change status to Confirmed).
+      Expected: Capacity numbers remain correct (no double counting).
+
+  T11 Delete a booking. GET /api/v1/capacity/round/:roundId.
+      Expected: Capacity decreases by the deleted booking's TEU contribution.
+
+  T12 Create a booking via import (with no quantity column in Excel).
+      Expected: booking saved, capacity reflects it at 1 TEU for 20ft.
+
+  T13 Full Layer 2 workflow: Create → Confirm → Final Loading → Capacity.
+      Expected: booking counts toward capacity at every stage.
+
+  T14 Layer 1 manual bookings still show correctly on capacity (regression).
+
+================================================================================
+  PRIORITY ORDER FOR IMPLEMENTATION
+================================================================================
+
+  1. ISSUE-03: Add quantity back to booking.model.js + add || 1 guard in
+               capacity.service.js (effectiveTEU line only).
+               These are the root cause of capacity showing NaN/0.
+
+  2. ISSUE-02: Change L2_STATUSES to include Pending
+               (after product decision approval).
+
+  3. ISSUE-01: Remove all 8 UI quantity references (frontend-only changes,
+               no functional dependency on the backend fixes).
+               Can be done in any order after the backend is fixed.
+
+================================================================================
+  PHASE BREAKDOWN
+================================================================================
+
+  Phase 1 — Schema fix + capacity guard (ISSUE-03)
+    Files: booking.model.js, capacity.service.js (1-line guard only)
+    Changes:
+      booking.model.js: add quantity: { type: Number, default: 1, min: 1 }
+      capacity.service.js: change effectiveTEU = b.quantity * teu
+                           to:    effectiveTEU = (b.quantity || 1) * teu
+    Estimate: 10 min
+
+  Phase 2 — L2_STATUSES change (ISSUE-02, pending product decision)
+    Files: capacity.service.js
+    Changes:
+      L2_STATUSES = ['Pending', 'Confirmed', 'Final Loading']
+    Estimate: 2 min
+
+  Phase 3 — BookingDetailCard quantity removal (ISSUE-01 A1, A2)
+    Files: BookingDetailCard.jsx
+    Estimate: 5 min
+
+  Phase 4 — BookingList quantity removal (ISSUE-01 A3, A4)
+    Files: BookingList.jsx
+    Estimate: 5 min
+
+  Phase 5 — BookingImport quantity removal (ISSUE-01 A5–A8)
+    Files: BookingImport.jsx
+    Estimate: 15 min
+
+  Phase 6 — Docs
+    Files: STATUS.md, claude.md, 025-sprint.txt
+    Estimate: 10 min
+
+  Total estimate: ~47 min
+
+================================================================================
+  ROLLBACK PLAN
+================================================================================
+
+  All changes are isolated and reversible:
+
+  booking.model.js:
+    Remove the quantity field definition added in Phase 1.
+    No data migration needed. Existing docs already have or lack the field.
+
+  capacity.service.js:
+    Revert effectiveTEU line to: b.quantity * teu
+    Revert L2_STATUSES back to ['Confirmed', 'Final Loading']
+
+  BookingDetailCard.jsx:
+    Restore "{booking.quantity} × {fmtMoney(booking.freightRate)} / unit" sub-label
+    Restore Quantity InfoRow
+
+  BookingList.jsx:
+    Restore "Qty" to header array
+    Restore {b.quantity} cell
+
+  BookingImport.jsx:
+    Restore Quantity to column guide with req:true
+    Restore "Qty" to preview table headers
+    Restore Qty EditableCell
+    Restore quantity: r.quantity in re-validate payload
+
+  Zero schema migrations. Zero data changes. Zero new routes.
+
+================================================================================
+  STATUS: PLANNING COMPLETE — AWAITING APPROVAL
+  Do NOT implement until you have approved this sprint.
+================================================================================

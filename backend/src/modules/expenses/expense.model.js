@@ -26,6 +26,14 @@ const expenseSchema = new mongoose.Schema(
     description:            { type: String, trim: true, default: null },
     attachmentUrl:          { type: String, trim: true, default: null },
     attachmentOriginalName: { type: String, trim: true, default: null },
+    // ── Sprint 052 V2 (additive; an old expense reads as FDA, paidBy null) ──────
+    kind:                   { type: String, enum: ['PDA', 'FDA'], default: 'FDA' },
+    pdaExpenseId:           { type: mongoose.Schema.Types.ObjectId, ref: 'Expense', default: null }, // the estimate this FDA finalises
+    paidBy:                 { type: String, enum: ['PortAgent', 'Company', 'Partner', null], default: null },
+    paidByPartnerId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', default: null },
+    fundedFromReserve:      { type: Boolean, default: false }, // used by Sprint 053 reserve
+    ledgerEntryId:          { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
+    postedAt:               { type: Date, default: null },
     createdBy:              { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy:              { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -37,5 +45,7 @@ expenseSchema.index({ voyageId: 1, portId: 1 });
 expenseSchema.index({ expenseTypeId: 1 });
 expenseSchema.index({ expenseDate: -1 });
 expenseSchema.index({ currency: 1 });
+// One FDA per PDA, enforced by the database.
+expenseSchema.index({ pdaExpenseId: 1 }, { unique: true, partialFilterExpression: { pdaExpenseId: { $type: 'objectId' } } });
 
 module.exports = mongoose.model('Expense', expenseSchema);

@@ -83,6 +83,10 @@ const hardDelete = async (id) => {
   const activeRound = await Round.findOne({ vesselId: id, status: { $in: ['Planned', 'Active'] } });
   if (activeRound) throw { status: 400, message: `Cannot delete — vessel is assigned to active round ${activeRound.roundNumber}` };
 
+  // Sprint050 R6 — dependents engine (partner share rows; rounds once accounting is on)
+  const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
+  await assertNoDependents('vessel', id, DEPENDENTS.vessel);
+
   await Vessel.findByIdAndDelete(id);
 };
 

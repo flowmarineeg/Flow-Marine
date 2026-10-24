@@ -1,10 +1,16 @@
 'use strict';
 
+const lock = require('../rounds/roundLock');
 const fs      = require('fs');
 const path    = require('path');
 const Expense = require('./expense.model');
 const Voyage  = require('../voyages/voyage.model');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
+const AppError = require('../../utils/AppError');
+const { checkPaidBy } = require('./expenseV2.service');
+
+// Sprint 052: the money of a POSTED expense is frozen - reverse it (expenses:approve) to correct it.
+const LOCKED_AFTER_POST = ['amount', 'currency', 'expenseTypeId', 'agentId', 'expenseDate'];
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/expenses');
 
@@ -130,7 +136,9 @@ const resolveScopeIds = async ({ roundId, voyageId, portId }) => {
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 const create = async (data, file, createdBy) => {
+  await lock.assertExpenseRoundOpen(data);
   const scopeIds = await resolveScopeIds(data);
+  checkPaidBy({ paidBy: data.paidBy, paidByPartnerId: data.paidByPartnerId, agentId: data.agentId });
 
   const payload = {
     expenseTypeId: data.expenseTypeId,
@@ -141,6 +149,9 @@ const create = async (data, file, createdBy) => {
     currency:      String(data.currency).toUpperCase(),
     expenseDate:   new Date(data.expenseDate),
     description:   data.description || null,
+    kind:          data.kind === 'PDA' ? 'PDA' : 'FDA',
+    paidBy:        data.paidBy || null,
+    paidByPartnerId: data.paidBy === 'Partner' ? (data.paidByPartnerId || null) : null,
     createdBy,
     updatedBy: createdBy,
   };
@@ -156,14 +167,27 @@ const create = async (data, file, createdBy) => {
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 const update = async (id, data, file, updatedBy) => {
+  await lock.assertExpenseRoundOpen(id);
   const expense = await Expense.findById(id);
   if (!expense) throw { status: 404, message: 'Expense not found' };
 
+  if (expense.ledgerEntryId) {
+    const touched = LOCKED_AFTER_POST.filter(f => data[f] !== undefined && String(data[f] ?? '') !== String(expense[f] ?? ''));
+    const paidByChanged = data.paidBy !== undefined && (data.paidBy || null) !== expense.paidBy;
+    if (touched.length || paidByChanged) {
+      throw new AppError(409, 'This expense is posted to the ledger - reverse it before changing it', 'EXPENSE_POSTED');
+    }
+  }
   const scopeIds = await resolveScopeIds({
     roundId:  data.roundId  !== undefined ? data.roundId  : expense.roundId,
     voyageId: data.voyageId !== undefined ? data.voyageId : expense.voyageId,
     portId:   data.portId   !== undefined ? data.portId   : expense.portId,
   });
+  // Audit H3: the NEW scope must be open too, and a posted expense may not change scope at all.
+  await lock.assertExpenseRoundOpen(scopeIds);
+  if (expense.ledgerEntryId && ['roundId', 'voyageId', 'portId'].some((k) => String(scopeIds[k] || '') !== String(expense[k] || ''))) {
+    throw new AppError(409, 'This expense is posted to the ledger - reverse it before moving it', 'EXPENSE_POSTED');
+  }
 
   if (file) {
     deleteFile(expense.attachmentUrl);
@@ -178,6 +202,12 @@ const update = async (id, data, file, updatedBy) => {
     }
   });
   if (data.amount !== undefined) expense.amount = Number(data.amount);
+  if (data.paidBy !== undefined) {
+    expense.paidBy = data.paidBy || null;
+    expense.paidByPartnerId = data.paidBy === 'Partner' ? (data.paidByPartnerId || null) : null;
+  }
+  if (data.kind !== undefined && !expense.ledgerEntryId && !expense.pdaExpenseId) expense.kind = data.kind === 'PDA' ? 'PDA' : 'FDA';
+  checkPaidBy({ paidBy: expense.paidBy, paidByPartnerId: expense.paidByPartnerId, agentId: expense.agentId });
   expense.roundId  = scopeIds.roundId;
   expense.voyageId = scopeIds.voyageId;
   expense.portId   = scopeIds.portId;
@@ -188,8 +218,11 @@ const update = async (id, data, file, updatedBy) => {
 
 // ─── Hard Delete ──────────────────────────────────────────────────────────────
 const hardDelete = async (id) => {
+  await lock.assertExpenseRoundOpen(id);
   const expense = await Expense.findById(id);
   if (!expense) throw { status: 404, message: 'Expense not found' };
+  if (expense.ledgerEntryId) throw new AppError(409, 'A posted expense cannot be deleted - reverse it instead', 'EXPENSE_POSTED');
+  if (await Expense.exists({ pdaExpenseId: id })) throw new AppError(409, 'This estimate has a final (FDA) expense - delete that first', 'HAS_DEPENDENTS');
   deleteFile(expense.attachmentUrl);
   await Expense.findByIdAndDelete(id);
 };
