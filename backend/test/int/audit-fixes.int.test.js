@@ -77,17 +77,15 @@ describe('V2 audit regression - HIGH findings', { skip: SKIP }, () => {
   });
   after(async () => { await mongoose.disconnect(); });
 
-  it('H1: a vessel with only pre-V2 Rounds can still receive shares; a V2 Round or a closed settlement locks them', async () => {
-    await mkRound(W.vessel._id); // a "V1" Round: no v2 marker
+  it('H1/F-01: a vessel with open Rounds (even v2) can still receive shares; only a Final settlement locks them', async () => {
+    await mkRound(W.vessel._id);
+    await m.Round.updateOne({ vesselId: W.vessel._id }, { $set: { v2: true } });
     const sh = [{ partnerId: W.pA._id, shareBp: 6000, isLead: true }, { partnerId: W.pB._id, shareBp: 4000 }];
     const saved = await m.partnerSvc.setShares(W.vessel._id, sh, U);
     assert.equal(saved.length, 2);
-    await m.Round.updateOne({ vesselId: W.vessel._id }, { $set: { v2: true } });
-    await rejectsWith(m.partnerSvc.setShares(W.vessel._id, sh, U), 'VESSEL_SHARES_LOCKED');
-    // a finalised settlement also locks
+    // a finalised settlement locks
     await m.psm.PartnerSettlement.create({ roundId: oid(), vesselId: W.v2Vessel._id, currency: 'USD', status: 'Final', profitMinor: 0, partners: [] });
     await rejectsWith(m.partnerSvc.setShares(W.v2Vessel._id, sh, U), 'VESSEL_SHARES_LOCKED');
-    // and a Round created through the service under V2 carries the marker
     assert.ok(m.Round.schema.path('v2'));
   });
 

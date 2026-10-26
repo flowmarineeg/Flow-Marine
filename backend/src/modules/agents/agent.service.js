@@ -3,11 +3,15 @@
 const pickFields = require('../../utils/pickFields');
 const Agent = require('./agent.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
+const AppError = require('../../utils/AppError');
+const { isBookingSource } = require('./agent.logic');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
-const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
+const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '', bookingSource = '' } = {}) => {
   const query = {};
   if (status) query.status = status;
+  // bookingSource=true: everything except explicitly Port-only agents (see agent.logic.isBookingSource)
+  if (String(bookingSource) === 'true') query.$nor = [{ roles: ['Port'] }];
   if (search) {
     const rx = escapeRegex(search);
     query.$or = [
@@ -24,6 +28,16 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
     Agent.countDocuments(query),
   ]);
   return { data, total };
+};
+
+/** A Port-only agent cannot be the booking source (master data 11.3A). */
+const assertBookingSource = async (agentId) => {
+  if (!agentId) return;
+  const agent = await Agent.findById(agentId).select('agentName roles').lean();
+  if (!agent) throw new AppError(400, 'Agent not found', 'AGENT_NOT_FOUND');
+  if (!isBookingSource(agent)) {
+    throw new AppError(400, `"${agent.agentName}" is a Port Agent only - enable "Commercial Agent / Booking Agent" on the agent to book against it`, 'AGENT_NOT_BOOKING_SOURCE');
+  }
 };
 
 const getById = async (id) => {
@@ -108,4 +122,4 @@ const getAll = async (filters = {}, selectedIds = []) => {
   return Agent.find(query).sort({ createdAt: -1 }).lean();
 };
 
-module.exports = { list, getById, create, update, hardDelete, getAll };
+module.exports = { list, getById, create, update, hardDelete, getAll, assertBookingSource };

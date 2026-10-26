@@ -12,6 +12,23 @@ const handle = (req, res, next) => {
   next();
 };
 
+const nn = { nullable: true, checkFalsy: true };
+// Master-data fields shared by create and update. Required-ness (callSign, capacity, hire rate) is enforced in the
+// service against the merged record, so a partial update of an older vessel is judged on its final state.
+const masterFields = [
+  body('reeferPlugs').optional(nn).isInt({ min: 0 }).withMessage('Reefer plugs must be a whole number'),
+  body('mainEngineFuelType').optional(nn).trim().isLength({ max: 40 }),
+  body('auxEngineFuelType').optional(nn).trim().isLength({ max: 40 }),
+  body('consumptionSeaMtDay').optional(nn).isFloat({ min: 0 }).withMessage('Consumption at sea must be a positive number'),
+  body('consumptionPortIdleMtDay').optional(nn).isFloat({ min: 0 }).withMessage('Port idle consumption must be a positive number'),
+  body('consumptionPortWorkingMtDay').optional(nn).isFloat({ min: 0 }).withMessage('Port working consumption must be a positive number'),
+  body('defaultDailyHireRate').optional(nn).isFloat({ min: 0 }).withMessage('Default daily hire rate must be a positive number'),
+  body('shares').optional().isArray().withMessage('shares must be an array'),
+  body('shares.*.partnerId').optional().isMongoId().withMessage('Invalid partnerId'),
+  body('shares.*.shareBp').optional().isInt({ min: 1, max: 10000 }).withMessage('shareBp must be an integer 1-10000').toInt(),
+  body('shares.*.isLead').optional().isBoolean().toBoolean(),
+];
+
 const validateCreate = [
   body('vesselCode').trim().notEmpty().withMessage('Vessel code is required').isLength({ max: 20 }).withMessage('Max 20 characters'),
   body('vesselName').trim().notEmpty().withMessage('Vessel name is required').isLength({ max: 100 }),
@@ -27,6 +44,7 @@ const validateCreate = [
   body('status').optional().isIn(VESSEL_STATUS).withMessage(`Must be one of: ${VESSEL_STATUS.join(', ')}`),
   body('charterStartDate').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid charter start date'),
   body('charterEndDate').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid charter end date'),
+  ...masterFields,
   // Extended particulars
   body('manager').optional({ nullable: true, checkFalsy: true }).trim(),
   body('loa').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }).withMessage('LOA must be a positive number'),
@@ -55,6 +73,7 @@ const validateUpdate = [
   body('dwt').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),
   body('builtYear').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1800, max: new Date().getFullYear() + 1 }),
   body('status').optional().isIn(VESSEL_STATUS),
+  ...masterFields,
   // Extended particulars
   body('manager').optional({ nullable: true, checkFalsy: true }).trim(),
   body('loa').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0 }),

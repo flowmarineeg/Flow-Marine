@@ -83,6 +83,8 @@ const agreementRules = [
   body('handlingFees.*.moveType').isIn(['Load', 'Discharge']),
   body('handlingFees.*.containerStatus').isIn(['Full', 'Empty']),
   body('handlingFees.*.amountMinor').isInt({ min: 0 }).toInt(),
+  body('husbandryFeePerCallMinor').optional().isInt({ min: 0 }).toInt(),
+  body('earnsBookingCommission').optional().isBoolean().toBoolean(),
   body('commission.rule').optional({ nullable: true }).isIn(['fixedPerContainer', 'fixedPerBooking', 'percentOfRate']),
   body('commission.amountMinor').optional().isInt({ min: 0 }).toInt(),
   body('commission.percentBp').optional().isInt({ min: 0, max: 10000 }).toInt(),

@@ -13,19 +13,23 @@ import Button from '@/components/ui/Button';
 
 export default function ContainerTypeForm({ item = null, onSuccess, onCancel }) {
   const isEdit = !!item;
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
 
   useEffect(() => {
     reset(isEdit && item
-      ? { code: item.code, size: item.size, type: item.type }
-      : { code: '', size: '', type: '' }
+      ? { code: item.code, isoCode: item.isoCode || '', size: item.size, type: item.type }
+      : { code: '', isoCode: '', size: '', type: '' }
     );
   }, [item]);
 
+  const size = watch('size');
+  const teuFactor = size ? (String(size).startsWith('20') ? 1 : 2) : null;
+
   const mutation = useMutation({
-    mutationFn: (data) => isEdit
-      ? containerTypesService.update(item._id, data)
-      : containerTypesService.create(data),
+    mutationFn: (data) => {
+      const payload = { ...data, isoCode: data.isoCode?.trim() ? data.isoCode.trim().toUpperCase() : null };
+      return isEdit ? containerTypesService.update(item._id, payload) : containerTypesService.create(payload);
+    },
     onSuccess: () => {
       toast.success(isEdit ? 'Container type updated' : 'Container type created');
       onSuccess?.();
@@ -48,6 +52,23 @@ export default function ContainerTypeForm({ item = null, onSuccess, onCancel }) 
           }`}
         />
         {errors.code && <p className="mt-1 text-[11px] text-red-500">{errors.code.message}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">ISO Code</label>
+          <input
+            {...register('isoCode', { pattern: { value: /^[0-9A-Za-z]{2}[A-Za-z][0-9]$/, message: 'e.g. 22G1, 45G1, 42R1' } })}
+            placeholder="e.g. 22G1" maxLength={4}
+            className="w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:border-teal-500 focus:ring-teal-500/10 transition uppercase"
+          />
+          {errors.isoCode && <p className="mt-1 text-[11px] text-red-500">{errors.isoCode.message}</p>}
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">TEU Factor</label>
+          <input readOnly value={teuFactor ?? ''} placeholder="from size"
+            className="w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-gray-500" />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

@@ -117,6 +117,7 @@ const getById = async (id) => {
 // ─── Create ───────────────────────────────────────────────────────────────────
 const create = async (data, createdBy) => {
   await lock.assertVoyageRoundOpen(data.voyageId);
+  await require('../agents/agent.service').assertBookingSource(data.agentId);
   const voyage = await Voyage.findById(data.voyageId).lean();
   if (!voyage) throw { status: 400, message: 'Voyage not found' };
   if (['Cancelled', 'Completed'].includes(voyage.status)) {

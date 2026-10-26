@@ -93,7 +93,7 @@ export default function ServiceList() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
-                  {['Code', 'Name', 'Default Vessel', 'Port Calls', 'Status', 'Actions'].map(h => (
+                  {['Code', 'Name', 'Default Vessel', 'Port Calls', 'Applies To', 'Taxable', 'Revenue Acct', 'Status', 'Actions'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -143,6 +143,15 @@ export default function ServiceList() {
                           No route
                         </span>
                       )}
+                    </td>
+
+                    {/* Invoice setup */}
+                    <td><span className="text-xs text-gray-600">{{ SOC_ONLY: 'SOC', COC_ONLY: 'COC', BOTH: 'SOC & COC' }[svc.applicability] || 'SOC'}</span></td>
+                    <td><span className="text-xs text-gray-600">{svc.isTaxable ? 'Yes' : 'No'}</span></td>
+                    <td>
+                      {svc.revenueAccountId?.code
+                        ? <span className="mono text-xs text-gray-600">{svc.revenueAccountId.code}</span>
+                        : <span className="text-xs text-amber-500">Not set</span>}
                     </td>
 
                     {/* Status */}

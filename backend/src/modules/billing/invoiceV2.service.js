@@ -52,10 +52,19 @@ const presentInvoice = (inv) => {
 };
 
 // ─── Draft ────────────────────────────────────────────────────────────────────
+// Booking freight rates carry no currency (they are base-currency amounts), so an invoice in another currency
+// would only relabel the number. Until bookings carry a currency, invoices are base-currency only (audit F-03).
+const assertInvoiceCurrency = (currency) => {
+  if (currency !== BASE_CURRENCY) {
+    throw new AppError(400, `Invoices can only be raised in ${BASE_CURRENCY} - booking freight rates are ${BASE_CURRENCY} amounts`, 'INVOICE_CURRENCY_UNSUPPORTED');
+  }
+};
+
 const createDraft = async (data, userId) => {
   await lock.assertItemsRoundOpen(data.itemIds);
   const { invoiceType, billToAgentId, voyageId, roundId, itemIds, invoiceDate, dueDate, notes } = data;
   const currency = String(data.currency || BASE_CURRENCY).toUpperCase();
+  assertInvoiceCurrency(currency);
 
   if (!Array.isArray(itemIds) || !itemIds.length) throw new AppError(400, 'Select at least one item', 'NO_ITEMS');
   if (invoiceType === 'Voyage' && !voyageId) throw new AppError(400, 'voyageId is required for a Voyage invoice', 'SCOPE_REQUIRED');
@@ -141,6 +150,7 @@ const updateDraft = async (id, data, userId) => {
   if (data.notes !== undefined) inv.notes = data.notes || null;
   if (data.currency && String(data.currency).toUpperCase() !== inv.currency) {
     const cur = String(data.currency).toUpperCase();
+    assertInvoiceCurrency(cur);
     const lines = await InvoiceLine.find({ invoiceId: id });
     let total = 0;
     for (const ln of lines) {
@@ -215,7 +225,7 @@ const accrueCommission = async (inv, roundId, userId, session) => {
     agentId: inv.agentId, status: 'Active', validFrom: { $lte: inv.invoiceDate },
     $or: [{ validTo: null }, { validTo: { $gte: inv.invoiceDate } }],
   }).sort({ validFrom: -1 }).session(session).lean();
-  if (!agreement) return null;
+  if (!agreement || !agreement.earnsBookingCommission) return null;
   const lines = await InvoiceLine.find({ invoiceId: inv._id }).session(session).lean();
   const amountMinor = L.computeCommission(agreement, {
     containers: lines.reduce((a, l) => a + l.qty, 0), bookings: inv.lineItems.length, totalMinor: inv.totalMinor,
@@ -418,7 +428,12 @@ const list = async ({
 } = {}) => {
   const query = {};
   if (agentId)     query.agentId     = agentId;
-  if (status)      query.status      = status;
+  if (status === 'Overdue') Object.assign(query, L.overdueMatch());
+  else if (status) {
+    query.status = status;
+    // a stored Issued/Partially Paid that is past due is presented as Overdue (F-06), so it must not match here
+    if (status === 'Issued' || status === 'Partially Paid') query.$nor = [L.overdueMatch()];
+  }
   if (invoiceType) query.invoiceType = invoiceType;
   if (docKind)     query.docKind     = docKind;
   if (dateFrom || dateTo) {

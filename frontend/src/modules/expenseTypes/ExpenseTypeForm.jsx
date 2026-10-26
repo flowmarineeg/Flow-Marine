@@ -5,6 +5,8 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { expenseTypesService } from '@/services/expenseTypes.service';
+import { accountsService } from '@/services/accounts.service';
+import { OPERATIONAL_LEVELS } from '@/utils/constants';
 import { showErrorToast } from '@/utils/errorToast';
 import Button from '@/components/ui/Button';
 
@@ -27,9 +29,13 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
 
   // ── RHF ────────────────────────────────────────────────────────────────────
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
-    defaultValues: { name: '', category: '' },
+    defaultValues: { name: '', category: '', operationalLevel: 'VOYAGE_LEVEL', requiresPda: false, expenseAccountId: '', accrualAccountId: '' },
   });
   const selectedCategory = watch('category');
+  const requiresPda = watch('requiresPda');
+
+  const { data: expenseAccounts = [] } = useQuery({ queryKey: ['accounts', 'expense'], queryFn: () => accountsService.lookup('expense').then(r => r.data.data) });
+  const { data: accrualAccounts = [] } = useQuery({ queryKey: ['accounts', 'accrual'], queryFn: () => accountsService.lookup('accrual').then(r => r.data.data) });
 
   // ── Fetch categories ────────────────────────────────────────────────────────
   const { data: categoriesRaw = [] } = useQuery({
@@ -43,9 +49,14 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
   // ── Populate on edit ────────────────────────────────────────────────────────
   useEffect(() => {
     if (isEdit && item) {
-      reset({ name: item.name, category: item.category });
+      reset({
+        name: item.name, category: item.category,
+        operationalLevel: item.operationalLevel || 'VOYAGE_LEVEL', requiresPda: !!item.requiresPda,
+        expenseAccountId: item.expenseAccountId?._id || item.expenseAccountId || '',
+        accrualAccountId: item.accrualAccountId?._id || item.accrualAccountId || '',
+      });
     } else {
-      reset({ name: '', category: '' });
+      reset({ name: '', category: '', operationalLevel: 'VOYAGE_LEVEL', requiresPda: false, expenseAccountId: '', accrualAccountId: '' });
     }
     setAddingCat(false);
     setNewCatValue('');
@@ -109,9 +120,10 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
 
   // ── Submit expense type ─────────────────────────────────────────────────────
   const mutation = useMutation({
-    mutationFn: (data) => isEdit
-      ? expenseTypesService.update(item._id, data)
-      : expenseTypesService.create(data),
+    mutationFn: (data) => {
+      const payload = { ...data, requiresPda: !!data.requiresPda, accrualAccountId: data.requiresPda ? (data.accrualAccountId || null) : null };
+      return isEdit ? expenseTypesService.update(item._id, payload) : expenseTypesService.create(payload);
+    },
     onSuccess: () => {
       toast.success(isEdit ? 'Expense type updated' : 'Expense type created');
       onSuccess?.();
@@ -275,6 +287,40 @@ export default function ExpenseTypeForm({ item = null, onSuccess, onCancel }) {
           Click a category chip to select it · Click the Voyage/Other badge to toggle its Voyage Profitability
           classification · Click ✕ on a chip to remove that category · Press Enter to save a new one
         </p>
+      </div>
+
+      {/* ── Classification & accounting (master data 11.7) ────────────── */}
+      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 flex flex-col gap-3">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Cost classification & accounting</p>
+        <div>
+          <label className={lc}>Operational Level <span className="text-red-400">*</span></label>
+          <select {...register('operationalLevel', { required: true })} className={ic(false)}>
+            {OPERATIONAL_LEVELS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={lc}>Expense Account <span className="text-red-400">*</span></label>
+          <select {...register('expenseAccountId', { required: 'Expense account is required' })} className={ic(errors.expenseAccountId)}>
+            <option value="">Select expense account…</option>
+            {expenseAccounts.map(a => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
+          </select>
+          {errors.expenseAccountId && <p className={ec}>{errors.expenseAccountId.message}</p>}
+        </div>
+        <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
+          <input type="checkbox" {...register('requiresPda')} className="accent-teal-600" />
+          Requires PDA <span className="text-gray-400 text-[12px]">(starts as a provisional estimate, final entered later)</span>
+        </label>
+        {requiresPda && (
+          <div>
+            <label className={lc}>Accrual Account <span className="text-red-400">*</span></label>
+            <select {...register('accrualAccountId', { validate: (v) => !!v || 'Accrual account is required when PDA is enabled' })} className={ic(errors.accrualAccountId)}>
+              <option value="">Select accrual account…</option>
+              {accrualAccounts.map(a => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
+            </select>
+            {errors.accrualAccountId && <p className={ec}>{errors.accrualAccountId.message}</p>}
+          </div>
+        )}
+        <p className="text-[11px] text-gray-400">The expense type never stores an amount: the estimate is entered in the PDA workflow, the actual in Expenses.</p>
       </div>
 
       {/* ── Actions ───────────────────────────────────────────────────── */}

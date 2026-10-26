@@ -20,6 +20,10 @@ const agentAgreementSchema = new mongoose.Schema(
     validFrom:    { type: Date, required: true },
     validTo:      { type: Date, default: null },
     handlingFees: { type: [handlingFeeSchema], default: [] },
+    // Charge agreement: husbandry fee per port call (USD/agreement-currency minor units)
+    husbandryFeePerCallMinor: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger },
+    // Booking commission agreement: nothing accrues unless this is true
+    earnsBookingCommission: { type: Boolean, default: false },
     commission: {
       rule:        { type: String, enum: ['fixedPerContainer', 'fixedPerBooking', 'percentOfRate', null], default: null },
       amountMinor: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger }, // for the fixed rules

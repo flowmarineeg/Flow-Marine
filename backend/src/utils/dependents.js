@@ -10,9 +10,7 @@ const AppError = require('./AppError');
  * decides what to delete once nothing blocks.
  *
  * spec: { model: 'ModelName', field: 'refField', label: 'human plural',
- *         filter?: extra query, flag?: feature flag that must be ON for this
- *         check to apply (used where the check is NEW behaviour that V1,
- *         with all flags off, must not see) }
+ *         filter?: extra query }
  * A spec whose model is not registered (collection not built yet) is skipped.
  */
 const countDependents = async (id, specs, { session } = {}) => {
@@ -37,9 +35,7 @@ const assertNoDependents = async (what, id, specs, opts = {}) => {
   }
 };
 
-// Declarative table (proposal §9.2). Entries with a `flag` are NEW behaviour
-// and only apply once that module is switched on; the rest are checks on
-// collections that only exist in V2 (always empty while flags are off).
+// Declarative table (proposal §9.2).
 const DEPENDENTS = {
   partner: [
     { model: 'VesselPartner',    field: 'partnerId', label: 'vessel share rows' },
@@ -68,6 +64,10 @@ const DEPENDENTS = {
     { model: 'JournalEntryLine', field: 'voyageId', label: 'ledger lines' },
     { model: 'Expense',          field: 'voyageId', label: 'posted expenses', filter: { ledgerEntryId: { $ne: null } } },
     { model: 'BookingItem',      field: 'voyageId', label: 'items on invoices', filter: { locked: true } },
+  ],
+  customer: [
+    { model: 'Booking',          field: 'customerId', label: 'bookings' },
+    { model: 'ManualBooking',    field: 'customerId', label: 'estimated bookings' },
   ],
   agent: [
     { model: 'AgentAgreement',   field: 'agentId', label: 'agreements' },

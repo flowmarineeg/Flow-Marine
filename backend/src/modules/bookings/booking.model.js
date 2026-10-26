@@ -33,6 +33,7 @@ const bookingSchema = new mongoose.Schema(
     dischargedAt:    { type: Date, default: null },
     // Sprint 051 (V2) - additive; old documents read as bill-to = their agent, source/term null.
     billToPartyId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+    customerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null }, // optional end customer / shipper (master data 11.3B)
     shipperSource:   { type: String, enum: ['Agent', 'Direct', null], default: null },
     paymentTerm:     { type: String, enum: ['Prepaid', 'Collect', null], default: null }, // informational only (D2-A)
     collectAgentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },

@@ -295,6 +295,9 @@ export default function VesselDetail({ id }) {
                 {vessel.ownershipType && ` · ${vessel.ownershipType}`}
                 {vessel.builtYear && ` · Built ${vessel.builtYear}`}
               </p>
+              {vessel.redeliveryAlert && (
+                <p className="mt-1 inline-block rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">⚠ {vessel.redeliveryAlert.message}</p>
+              )}
             </div>
           </div>
           {lastPosition && (
@@ -352,6 +355,12 @@ export default function VesselDetail({ id }) {
                 { label: 'Owner', val: vessel.ownerName },
                 { label: 'Manager', val: vessel.manager },
                 { label: 'Status', val: vessel.status },
+                { label: 'Reefer Plugs', val: vessel.reeferPlugs },
+                { label: 'Default Daily Hire (USD)', val: vessel.defaultDailyHireRate },
+                { label: 'Delivery Date', val: vessel.charterStartDate ? String(vessel.charterStartDate).split('T')[0] : null },
+                { label: 'Redelivery Date', val: vessel.charterEndDate ? String(vessel.charterEndDate).split('T')[0] : null },
+                { label: 'Main / Aux Fuel', val: [vessel.mainEngineFuelType, vessel.auxEngineFuelType].filter(Boolean).join(' / ') || null },
+                { label: 'Consumption Sea / Idle / Working (MT/day)', val: [vessel.consumptionSeaMtDay, vessel.consumptionPortIdleMtDay, vessel.consumptionPortWorkingMtDay].some(x => x != null) ? [vessel.consumptionSeaMtDay, vessel.consumptionPortIdleMtDay, vessel.consumptionPortWorkingMtDay].map(x => x ?? '—').join(' / ') : null },
               ].map(({ label, val }) => (
                 <div key={label}>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>

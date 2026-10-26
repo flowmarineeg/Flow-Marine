@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { agentsService } from '@/services/agents.service';
+import { locationsService } from '@/services/locations.service';
 import { AGENT_STATUS } from '@/utils/constants';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -36,7 +37,12 @@ export default function AgentForm({ id = null }) {
   });
 
   const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm({
-    defaultValues: { agentCode: '', agentName: '', country: '', city: '', port: '', address: '', status: 'Active', contacts: [], partyType: 'Agent', roles: [], creditDays: '' },
+    defaultValues: { agentCode: '', agentName: '', nameAr: '', country: '', city: '', port: '', portId: '', defaultCurrency: 'USD', address: '', status: 'Active', contacts: [], partyType: 'Agent', roles: ['Port'] },
+  });
+
+  const { data: ports = [] } = useQuery({
+    queryKey: ['ports', 'all'],
+    queryFn:  () => locationsService.getPorts().then(r => r.data.data),
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'contacts' });
@@ -46,6 +52,9 @@ export default function AgentForm({ id = null }) {
       reset({
         agentCode: agentData.agentCode || '',
         agentName: agentData.agentName,
+        nameAr:    agentData.nameAr    || '',
+        portId:    agentData.portId?._id || agentData.portId || '',
+        defaultCurrency: agentData.defaultCurrency || 'USD',
         country:   agentData.country   || '',
         city:      agentData.city      || '',
         port:      agentData.port      || '',
@@ -53,7 +62,6 @@ export default function AgentForm({ id = null }) {
         status:    agentData.status,
         partyType: agentData.partyType || 'Agent',
         roles:     agentData.roles || [],
-        creditDays: agentData.creditDays ?? '',
         contacts:  agentData.contacts?.length > 0 ? agentData.contacts : [],
       });
     }
@@ -64,7 +72,9 @@ export default function AgentForm({ id = null }) {
       const payload = {
         ...data,
         agentCode: data.agentCode?.trim() || null,
-        creditDays: data.creditDays === '' || data.creditDays == null ? null : Number(data.creditDays),
+        nameAr: data.nameAr?.trim() || null,
+        portId: data.portId || null,
+        defaultCurrency: (data.defaultCurrency || 'USD').toUpperCase(),
         roles: Array.isArray(data.roles) ? data.roles : (data.roles ? [data.roles] : []),
         contacts: data.contacts || [],
       };
@@ -87,7 +97,7 @@ export default function AgentForm({ id = null }) {
       <form onSubmit={handleSubmit(d => mutation.mutate(d))}>
 
         {/* ── Identity ─────────────────────────────────────────────────── */}
-        <SectionCard title="Agent Identity">
+        <SectionCard title="Port Agent Identity">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lc}>
@@ -100,13 +110,21 @@ export default function AgentForm({ id = null }) {
               />
             </div>
             <div>
-              <label className={lc}>Agent Name <span className="text-red-400">*</span></label>
+              <label className={lc}>Agent Name (EN) <span className="text-red-400">*</span></label>
               <input
                 {...register('agentName', { required: 'Agent name is required' })}
                 placeholder="e.g. Gulf Maritime Agency"
                 className={ic(errors.agentName)}
               />
               {errors.agentName && <p className={ec}>{errors.agentName.message}</p>}
+            </div>
+            <div>
+              <label className={lc}>Agent Name (AR)</label>
+              <input dir="rtl" {...register('nameAr')} className={ic(false)} />
+            </div>
+            <div>
+              <label className={lc}>Default Currency</label>
+              <input maxLength={3} {...register('defaultCurrency')} className={`${ic(false)} uppercase`} />
             </div>
           </div>
         </SectionCard>
@@ -123,8 +141,12 @@ export default function AgentForm({ id = null }) {
               <input {...register('city')} placeholder="e.g. Dubai" className={ic(false)} />
             </div>
             <div>
-              <label className={lc}>Port</label>
-              <input {...register('port')} placeholder="e.g. Jebel Ali" className={ic(false)} />
+              <label className={lc}>Port / Location</label>
+              <select {...register('portId')} className={`${ic(false)} cursor-pointer`}>
+                <option value="">Select port…</option>
+                {ports.map(p => <option key={p._id} value={p._id}>{p.name}{p.code ? ` (${p.code})` : ''}{p.countryId?.name ? ` — ${p.countryId.name}` : ''}</option>)}
+              </select>
+              <input {...register('port')} placeholder="Older free-text port (optional)" className={`${ic(false)} mt-2 text-[12px]`} />
             </div>
           </div>
           <div>
@@ -235,16 +257,13 @@ export default function AgentForm({ id = null }) {
                 <option value="DirectLine">Direct Line (invoices + statement only)</option>
               </select>
             </div>
-            <div>
+            <div className="col-span-2">
               <label className={lc}>Roles</label>
-              <div className="flex gap-4 pt-2 text-[13px]">
-                <label className="flex items-center gap-1.5"><input type="checkbox" value="Commercial" {...register('roles')} /> Commercial</label>
-                <label className="flex items-center gap-1.5"><input type="checkbox" value="Port" {...register('roles')} /> Port</label>
+              <div className="flex flex-col gap-1.5 pt-2 text-[13px]">
+                <label className="flex items-center gap-1.5"><input type="checkbox" value="Port" {...register('roles')} /> Port Agent <span className="text-gray-400 text-[12px]">(port operations, PDA/FDA expenses)</span></label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" value="Commercial" {...register('roles')} /> Commercial Agent / Booking Agent <span className="text-gray-400 text-[12px]">(can be selected as the booking source and create bookings)</span></label>
               </div>
-            </div>
-            <div>
-              <label className={lc}>Credit days</label>
-              <input type="number" min="0" {...register('creditDays')} className={ic(false)} />
+              <p className="mt-1 text-[11px] text-gray-400">A Port-only agent cannot be booked against. Direct Lines are booked directly.</p>
             </div>
           </div>
         </SectionCard>

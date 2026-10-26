@@ -2,7 +2,8 @@
 
 // ─── Vessel ───────────────────────────────────────────────────────────────────
 const VESSEL_STATUS = ['Active', 'Inactive', 'Under Maintenance', 'Sold'];
-const OWNERSHIP_TYPES = ['Owned', 'Chartered', 'Leased'];
+const SERVICE_APPLICABILITY = ['SOC_ONLY', 'COC_ONLY', 'BOTH'];
+const OWNERSHIP_TYPES = ['Owned', 'Time Charter', 'Voyage Charter'];
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
 const AGENT_STATUS = ['Active', 'Inactive'];
@@ -56,6 +57,7 @@ const MODULES = [
   'roles',
   'vessels',
   'agents',
+  'customers',   // master data 11.3B
   'locations',
   'containerTypes',
   'expenseTypes',
@@ -83,6 +85,7 @@ const MAX_LIMIT = 100;
 module.exports = {
   VESSEL_STATUS,
   OWNERSHIP_TYPES,
+  SERVICE_APPLICABILITY,
   AGENT_STATUS,
   CONTAINER_SIZES,
   CONTAINER_TYPES,

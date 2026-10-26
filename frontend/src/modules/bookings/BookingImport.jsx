@@ -143,7 +143,7 @@ export default function BookingImport() {
   // Agents
   const { data: agentsData } = useQuery({
     queryKey: ['agents-import-dd'],
-    queryFn: () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
+    queryFn: () => agentsService.list({ limit: 200, status: 'Active', bookingSource: true }).then(r => r.data.data),
     staleTime: 5 * 60 * 1000,
   });
   const agents = agentsData || [];

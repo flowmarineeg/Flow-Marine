@@ -108,13 +108,16 @@ const advance = async (agentId, data, userId) => {
   const amountMinor = positiveInt(data.amountMinor);
   const currency = String(data.currency || BASE_CURRENCY).toUpperCase();
   const bank = bankOf(data.bankAccount);
-  return ledger.post({
-    date: new Date(data.date || Date.now()), sourceType: 'Settlement', sourceId: agent._id, roundId: data.roundId || null,
-    memo: `Advance to ${agent.agentName}${data.reference ? ` (${data.reference})` : ''}`, currency, postedBy: userId,
-  }, [
-    { accountCode: '1110', debitMinor: amountMinor, agentId: agent._id },
-    { accountCode: bankCode(bank, data.method), creditMinor: amountMinor, partnerId: bank.partnerId || null },
-  ]);
+  return inTransaction(async (session) => {
+    await lockAgent(agentId, session);
+    return ledger.post({
+      date: new Date(data.date || Date.now()), sourceType: 'Settlement', sourceId: agent._id, roundId: data.roundId || null,
+      memo: `Advance to ${agent.agentName}${data.reference ? ` (${data.reference})` : ''}`, currency, postedBy: userId,
+    }, [
+      { accountCode: '1110', debitMinor: amountMinor, agentId: agent._id },
+      { accountCode: bankCode(bank, data.method), creditMinor: amountMinor, partnerId: bank.partnerId || null },
+    ], { session });
+  });
 };
 
 const returnAdvance = async (agentId, data, userId) => {
@@ -325,8 +328,12 @@ const saveAgreement = async (agentId, id, data, userId) => {
     currency: String(data.currency || BASE_CURRENCY).toUpperCase(),
     validFrom: new Date(data.validFrom), validTo: data.validTo ? new Date(data.validTo) : null,
     handlingFees: data.handlingFees || [], commission: data.commission || { rule: null },
+    husbandryFeePerCallMinor: Number.isSafeInteger(data.husbandryFeePerCallMinor) ? data.husbandryFeePerCallMinor : 0,
     status: data.status || 'Active',
   };
+  // A commission rule without the flag would silently never accrue - default the flag from the rule, explicit wins.
+  fields.earnsBookingCommission = typeof data.earnsBookingCommission === 'boolean' ? data.earnsBookingCommission : !!fields.commission?.rule;
+  if (fields.earnsBookingCommission && !fields.commission?.rule) throw new AppError(400, 'Choose a commission rule or turn off "earns booking commission"', 'COMMISSION_RULE_REQUIRED');
   if (fields.validTo && fields.validTo < fields.validFrom) throw new AppError(400, 'validTo must be after validFrom', 'DATE_ORDER');
   if (id) {
     const a = await AgentAgreement.findOneAndUpdate({ _id: id, agentId }, { $set: fields }, { new: true, runValidators: true }).lean();

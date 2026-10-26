@@ -12,6 +12,8 @@ const CATEGORY_STYLES = {
 };
 const COLUMNS = [
   { key: 'name', label: 'Name', render: (r) => <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.name}</span> },
+  { key: 'operationalLevel', label: 'Level', render: (r) => ({ ROUND_LEVEL: 'Round', VOYAGE_LEVEL: 'Voyage', PORT_LEVEL: 'Port' }[r.operationalLevel] || 'Voyage') },
+  { key: 'requiresPda', label: 'PDA', render: (r) => (r.requiresPda ? 'Yes' : 'No') },
   { key: 'category', label: 'Category', render: (r) => {
     const s = CATEGORY_STYLES[r.category] || { bg: '#F1F5F9', color: '#475569' };
     return <span className="badge" style={{ background: s.bg, color: s.color }}>{r.category}</span>;

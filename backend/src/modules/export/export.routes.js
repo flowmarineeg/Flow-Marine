@@ -33,7 +33,9 @@ const checkModuleExportPermission = async (req, res, next) => {
     // Check each requested module
     const denied = [];
     for (const mod of requestedModules) {
-      const perm = await Permission.findOne({ roleId, module: mod }).lean();
+      // manualBookings is not a permission module - it is governed by the bookings permission (F-08)
+      const permModule = mod === 'manualBookings' ? 'bookings' : mod;
+      const perm = await Permission.findOne({ roleId, module: permModule }).lean();
       if (!perm || !perm.actions.export) {
         denied.push(mod);
       }

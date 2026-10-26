@@ -21,13 +21,19 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-transporter.verify((err) => {
-  if (err) logger.warn(`[Mailer] SMTP connection failed: ${err.message}`);
-  else     logger.info('[Mailer] SMTP ready');
-});
+const smtpConfigured = !!(process.env.SMTP_EMAIL && process.env.SMTP_APP_PASSWORD);
+if (smtpConfigured) {
+  transporter.verify((err) => {
+    if (err) logger.warn(`[Mailer] SMTP connection failed: ${err.message}`);
+    else     logger.info('[Mailer] SMTP ready');
+  });
+} else {
+  logger.warn('[Mailer] SMTP_EMAIL / SMTP_APP_PASSWORD not set - emails will not be sent');
+}
 
 // ─── Base sender ─────────────────────────────────────────────────────────────
 const sendMail = async ({ to, subject, html }) => {
+  if (!smtpConfigured) throw new Error('Email is not configured (SMTP_EMAIL / SMTP_APP_PASSWORD)');
   try {
     await transporter.sendMail({
       from: `"${process.env.SMTP_FROM_NAME || 'Logistics SaaS'}" <${process.env.SMTP_EMAIL}>`,

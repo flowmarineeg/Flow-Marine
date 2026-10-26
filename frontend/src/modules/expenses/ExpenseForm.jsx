@@ -139,7 +139,7 @@ export default function ExpenseForm({ item }) {
     fd.append('expenseDate',   data.expenseDate);
     fd.append('description',   data.description   || '');
     {
-      fd.append('kind', data.kind || 'FDA');
+      fd.append('kind', pdaForced ? 'PDA' : (data.kind || 'FDA'));
       if (!postedLocked) {
         fd.append('paidBy', data.paidBy || '');
         fd.append('paidByPartnerId', data.paidBy === 'Partner' ? (data.paidByPartnerId || '') : '');
@@ -152,6 +152,20 @@ export default function ExpenseForm({ item }) {
 
   const today = new Date().toISOString().split('T')[0];
 
+  // Master data 11.7: the expense type's operational level decides which link types are allowed,
+  // and a type that requires a PDA starts as an estimate.
+  const LEVEL_LINKS = { ROUND_LEVEL: ['round'], VOYAGE_LEVEL: ['voyage', 'port'], PORT_LEVEL: ['port'] };
+  const selectedType = expenseTypes.find(et => et._id === watch('expenseTypeId'));
+  const allowedLinks = selectedType ? (LEVEL_LINKS[selectedType.operationalLevel || 'VOYAGE_LEVEL']) : ['round', 'voyage', 'port'];
+  const pdaForced = !!selectedType?.requiresPda && !isEditing;
+  const onTypeChange = (id) => {
+    const et = expenseTypes.find(x => x._id === id);
+    if (!et) return;
+    const allowed = LEVEL_LINKS[et.operationalLevel || 'VOYAGE_LEVEL'];
+    if (!allowed.includes(linkType)) { setLinkType(allowed[0]); setValue('portId', ''); if (allowed[0] === 'round') setValue('voyageId', ''); }
+    if (et.requiresPda && !isEditing) setValue('kind', 'PDA');
+  };
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
 
@@ -163,6 +177,8 @@ export default function ExpenseForm({ item }) {
             <button
               key={t}
               type="button"
+              disabled={!allowedLinks.includes(t)}
+              title={allowedLinks.includes(t) ? undefined : 'Not allowed for this expense type'}
               onClick={() => {
                 setLinkType(t);
                 setValue('portId', '');
@@ -172,7 +188,7 @@ export default function ExpenseForm({ item }) {
                 linkType === t
                   ? 'bg-teal-600 text-white border-teal-600'
                   : 'bg-white text-gray-500 border-gray-200 hover:border-teal-400'
-              }`}
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {t === 'round' ? '🔄 Round' : t === 'voyage' ? '🚢 Voyage' : '⚓ Port'}
             </button>
@@ -245,7 +261,7 @@ export default function ExpenseForm({ item }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={lc}>Expense Type <span className="text-red-400">*</span></label>
-            <select {...register('expenseTypeId', { required: 'Expense type is required' })} className={`${ic(errors.expenseTypeId)} cursor-pointer`}>
+            <select {...register('expenseTypeId', { required: 'Expense type is required', onChange: (e) => onTypeChange(e.target.value) })} className={`${ic(errors.expenseTypeId)} cursor-pointer`}>
               <option value="">Select type…</option>
               {expenseTypes.map(et => (
                 <option key={et._id} value={et._id}>{et.name} ({et.category})</option>
@@ -308,7 +324,7 @@ export default function ExpenseForm({ item }) {
             {postedLocked && <p className="col-span-3 text-[11px] text-amber-700">Posted to the ledger - amount, type, agent, date and paid-by are locked. Reverse it from the Expenses list to change them.</p>}
             <div>
               <label className={lc}>Kind</label>
-              <select {...register('kind')} disabled={!!item?.pdaExpenseId || postedLocked} className={`${ic(false)} cursor-pointer`}>
+              <select {...register('kind')} disabled={!!item?.pdaExpenseId || postedLocked || pdaForced} className={`${ic(false)} cursor-pointer`}>
                 <option value="FDA">Final (FDA)</option>
                 <option value="PDA">Estimate (PDA)</option>
               </select>

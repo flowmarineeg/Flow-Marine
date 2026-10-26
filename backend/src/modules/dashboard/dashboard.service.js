@@ -47,7 +47,7 @@ const computeStats = async () => {
     Booking.countDocuments({ status: 'Cancelled' }),
     Agent.countDocuments({   status: 'Active' }),
     Invoice.countDocuments({ status: 'Draft' }),
-    Invoice.countDocuments({ status: 'Overdue' }),
+    Invoice.countDocuments(require('../billing/billing.logic').overdueMatch()), // derived, not the lagging stored status (F-06)
     Invoice.countDocuments({ status: 'Paid' }),
     // aggregations run in same Promise.all — no sequential waits
     Booking.aggregate([

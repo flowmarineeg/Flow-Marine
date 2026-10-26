@@ -10,6 +10,7 @@ const Service    = require('../services/service.model');
 const { resolveTEU } = require('../../utils/teuResolver');
 const expenseTypeService = require('../expenseTypes/expenseType.service');
 const { BOOKING_STATUS } = require('../../config/constants');
+const { BASE_CURRENCY } = require('../../utils/money');
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const toObjId = (id) => new mongoose.Types.ObjectId(String(id));
@@ -189,12 +190,21 @@ const getRoundPnL = async ({ roundId, voyageId, basis } = {}) => {
     return classificationMap[cat] || 'Other Voyage Cost';
   };
 
-  const scopeExpenses = await Expense.find({
+  const allScopeExpenses = await Expense.find({
     $or: [
       { roundId: toObjId(roundId), voyageId: null },
       { voyageId: { $in: scopedVoyageIds } },
     ],
   }).populate('expenseTypeId', 'name category').populate('portId', 'name code').lean();
+
+  // Revenue is freight (base currency), so only base-currency expenses can be netted against it. Expenses in
+  // other currencies are excluded from the P&L and reported per currency instead (audit F-04).
+  const scopeExpenses = allScopeExpenses.filter(e => (e.currency || BASE_CURRENCY) === BASE_CURRENCY);
+  const excludedExpenses = {};
+  allScopeExpenses.forEach(e => {
+    const c = e.currency || BASE_CURRENCY;
+    if (c !== BASE_CURRENCY) excludedExpenses[c] = (excludedExpenses[c] || 0) + (e.amount || 0);
+  });
 
   // Voyage Cost — broken out PER VOYAGE, even in round scope.
   // Sprint 036 — byPort keys on the real portId (Expense.portId, a
@@ -307,6 +317,8 @@ const getRoundPnL = async ({ roundId, voyageId, basis } = {}) => {
     totalTEU,
     profitPerTEU:     totalTEU > 0 ? netProfit / totalTEU : 0,
     profitMarginPct:  totalVoyageProfitRevenue > 0 ? (netProfit / totalVoyageProfitRevenue) * 100 : 0,
+    currency:         BASE_CURRENCY,
+    excludedExpenses, // { EUR: 1200, ... } expenses in other currencies, not included in the figures above
   };
 
   // Sprint 053 S6 - ledger-based P&L, Accrual | Cash. ADDITIVE: every legacy field below is

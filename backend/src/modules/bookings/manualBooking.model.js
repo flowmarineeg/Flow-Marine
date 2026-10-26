@@ -25,6 +25,7 @@ const manualBookingSchema = new mongoose.Schema(
     // ── Header ────────────────────────────────────────────────────────────────
     voyageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Voyage', required: true },
     agentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Agent',  required: true },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null }, // optional end customer / shipper
     polId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Port',   required: true },
     podId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Port',   required: true },
 

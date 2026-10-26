@@ -147,14 +147,16 @@ describe('Version 2 integration (real MongoDB replica set)', { skip: SKIP }, () 
       assert.equal((await m.ledger.trialBalance({})).balanced, true);
     });
 
-    it('vessel shares: must total 100%, one lead, locked after the first Round', async () => {
+    it('vessel shares: must total 100%, one lead, locked once a Round is settled (Final)', async () => {
       const s = (p, bp, lead = false) => ({ partnerId: p._id, shareBp: bp, isLead: lead });
       await rejectsWith(m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000, true), s(W.pB, 4000)], USER_ID), 'SHARES_NOT_100');
       await rejectsWith(m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000, true), s(W.pB, 5000, true)], USER_ID), 'LEAD_COUNT_INVALID');
       const saved = await m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000, true), s(W.pB, 3000), s(W.pC, 2000)], USER_ID);
       assert.equal(saved.length, 3);
       const lockRound = await mkRound(W.shareVessel._id);
-      await m.Round.updateOne({ _id: lockRound.round._id }, { $set: { v2: true } }); // only V2 Rounds lock the table (audit H1)
+      await m.Round.updateOne({ _id: lockRound.round._id }, { $set: { v2: true } });
+      await m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 6000, true), s(W.pB, 4000)], USER_ID); // an open Round does not lock (audit F-01)
+      await m.psModels.PartnerSettlement.create({ roundId: lockRound.round._id, vesselId: W.shareVessel._id, currency: 'USD', status: 'Final', profitMinor: 0, partners: [] });
       await rejectsWith(m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 10000, true)], USER_ID), 'VESSEL_SHARES_LOCKED');
     });
 

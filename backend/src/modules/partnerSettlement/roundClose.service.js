@@ -7,6 +7,7 @@ const Expense = require('../expenses/expense.model');
 const Invoice = require('../invoices/invoice.model');
 const VesselPartner = require('../partners/vesselPartner.model');
 const ledger = require('../ledger/ledger.service');
+const JournalEntryLine = require('../ledger/journalEntryLine.model');
 const AppError = require('../../utils/AppError');
 const { BASE_CURRENCY } = require('../../utils/money');
 const { recordMoneyEvent } = require('../../utils/moneyAudit');
@@ -22,7 +23,7 @@ const inTransaction = async (fn) => {
  * S2 - close checklist. `blockers` stop the close (open PDAs can be overridden
  * with a reason); `warnings` are shown but do not stop it.
  */
-const checklist = async (roundId, session = null) => {
+const checklist = async (roundId, session = null, currency = BASE_CURRENCY) => {
   const round = await Round.findById(roundId).session(session).lean();
   if (!round) throw new AppError(404, 'Round not found', 'ROUND_NOT_FOUND');
   const voyages = await Voyage.find({ roundId }).select('status').session(session).lean();
@@ -46,6 +47,10 @@ const checklist = async (roundId, session = null) => {
   if (!(await VesselPartner.exists({ vesselId: round.vesselId }))) {
     blockers.push({ code: 'NO_PARTNER_SHARES', count: 1, label: "vessel has no partner shares" });
   }
+
+  // Settlement runs in one currency; lines in any other are left out of the profit, so the Round must not close (audit F-02).
+  const otherCurrency = await JournalEntryLine.countDocuments({ roundId, currency: { $ne: currency } }).session(session);
+  if (otherCurrency) blockers.push({ code: 'ROUND_HAS_OTHER_CURRENCY', count: otherCurrency, label: `ledger lines not in ${currency} (they would be left out of the profit)` });
 
   const warnings = [];
   const unposted = await Expense.countDocuments({ ...scope, kind: 'FDA', ledgerEntryId: null }).session(session);
@@ -83,7 +88,7 @@ const close = async (roundId, data, user, { canOverride = false, canCarryForward
         if (!r) throw new AppError(404, 'Round not found', 'ROUND_NOT_FOUND');
         throw new AppError(409, 'Round is already closed', 'ROUND_CLOSED');
       }
-      const cl = await checklist(roundId, session);
+      const cl = await checklist(roundId, session, currency);
       const hard = cl.blockers.filter((b) => !b.overridable);
       if (hard.length) {
         const err = new AppError(409, `Cannot close: ${hard.map((b) => `${b.count} ${b.label}`).join(', ')}`, 'ROUND_NOT_READY');

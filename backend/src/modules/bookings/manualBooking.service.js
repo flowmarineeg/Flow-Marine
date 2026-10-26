@@ -140,12 +140,14 @@ const create = async (data, createdBy) => {
   const { computed, totalFreight, totalTEU, totalUnits, warnings } = computeTotals(rows, sizeMap);
   warnings.forEach(w => logger.warn(`[ManualBooking.create] ${w.message}`));
 
+  await require('../agents/agent.service').assertBookingSource(data.agentId);
   const bookingNumber = await nextNumber('manualBooking');
 
   const doc = await ManualBooking.create({
     bookingNumber,
     voyageId:     data.voyageId,
     agentId:      data.agentId,
+    customerId:   data.customerId || null,
     // Sprint 030: POL/POD are no longer client-submitted — always the
     // selected voyage's own polId/podId.
     polId:        voyage.polId,
@@ -198,7 +200,11 @@ const update = async (id, data, updatedBy) => {
   }
 
   // Scalar fields
-  if (data.agentId  !== undefined) doc.agentId  = data.agentId;
+  if (data.agentId  !== undefined) {
+    if (String(data.agentId) !== String(doc.agentId)) await require('../agents/agent.service').assertBookingSource(data.agentId);
+    doc.agentId = data.agentId;
+  }
+  if (data.customerId !== undefined) doc.customerId = data.customerId || null;
   if (data.remarks  !== undefined) doc.remarks  = data.remarks  || null;
   if (data.status   !== undefined) doc.status   = data.status;
   doc.updatedBy = updatedBy;

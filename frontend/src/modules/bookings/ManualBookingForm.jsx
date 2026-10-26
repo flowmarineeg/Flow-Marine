@@ -9,6 +9,7 @@ import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService }       from '@/services/bookings.service';
 import { voyagesService }        from '@/services/voyages.service';
 import { agentsService }         from '@/services/agents.service';
+import { customersService } from '@/services/customers.service';
 import { containerTypesService } from '@/services/containerTypes.service';
 import { useRounds }             from '@/hooks/useRounds';
 import { BOOKING_STATUS }        from '@/utils/constants';
@@ -65,6 +66,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
       roundId:  item?.voyageId?.roundId?._id || item?.voyageId?.roundId || '',
       voyageId: item?.voyageId?._id || item?.voyageId || '',
       agentId:  item?.agentId?._id  || item?.agentId  || '',
+      customerId: item?.customerId?._id || item?.customerId || '',
       remarks:  item?.remarks || '',
       status:   item?.status  || 'Pending',
       cargoRows: item?.cargoRows?.length
@@ -115,9 +117,16 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
   // Agents dropdown
   const { data: agentData } = useQuery({
     queryKey: ['agents-dropdown'],
-    queryFn:  () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
+    queryFn:  () => agentsService.list({ limit: 200, status: 'Active', bookingSource: true }).then(r => r.data.data),
   });
   const agents = agentData || [];
+
+  // Customers (optional end customer / shipper)
+  const { data: customerData } = useQuery({
+    queryKey: ['customers-dropdown'],
+    queryFn:  () => customersService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
+  });
+  const customers = customerData || [];
 
   // Container types
   const { data: ctData } = useQuery({
@@ -145,6 +154,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
     const payload = {
       voyageId: data.voyageId,
       agentId:  data.agentId,
+      customerId: data.customerId || null,
       remarks:  data.remarks || null,
       status:   data.status,
       cargoRows: data.cargoRows.map(r => ({
@@ -262,6 +272,16 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
             ))}
           </select>
           {errors.agentId && <p className={ec}>{errors.agentId.message}</p>}
+        </div>
+
+        <div className="mt-4">
+          <FieldLabel>Customer (optional)</FieldLabel>
+          <select {...register('customerId')} disabled={isLocked} className={`${ic(false)} cursor-pointer`}>
+            <option value="">No customer selected</option>
+            {customers.map(c => (
+              <option key={c._id} value={c._id}>{c.customerCode} — {c.customerName} ({c.customerType})</option>
+            ))}
+          </select>
         </div>
       </SectionCard>
 

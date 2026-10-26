@@ -7,7 +7,7 @@ import { partnersService } from '@/services/partners.service';
 const COLUMNS = [
   { key: 'code', label: 'Code', render: (r) => <span className="mono" style={{ color: 'var(--teal)', fontWeight: 600 }}>{r.code}</span> },
   { key: 'name', label: 'Name' },
-  { key: 'contact', label: 'Contact', render: (r) => r.contact?.person || r.contact?.email || <span style={{ color: 'var(--text-muted)' }}>-</span> },
+  { key: 'contact', label: 'Contact', render: (r) => r.contacts?.[0]?.name || r.contact?.person || r.contact?.email || <span style={{ color: 'var(--text-muted)' }}>-</span> },
   { key: 'status', label: 'Status', render: (r) => <span className="badge" style={{ background: r.status === 'Active' ? '#D1FAE5' : '#F3F4F6', color: r.status === 'Active' ? '#065F46' : '#4B5563' }}>{r.status}</span> },
 ];
 const FILTERS = [

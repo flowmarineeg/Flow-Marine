@@ -5,8 +5,8 @@ const { success, created, error, paginate } = require('../../utils/responseHelpe
 
 const list = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search = '', status = '' } = req.query;
-    const { data, total } = await agentService.list({ page, limit, search, status });
+    const { page = 1, limit = 20, search = '', status = '', bookingSource = '' } = req.query;
+    const { data, total } = await agentService.list({ page, limit, search, status, bookingSource });
     return success(res, data, 'Agents retrieved', 200, paginate(total, page, limit));
   } catch (err) { next(err); }
 };

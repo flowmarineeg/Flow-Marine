@@ -3,6 +3,7 @@
 const pickFields = require('../../utils/pickFields');
 const Service = require('./service.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
+const { assertAccountFor } = require('../ledger/accountRules');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -22,6 +23,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
   const [services, total] = await Promise.all([
     Service.find(query)
       .populate('defaultVesselId', 'vesselCode vesselName')
+      .populate('revenueAccountId', 'code name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
@@ -58,6 +60,7 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
 const getById = async (id) => {
   const service = await Service.findOne({ _id: id })
     .populate('defaultVesselId', 'vesselCode vesselName')
+    .populate('revenueAccountId', 'code name')
     .lean();
   if (!service) throw { status: 404, message: 'Service not found' };
   return service;
@@ -67,6 +70,9 @@ const getById = async (id) => {
 const create = async (data, createdBy) => {
   const exists = await Service.findOne({ serviceCode: data.serviceCode.toUpperCase() });
   if (exists) throw { status: 400, message: `Service code "${data.serviceCode}" already exists` };
+
+  if (!data.revenueAccountId) throw { status: 400, message: 'Revenue account is required' };
+  await assertAccountFor(data.revenueAccountId, 'revenue', 'Revenue account');
 
   const service = await Service.create({
     ...pickFields(Service, data),
@@ -87,6 +93,10 @@ const update = async (id, data, updatedBy) => {
     if (dup) throw { status: 400, message: `Service code "${code}" already exists` };
     data.serviceCode = code;
   }
+
+  const finalAccount = data.revenueAccountId !== undefined ? data.revenueAccountId : service.revenueAccountId;
+  if (!finalAccount) throw { status: 400, message: 'Revenue account is required' };
+  if (data.revenueAccountId !== undefined) await assertAccountFor(finalAccount, 'revenue', 'Revenue account');
 
   Object.assign(service, { ...pickFields(Service, data), updatedBy });
   await service.save();

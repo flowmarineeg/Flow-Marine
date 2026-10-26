@@ -13,6 +13,7 @@ const COLUMNS = [
   },
   { key: 'city', label: 'City', render: (r) => r.cityId?.name || '—' },
   { key: 'country', label: 'Country', render: (r) => r.countryId?.name || '—' },
+  { key: 'currency', label: 'Local Currency', render: (r) => r.countryId?.localCurrency ? <span className="mono">{r.countryId.localCurrency}</span> : '—' },
 ];
 
 export default function PortTable() {

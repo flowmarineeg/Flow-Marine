@@ -1,10 +1,10 @@
 'use strict';
 
+// SMTP is only mandatory in production; locally, invitation emails simply fail with a clear error (F-11).
 const required = [
   'MONGODB_URI',
   'JWT_SECRET',
-  'SMTP_EMAIL',
-  'SMTP_APP_PASSWORD',
+  ...(process.env.NODE_ENV === 'production' ? ['SMTP_EMAIL', 'SMTP_APP_PASSWORD'] : []),
 ];
 
 const validate = () => {

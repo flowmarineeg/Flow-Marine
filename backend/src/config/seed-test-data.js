@@ -67,7 +67,7 @@ const load = () => {
   const r = (p) => require(`../modules/${p}`);
   m = {
     Country: r('locations/country.model'), City: r('locations/city.model'), Port: r('locations/port.model'), Terminal: r('locations/terminal.model'),
-    ContainerType: r('containerTypes/containerType.model'),
+    ContainerType: r('containerTypes/containerType.model'), Account: r('ledger/account.model'),
     ExpenseCategory: r('expenseTypes/expenseCategory.model'), ExpenseType: r('expenseTypes/expenseType.model'),
     Agent: r('agents/agent.model'), AgentAgreement: r('agreements/agentAgreement.model'),
     Service: r('services/service.model'), Route: r('routes/route.model'), Vessel: r('vessels/vessel.model'),
@@ -120,19 +120,28 @@ const seedMasterData = async (uid) => {
     ['40HC', '40HC', 'Dry', "40' High cube"], ['20RF', '20ft', 'Reefer', "20' Reefer"],
     ['40HCRF', '40HC', 'Reefer', "40' High cube reefer"], ['20OT', '20ft', 'Open Top', "20' Open top"],
   ]) {
-    W.ct[code] = await upsert(m.ContainerType, { code }, { code, size, type, description, createdBy: uid });
+    const isoCode = { '20DRY': '22G1', '40DRY': '42G1', '40HC': '45G1', '20RF': '22R1', '40HCRF': '45R1', '20OT': '22U1' }[code];
+    W.ct[code] = await upsert(m.ContainerType, { code }, { code, isoCode, size, type, description, teuFactor: size.startsWith('20') ? 1 : 2, createdBy: uid });
   }
 
   // Port Expense -> "Voyage Cost"; everything else -> "Other Voyage Cost" (reports read this flag, never a name)
   for (const [name, costClassification] of [['Port Expense', 'Voyage Cost'], ['Hire', 'Other Voyage Cost'], ['Agency', 'Other Voyage Cost'], ['Canal', 'Other Voyage Cost'], ['Operations', 'Other Voyage Cost']]) {
     await upsert(m.ExpenseCategory, { name }, { name, costClassification, createdBy: uid });
   }
+  const acct = {};
+  for (const a of await m.Account.find({}).select('code').lean()) acct[a.code] = a._id;
   W.et = {};
-  for (const [name, category] of [
-    ['Port Dues', 'Port Expense'], ['Terminal Handling', 'Port Expense'], ['Pilotage & Towage', 'Port Expense'],
-    ['Hire Rate', 'Hire'], ['Agency Fees', 'Agency'], ['Canal Dues', 'Canal'], ['Stevedoring', 'Operations'], ['Miscellaneous', 'Operations'],
+  // [name, category, operationalLevel, expense account, requiresPda]
+  for (const [name, category, operationalLevel, code, requiresPda] of [
+    ['Port Dues', 'Port Expense', 'PORT_LEVEL', '5000', true], ['Terminal Handling', 'Port Expense', 'PORT_LEVEL', '5000', true],
+    ['Pilotage & Towage', 'Port Expense', 'PORT_LEVEL', '5000', false],
+    ['Hire Rate', 'Hire', 'ROUND_LEVEL', '5100', false], ['Agency Fees', 'Agency', 'ROUND_LEVEL', '5200', false],
+    ['Canal Dues', 'Canal', 'ROUND_LEVEL', '5000', false], ['Stevedoring', 'Operations', 'PORT_LEVEL', '5300', false],
+    ['Miscellaneous', 'Operations', 'VOYAGE_LEVEL', '5900', false],
   ]) {
-    W.et[name] = await upsert(m.ExpenseType, { name }, { name, category, createdBy: uid });
+    W.et[name] = await upsert(m.ExpenseType, { name }, {
+      name, category, operationalLevel, requiresPda, expenseAccountId: acct[code], accrualAccountId: requiresPda ? acct['2100'] : null, createdBy: uid,
+    });
   }
 
   W.agent = {};
@@ -141,7 +150,7 @@ const seedMasterData = async (uid) => {
     { code: 'SIN-AG', name: 'Lion City Shipping Agency', country: 'Singapore', city: 'Singapore', port: 'Singapore', creditDays: 30, roles: ['Commercial', 'Port'], contact: ['Tan Mei Ling', '+65 6555 0102', 'tan@lioncity.test'] },
     { code: 'DXB-AG', name: 'Gulf Gateway Agency', country: 'United Arab Emirates', city: 'Dubai', port: 'Jebel Ali', creditDays: 45, roles: ['Commercial', 'Port'], contact: ['Ahmed Al Mansoori', '+971 4 555 0103', 'ahmed@gulfgateway.test'] },
     { code: 'JED-AG', name: 'Red Sea Agencies', country: 'Saudi Arabia', city: 'Jeddah', port: 'Jeddah Islamic Port', creditDays: 30, roles: ['Commercial', 'Port'], contact: ['Fahad Al Harbi', '+966 12 555 0104', 'fahad@redsea.test'] },
-    { code: 'PSD-AG', name: 'Suez Canal Agency', country: 'Egypt', city: 'Port Said', port: 'Port Said East', creditDays: 60, roles: ['Port'], contact: ['Mona Fathy', '+20 66 555 0105', 'mona@suezagency.test'] },
+    { code: 'PSD-AG', name: 'Suez Canal Agency', country: 'Egypt', city: 'Port Said', port: 'Port Said East', creditDays: 60, roles: ['Commercial', 'Port'], contact: ['Mona Fathy', '+20 66 555 0105', 'mona@suezagency.test'] },
     { code: 'DL-ONE', name: 'Oceanic Direct Line', country: 'United Arab Emirates', city: 'Dubai', port: null, creditDays: 15, roles: ['Commercial'], partyType: 'DirectLine', contact: ['Rashid Karim', '+971 4 555 0106', 'rashid@oceanicdirect.test'] },
   ];
   for (const a of AGENTS) {
@@ -160,8 +169,8 @@ const seedMasterData = async (uid) => {
   W.vessel = {};
   const VESSELS = [
     { code: 'ALNOOR', name: 'MV Al Noor', imo: '9811001', ownership: 'Owned', owner: 'Alfa Shipping Holdings', cap: 4500, dwt: 52000, built: 2012, flag: 'Panama' },
-    { code: 'RSTAR', name: 'MV Red Sea Star', imo: '9811002', ownership: 'Chartered', owner: 'Blue Horizon Ltd', cap: 3200, dwt: 38000, built: 2015, flag: 'Marshall Islands', charter: [daysAgo(400), daysAhead(330)] },
-    { code: 'GPION', name: 'MV Gulf Pioneer', imo: '9811003', ownership: 'Leased', owner: 'Gulf Leasing Co', cap: 2800, dwt: 30000, built: 2009, flag: 'Liberia' },
+    { code: 'RSTAR', name: 'MV Red Sea Star', imo: '9811002', ownership: 'Time Charter', owner: 'Blue Horizon Ltd', cap: 3200, dwt: 38000, built: 2015, flag: 'Marshall Islands', charter: [daysAgo(400), daysAhead(330)] },
+    { code: 'GPION', name: 'MV Gulf Pioneer', imo: '9811003', ownership: 'Voyage Charter', owner: 'Gulf Leasing Co', cap: 2800, dwt: 30000, built: 2009, flag: 'Liberia', charter: [daysAgo(200), daysAhead(20)] },
   ];
   for (const v of VESSELS) {
     W.vessel[v.code] = await upsert(m.Vessel, { vesselCode: v.code }, {
@@ -169,13 +178,15 @@ const seedMasterData = async (uid) => {
       ownerName: v.owner, capacity: v.cap, dwt: v.dwt, builtYear: v.built, manager: 'Flow Marine Ship Management',
       loa: 210, beam: 32, summerDraft: 11.5, grossTonnage: 34000, netTonnage: 17000, suezGT: 35000, suezNT: 28000,
       totalBunkerCapacity: 3800, vlsfoCapacity: 3200, mdoCapacity: 400, fwCapacity: 250,
+      defaultDailyHireRateMinor: 1200000, reeferPlugs: 120, mainEngineFuelType: 'VLSFO', auxEngineFuelType: 'LSMGO',
+      consumptionSeaMtDay: 38, consumptionPortIdleMtDay: 6, consumptionPortWorkingMtDay: 9,
       charterStartDate: v.charter ? v.charter[0] : null, charterEndDate: v.charter ? v.charter[1] : null, createdBy: uid,
     });
   }
 
   W.service = {};
-  W.service.ASME = await upsert(m.Service, { serviceCode: 'ASME' }, { serviceCode: 'ASME', serviceName: 'Asia - Middle East Express', defaultVesselId: W.vessel.ALNOOR._id, description: 'Shanghai - Singapore - Jebel Ali - Jeddah', createdBy: uid });
-  W.service.GMED = await upsert(m.Service, { serviceCode: 'GMED' }, { serviceCode: 'GMED', serviceName: 'Gulf - Med Shuttle', defaultVesselId: W.vessel.RSTAR._id, description: 'Jebel Ali - Jeddah - Port Said', createdBy: uid });
+  W.service.ASME = await upsert(m.Service, { serviceCode: 'ASME' }, { serviceCode: 'ASME', serviceName: 'Asia - Middle East Express', defaultVesselId: W.vessel.ALNOOR._id, description: 'Shanghai - Singapore - Jebel Ali - Jeddah', applicability: 'SOC_ONLY', isTaxable: false, revenueAccountId: acct['4000'], createdBy: uid });
+  W.service.GMED = await upsert(m.Service, { serviceCode: 'GMED' }, { serviceCode: 'GMED', serviceName: 'Gulf - Med Shuttle', defaultVesselId: W.vessel.RSTAR._id, description: 'Jebel Ali - Jeddah - Port Said', applicability: 'SOC_ONLY', isTaxable: false, revenueAccountId: acct['4000'], createdBy: uid });
   const leg = (key, agentCode) => ({ countryId: W.port[key].countryId, cityId: W.city[key]._id, portId: W.port[key]._id, terminalId: W.terminal[key]._id, agentId: agentCode ? W.agent[agentCode]._id : null });
   const ROUTES = {
     ASME: [leg('SHA', 'SHA-AG'), leg('SIN', 'SIN-AG'), leg('JEA', 'DXB-AG'), leg('JED', 'JED-AG')],

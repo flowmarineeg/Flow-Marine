@@ -52,7 +52,7 @@ function SoaTab({ agentId, currency }) {
 }
 
 // ─── Agreements ───────────────────────────────────────────────────────────────
-const emptyAgreement = () => ({ validFrom: new Date().toISOString().slice(0, 10), validTo: '', currency: 'USD', status: 'Active', fees: { 'Load|Full': '', 'Load|Empty': '', 'Discharge|Full': '', 'Discharge|Empty': '' }, rule: '', amount: '', percent: '' });
+const emptyAgreement = () => ({ validFrom: new Date().toISOString().slice(0, 10), validTo: '', currency: 'USD', status: 'Active', husbandry: '', earns: false, fees: { 'Load|Full': '', 'Load|Empty': '', 'Discharge|Full': '', 'Discharge|Empty': '' }, rule: '', amount: '', percent: '' });
 
 function AgreementsTab({ agentId }) {
   const qc = useQueryClient();
@@ -71,7 +71,7 @@ function AgreementsTab({ agentId }) {
       const commission = form.rule
         ? { rule: form.rule, amountMinor: form.rule === 'percentOfRate' ? 0 : toMinor(form.amount || '0', cur), percentBp: form.rule === 'percentOfRate' ? Math.round(Number(form.percent || 0) * 100) : 0 }
         : { rule: null };
-      return agentAccountsService.saveAgreement(agentId, { validFrom: form.validFrom, validTo: form.validTo || null, currency: cur, status: form.status, handlingFees, commission }, form._id);
+      return agentAccountsService.saveAgreement(agentId, { validFrom: form.validFrom, validTo: form.validTo || null, currency: cur, status: form.status, handlingFees, commission, husbandryFeePerCallMinor: form.husbandry === '' ? 0 : toMinor(form.husbandry, cur), earnsBookingCommission: !!form.earns && !!form.rule }, form._id);
     },
     onSuccess: () => { toast.success('Agreement saved'); setForm(null); qc.invalidateQueries({ queryKey: ['agent-agreements', agentId] }); },
     onError: e => showErrorToast(e, 'save'),
@@ -86,7 +86,7 @@ function AgreementsTab({ agentId }) {
     const fees = emptyAgreement().fees;
     (a.handlingFees || []).forEach(f => { fees[`${f.moveType}|${f.containerStatus}`] = fromMinor(f.amountMinor, a.currency); });
     setForm({
-      _id: a._id, validFrom: fmtDate(a.validFrom), validTo: a.validTo ? fmtDate(a.validTo) : '', currency: a.currency, status: a.status, fees,
+      _id: a._id, husbandry: a.husbandryFeePerCallMinor ? fromMinor(a.husbandryFeePerCallMinor, a.currency) : '', earns: !!a.earnsBookingCommission, validFrom: fmtDate(a.validFrom), validTo: a.validTo ? fmtDate(a.validTo) : '', currency: a.currency, status: a.status, fees,
       rule: a.commission?.rule || '', amount: a.commission?.rule && a.commission.rule !== 'percentOfRate' ? fromMinor(a.commission.amountMinor, a.currency) : '',
       percent: a.commission?.rule === 'percentOfRate' ? String((a.commission.percentBp || 0) / 100) : '',
     });
@@ -103,6 +103,11 @@ function AgreementsTab({ agentId }) {
             <div><label className={LABEL}>Currency</label><input className={`${INPUT} uppercase`} maxLength={3} value={form.currency} onChange={e => set({ currency: e.target.value.toUpperCase() })} /></div>
             <div><label className={LABEL}>Status</label><select className={INPUT} value={form.status} onChange={e => set({ status: e.target.value })}><option>Active</option><option>Inactive</option></select></div>
           </div>
+          <p className={LABEL}>Charge agreement</p>
+          <div className="grid grid-cols-4 gap-3 mb-3">
+            <div><label className={LABEL}>Husbandry fee per port call</label>
+              <input className={INPUT} value={form.husbandry} onChange={e => set({ husbandry: e.target.value })} placeholder="-" /></div>
+          </div>
           <p className={LABEL}>Port handling fee per container</p>
           <div className="grid grid-cols-4 gap-3 mb-3">
             {Object.keys(form.fees).map(k => (
@@ -110,7 +115,11 @@ function AgreementsTab({ agentId }) {
                 <input className={INPUT} value={form.fees[k]} onChange={e => set({ fees: { ...form.fees, [k]: e.target.value } })} placeholder="-" /></div>
             ))}
           </div>
-          <p className={LABEL}>Commission</p>
+          <p className={LABEL}>Booking commission agreement</p>
+          <label className="flex items-center gap-2 text-[13px] mb-2 cursor-pointer">
+            <input type="checkbox" checked={form.earns} onChange={e => set({ earns: e.target.checked })} className="accent-teal-600" />
+            Earns booking commission <span className="text-gray-400 text-[12px]">(nothing accrues unless this is on and a rule is chosen)</span>
+          </label>
           <div className="grid grid-cols-3 gap-3 mb-3">
             <select className={INPUT} value={form.rule} onChange={e => set({ rule: e.target.value })}>
               <option value="">No commission</option>

@@ -1,6 +1,7 @@
 'use strict';
 
 const lock = require('../rounds/roundLock');
+const AppError = require('../../utils/AppError');
 const ExcelJS       = require('exceljs');
 const Booking       = require('./booking.model');
 const Voyage        = require('../voyages/voyage.model');
@@ -157,6 +158,7 @@ const previewImport = async ({ rows, agentId, roundId, importType }) => {
   if (!rows?.length) throw { status: 400, message: 'No rows provided' };
   if (!agentId)      throw { status: 400, message: 'Agent is required' };
   if (!roundId)      throw { status: 400, message: 'Round is required' };
+  await require('../agents/agent.service').assertBookingSource(agentId);
 
   const roundVoyages = await Voyage.find({ roundId })
     .populate('polId', 'name code')
@@ -318,6 +320,30 @@ const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => 
     r._rowStatus === 'valid' || r._rowStatus === 'new' || r._rowStatus === 'update'
   );
   if (!saveable.length) throw { status: 400, message: 'No valid rows to save' };
+
+  // F-07: the reconciliation below cancels every booking of this agent that is not in the manifest. Refuse, before
+  // anything is written, if one of them is billed on a live invoice - it must be corrected with a credit note first.
+  if (importType === 'finalLoading') {
+    const manifest = saveable.map(r => r.containerNumber).filter(Boolean);
+    const doomed = await Booking.find({
+      voyageId: { $in: roundVoyageIds }, agentId, status: { $ne: 'Cancelled' }, containerNumber: { $nin: manifest },
+    }).select('_id containerNumber').lean();
+    if (doomed.length) {
+      const Invoice = require('../invoices/invoice.model');
+      const billed = await Invoice.find({
+        status: { $ne: 'Cancelled' },
+        lineItems: { $elemMatch: { bookingId: { $in: doomed.map(b => b._id) }, orphaned: { $ne: true } } },
+      }).select('invoiceNumber lineItems.bookingId').lean();
+      if (billed.length) {
+        const containers = doomed.filter(b => billed.some(i => i.lineItems.some(li => String(li.bookingId) === String(b._id)))).map(b => b.containerNumber);
+        const err = new AppError(409,
+          `Cannot import: ${containers.length} booking(s) missing from this Final Loading file are on live invoices (${billed.map(i => i.invoiceNumber).join(', ')}). Raise a credit note or cancel the invoice first. Containers: ${containers.slice(0, 10).join(', ')}${containers.length > 10 ? '…' : ''}`,
+          'BOOKING_INVOICED');
+        err.invoices = billed.map(i => i.invoiceNumber); err.containers = containers;
+        throw err;
+      }
+    }
+  }
 
   const toInsert = saveable.filter(r => r._rowStatus === 'valid' || r._rowStatus === 'new');
   const toUpdate = saveable.filter(r => r._rowStatus === 'update');

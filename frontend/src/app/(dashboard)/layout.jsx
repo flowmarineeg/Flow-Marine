@@ -19,6 +19,7 @@ const FALLBACK_NAV = [
   { href: '/invoices',        module: 'invoices' },
   { href: '/vessels',         module: 'vessels' },
   { href: '/agents',          module: 'agents' },
+  { href: '/customers',       module: 'customers' },
   { href: '/services',        module: 'services' },
   { href: '/reports',         module: 'reports' },
   { href: '/export',          module: 'export' },

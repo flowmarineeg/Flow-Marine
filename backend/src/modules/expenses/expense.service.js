@@ -8,6 +8,8 @@ const Voyage  = require('../voyages/voyage.model');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 const AppError = require('../../utils/AppError');
 const { checkPaidBy } = require('./expenseV2.service');
+const ExpenseType = require('../expenseTypes/expenseType.model');
+const typeRules = require('../expenseTypes/expenseType.logic');
 
 // Sprint 052: the money of a POSTED expense is frozen - reverse it (expenses:approve) to correct it.
 const LOCKED_AFTER_POST = ['amount', 'currency', 'expenseTypeId', 'agentId', 'expenseDate'];
@@ -134,10 +136,22 @@ const resolveScopeIds = async ({ roundId, voyageId, portId }) => {
   };
 };
 
+/** Master data 11.7: the expense type decides which scope an entry may use. */
+const assertTypeFitsScope = async (expenseTypeId, scopeIds) => {
+  const type = await ExpenseType.findById(expenseTypeId).lean();
+  if (!type) throw { status: 400, message: 'Expense type not found' };
+  const msg = typeRules.scopeError(type, deriveScope(scopeIds));
+  if (msg) throw new AppError(400, msg, 'EXPENSE_LEVEL_MISMATCH');
+  return type;
+};
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 const create = async (data, file, createdBy) => {
   await lock.assertExpenseRoundOpen(data);
   const scopeIds = await resolveScopeIds(data);
+  const type = await assertTypeFitsScope(data.expenseTypeId, scopeIds);
+  const { kind, error: kindError } = typeRules.resolveKind(type, data.kind);
+  if (kindError) throw new AppError(400, kindError, 'PDA_REQUIRED');
   checkPaidBy({ paidBy: data.paidBy, paidByPartnerId: data.paidByPartnerId, agentId: data.agentId });
 
   const payload = {
@@ -149,7 +163,7 @@ const create = async (data, file, createdBy) => {
     currency:      String(data.currency).toUpperCase(),
     expenseDate:   new Date(data.expenseDate),
     description:   data.description || null,
-    kind:          data.kind === 'PDA' ? 'PDA' : 'FDA',
+    kind,
     paidBy:        data.paidBy || null,
     paidByPartnerId: data.paidBy === 'Partner' ? (data.paidByPartnerId || null) : null,
     createdBy,
@@ -172,8 +186,13 @@ const update = async (id, data, file, updatedBy) => {
   if (!expense) throw { status: 404, message: 'Expense not found' };
 
   if (expense.ledgerEntryId) {
-    const touched = LOCKED_AFTER_POST.filter(f => data[f] !== undefined && String(data[f] ?? '') !== String(expense[f] ?? ''));
-    const paidByChanged = data.paidBy !== undefined && (data.paidBy || null) !== expense.paidBy;
+    const touched = LOCKED_AFTER_POST.filter(f => data[f] !== undefined && (f === 'amount'
+      ? Number(data[f]) !== Number(expense[f])
+      : String(data[f] ?? '') !== String(expense[f] ?? '')));
+    // F-05: the payer partner is what the ledger credit (1200) was posted against, so it is frozen with paidBy.
+    const newPartner = data.paidBy === 'Partner' ? (data.paidByPartnerId || null) : null;
+    const paidByChanged = data.paidBy !== undefined && (
+      (data.paidBy || null) !== expense.paidBy || String(newPartner ?? '') !== String(expense.paidByPartnerId ?? ''));
     if (touched.length || paidByChanged) {
       throw new AppError(409, 'This expense is posted to the ledger - reverse it before changing it', 'EXPENSE_POSTED');
     }
@@ -188,6 +207,10 @@ const update = async (id, data, file, updatedBy) => {
   if (expense.ledgerEntryId && ['roundId', 'voyageId', 'portId'].some((k) => String(scopeIds[k] || '') !== String(expense[k] || ''))) {
     throw new AppError(409, 'This expense is posted to the ledger - reverse it before moving it', 'EXPENSE_POSTED');
   }
+  // Re-check the type/level rule only when the type or the scope actually changes, so older entries stay editable.
+  const typeChanged = data.expenseTypeId !== undefined && String(data.expenseTypeId) !== String(expense.expenseTypeId);
+  const scopeChanged = ['roundId', 'voyageId', 'portId'].some((k) => String(scopeIds[k] || '') !== String(expense[k] || ''));
+  if (typeChanged || scopeChanged) await assertTypeFitsScope(data.expenseTypeId || expense.expenseTypeId, scopeIds);
 
   if (file) {
     deleteFile(expense.attachmentUrl);

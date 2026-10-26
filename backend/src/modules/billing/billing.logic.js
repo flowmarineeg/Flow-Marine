@@ -44,6 +44,18 @@ const sumMinor = (lines) => lines.reduce((a, l) => a + l.amountMinor, 0);
 const balanceMinor = (inv) => (inv.totalMinor || 0) - (inv.paidMinor || 0) - (inv.creditedMinor || 0);
 
 /**
+ * Mongo filter matching the invoices deriveStatus() reports as Overdue (F-06): the stored status lags until the
+ * next recalc, so list filters and dashboard counts must query by due date and balance instead.
+ */
+const overdueMatch = (now = new Date()) => ({
+  v2: true,
+  docKind: { $ne: 'CreditNote' },
+  status: { $in: ['Issued', 'Partially Paid', 'Overdue'] },
+  dueDate: { $lt: now },
+  $expr: { $gt: [{ $subtract: [{ $subtract: [{ $ifNull: ['$totalMinor', 0] }, { $ifNull: ['$paidMinor', 0] }] }, { $ifNull: ['$creditedMinor', 0] }] }, 0] },
+});
+
+/**
  * Status derived from money fields only (D4-A one recalc function).
  * Overdue is derived lazily (D16): past due date with an open balance.
  */
@@ -70,4 +82,4 @@ const computeCommission = (agreement, facts) => {
   return 0;
 };
 
-module.exports = { groupBookingsIntoItems, buildLine, sumMinor, balanceMinor, deriveStatus, computeCommission };
+module.exports = { groupBookingsIntoItems, buildLine, sumMinor, balanceMinor, deriveStatus, overdueMatch, computeCommission };

@@ -1,9 +1,56 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+const mongoose = require('mongoose');
 const pickFields = require('../../utils/pickFields');
 const Vessel = require('./vessel.model');
+const L = require('./vessel.logic');
+const { validateShares } = require('../partners/vesselShares');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
+
+const PARTICULARS_DIR = path.join(__dirname, '../../uploads/vessels');
+const SERVER_OWNED = ['particularsFileUrl', 'particularsOriginalName'];
+
+const deleteParticularsFile = (url) => {
+  if (!url) return;
+  const p = path.join(PARTICULARS_DIR, path.basename(url));
+  if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (_) { /* best-effort */ } }
+};
+
+/** API body -> storable fields: decimal hire rate becomes integer minor units. */
+const prepare = (data) => {
+  const d = { ...data };
+  if ('defaultDailyHireRate' in d) {
+    try { d.defaultDailyHireRateMinor = L.hireRateToMinor(d.defaultDailyHireRate); } catch (_) {
+      throw { status: 400, message: 'Default daily hire rate must be a valid amount' };
+    }
+    delete d.defaultDailyHireRate;
+  }
+  return d;
+};
+
+/** Required-field + charter-date rules, judged on the merged (final) record. */
+const assertMasterRules = (merged) => {
+  const missing = L.missingRequired(merged);
+  if (missing.length) throw { status: 400, message: `Required vessel fields missing: ${missing.join(', ')}` };
+  const dateErr = L.charterDateError(merged.charterStartDate, merged.charterEndDate);
+  if (dateErr) throw { status: 400, message: dateErr };
+};
+
+/** Validates a JV shares payload before any write (throws AppError with the share error codes). */
+const checkShares = (shares) => {
+  if (shares === undefined) return null;
+  const clean = (shares || []).map((s) => ({ partnerId: s.partnerId, shareBp: s.shareBp, isLead: !!s.isLead }));
+  validateShares(clean);
+  return clean;
+};
+
+const withTx = async (fn) => {
+  const s = await mongoose.startSession();
+  try { let out; await s.withTransaction(async () => { out = await fn(s); }); return out; } finally { s.endSession(); }
+};
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
   const query = {};
@@ -21,13 +68,15 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
     Vessel.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
     Vessel.countDocuments(query),
   ]);
-  return { data, total };
+  return { data: data.map((v) => L.present(v)), total };
 };
 
 const getById = async (id) => {
   const vessel = await Vessel.findOne({ _id: id }).lean();
   if (!vessel) throw { status: 404, message: 'Vessel not found' };
-  return vessel;
+  let sharesLocked = false;
+  try { await require('../partners/partner.service').assertSharesUnlocked(id); } catch (e) { if (e.code === 'VESSEL_SHARES_LOCKED') sharesLocked = true; else throw e; }
+  return { ...L.present(vessel), sharesLocked };
 };
 
 const create = async (data, createdBy) => {
@@ -37,15 +86,19 @@ const create = async (data, createdBy) => {
   const imoExists = await Vessel.findOne({ imoNumber: data.imoNumber });
   if (imoExists) throw { status: 400, message: `IMO number "${data.imoNumber}" already registered` };
 
-  if (data.ownershipType === 'Chartered') {
-    if (!data.charterStartDate || !data.charterEndDate)
-      throw { status: 400, message: 'Charter start and end dates are required for Chartered vessels' };
-    if (new Date(data.charterStartDate) >= new Date(data.charterEndDate))
-      throw { status: 400, message: 'Charter start date must be before end date' };
-  }
+  const { shares, ...rest } = data;
+  const fields = pickFields(Vessel, prepare(rest), SERVER_OWNED);
+  assertMasterRules(fields);
+  const cleanShares = checkShares(shares);
 
-  const vessel = await Vessel.create({ ...pickFields(Vessel, data), vesselCode: data.vesselCode.toUpperCase(), createdBy });
-  return vessel.toObject();
+  // Vessel and its JV shares are saved together or not at all.
+  const partnerSvc = require('../partners/partner.service');
+  const vessel = await withTx(async (session) => {
+    const [doc] = await Vessel.create([{ ...fields, vesselCode: data.vesselCode.toUpperCase(), createdBy }], { session });
+    if (cleanShares) await partnerSvc.setShares(doc._id, cleanShares, createdBy, { session });
+    return doc;
+  });
+  return L.present(vessel.toObject());
 };
 
 const update = async (id, data, updatedBy) => {
@@ -62,17 +115,48 @@ const update = async (id, data, updatedBy) => {
     if (imoExists) throw { status: 400, message: `IMO number "${data.imoNumber}" already registered` };
   }
 
-  const ownershipType = data.ownershipType || vessel.ownershipType;
-  if (ownershipType === 'Chartered') {
-    const start = data.charterStartDate || vessel.charterStartDate;
-    const end   = data.charterEndDate   || vessel.charterEndDate;
-    if (!start || !end) throw { status: 400, message: 'Charter start and end dates are required for Chartered vessels' };
-    if (new Date(start) >= new Date(end)) throw { status: 400, message: 'Charter start date must be before end date' };
-  }
+  const { shares, ...rest } = data;
+  const fields = pickFields(Vessel, prepare(rest), SERVER_OWNED);
+  assertMasterRules({ ...vessel.toObject(), ...fields });
+  const cleanShares = checkShares(shares);
 
-  Object.assign(vessel, { ...pickFields(Vessel, data), vesselCode: (data.vesselCode || vessel.vesselCode).toUpperCase(), updatedBy });
+  Object.assign(vessel, { ...fields, vesselCode: (data.vesselCode || vessel.vesselCode).toUpperCase(), updatedBy });
+  const partnerSvc = require('../partners/partner.service');
+  await withTx(async (session) => {
+    await vessel.save({ session });
+    if (cleanShares) await partnerSvc.setShares(vessel._id, cleanShares, updatedBy, { session });
+  });
+  return L.present(vessel.toObject());
+};
+
+// ─── Particulars PDF ──────────────────────────────────────────────────────────
+const setParticulars = async (id, file, updatedBy) => {
+  const vessel = await Vessel.findById(id);
+  if (!vessel) { fs.existsSync(file.path) && fs.unlinkSync(file.path); throw { status: 404, message: 'Vessel not found' }; }
+  deleteParticularsFile(vessel.particularsFileUrl);
+  vessel.particularsFileUrl = `/uploads/vessels/${file.filename}`;
+  vessel.particularsOriginalName = file.originalname;
+  vessel.updatedBy = updatedBy;
   await vessel.save();
-  return vessel.toObject();
+  return L.present(vessel.toObject());
+};
+
+const clearParticulars = async (id, updatedBy) => {
+  const vessel = await Vessel.findById(id);
+  if (!vessel) throw { status: 404, message: 'Vessel not found' };
+  deleteParticularsFile(vessel.particularsFileUrl);
+  vessel.particularsFileUrl = null; vessel.particularsOriginalName = null; vessel.updatedBy = updatedBy;
+  await vessel.save();
+  return L.present(vessel.toObject());
+};
+
+const getParticularsPath = async (id) => {
+  const vessel = await Vessel.findById(id).lean();
+  if (!vessel) throw { status: 404, message: 'Vessel not found' };
+  if (!vessel.particularsFileUrl) throw { status: 404, message: 'No particulars file for this vessel' };
+  const absPath = path.join(PARTICULARS_DIR, path.basename(vessel.particularsFileUrl));
+  if (!fs.existsSync(absPath)) throw { status: 404, message: 'Particulars file is missing on disk' };
+  return { absPath, originalName: vessel.particularsOriginalName || 'particulars.pdf' };
 };
 
 const hardDelete = async (id) => {
@@ -88,6 +172,7 @@ const hardDelete = async (id) => {
   await assertNoDependents('vessel', id, DEPENDENTS.vessel);
 
   await Vessel.findByIdAndDelete(id);
+  deleteParticularsFile(vessel.particularsFileUrl);
 };
 
 const getAll = async (filters = {}, selectedIds = []) => {
@@ -264,4 +349,4 @@ const getVesselStats = async (id) => {
   };
 };
 
-module.exports = { list, getById, getVesselStats, create, update, hardDelete, getAll };
+module.exports = { list, getById, getVesselStats, create, update, hardDelete, getAll, setParticulars, clearParticulars, getParticularsPath };

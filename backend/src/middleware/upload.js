@@ -126,4 +126,27 @@ const compressUpload = (req, res, next) => {
   });
 };
 
-module.exports = { compressUpload };
+// ─── PDF-only upload (e.g. vessel particulars) ───────────────────────────────
+const pdfUpload = (subdir, field = 'file') => {
+  const dir = path.join(__dirname, '../uploads', subdir);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const base = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, dir),
+      filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9.-_]/g, '_')}`),
+    }),
+    fileFilter: (_req, file, cb) => (file.mimetype === 'application/pdf' ? cb(null, true) : cb(new Error('Only PDF files are allowed'), false)),
+    limits: { fileSize: maxSizeMB * 1024 * 1024 },
+  }).single(field);
+  return (req, res, next) => base(req, res, (err) => {
+    if (err) return res.status(400).json({ success: false, message: err.message });
+    if (!req.file) return res.status(400).json({ success: false, message: 'A PDF file is required' });
+    if (!matchesDeclaredType(req.file)) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ success: false, message: 'File content does not match its declared type' });
+    }
+    next();
+  });
+};
+
+module.exports = { compressUpload, pdfUpload };

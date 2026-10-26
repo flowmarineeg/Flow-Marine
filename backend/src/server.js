@@ -49,6 +49,7 @@ app.use('/api/v1/permissions', require('./modules/permissions/permission.routes'
 app.use('/api/v1/audit-logs', require('./modules/auditLogs/auditLog.routes'));
 app.use('/api/v1/vessels', require('./modules/vessels/vessel.routes'));
 app.use('/api/v1/agents', require('./modules/agents/agent.routes'));
+app.use('/api/v1/customers', require('./modules/customers/customer.routes'));
 app.use('/api/v1/container-types', require('./modules/containerTypes/containerType.routes'));
 app.use('/api/v1/expense-types', require('./modules/expenseTypes/expenseType.routes'));
 app.use('/api/v1/export', require('./modules/export/export.routes'));

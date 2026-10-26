@@ -9,6 +9,7 @@ const COLUMNS = [
     key: 'code', label: 'Code',
     render: (r) => <span className="mono" style={{ color: 'var(--teal)', fontWeight: 600 }}>{r.code}</span>,
   },
+  { key: 'localCurrency', label: 'Local Currency', render: (r) => r.localCurrency ? <span className="mono">{r.localCurrency}</span> : <span style={{ color: 'var(--text-muted)' }}>—</span> },
 ];
 
 export default function CountryTable() {

@@ -10,6 +10,9 @@ const vesselSchema = new mongoose.Schema(
     imoNumber:             { type: String, required: true, unique: true, trim: true },
     flag:                  { type: String, trim: true, default: null },
     callSign:              { type: String, trim: true, default: null },
+    reeferPlugs:           { type: Number, min: 0, validate: Number.isInteger, default: null },
+    particularsFileUrl:    { type: String, trim: true, default: null },   // vessel particulars PDF (authenticated download)
+    particularsOriginalName: { type: String, trim: true, default: null },
     ownershipType:         { type: String, enum: OWNERSHIP_TYPES, required: true },
     ownerName:             { type: String, trim: true, default: null },
     ownershipDescription:  { type: String, trim: true, default: null, maxlength: 500 },
@@ -34,6 +37,16 @@ const vesselSchema = new mongoose.Schema(
     vlsfoCapacity:         { type: Number, min: 0, default: null },   // VLSFO (MT)
     mdoCapacity:           { type: Number, min: 0, default: null },   // MDO (MT)
     fwCapacity:            { type: Number, min: 0, default: null },   // Fresh Water Tank (MT)
+
+    // C/P bunker consumption profile (all optional)
+    mainEngineFuelType:    { type: String, trim: true, default: null, maxlength: 40 },
+    auxEngineFuelType:     { type: String, trim: true, default: null, maxlength: 40 },
+    consumptionSeaMtDay:         { type: Number, min: 0, default: null },
+    consumptionPortIdleMtDay:    { type: Number, min: 0, default: null },
+    consumptionPortWorkingMtDay: { type: Number, min: 0, default: null },
+
+    // Financials: default daily charter cost in USD minor units (cents)
+    defaultDailyHireRateMinor: { type: Number, min: 0, validate: Number.isSafeInteger, default: null },
 
     status:                { type: String, enum: VESSEL_STATUS, default: 'Active' },
     notes:                 { type: String, trim: true, default: null },

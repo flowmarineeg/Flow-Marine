@@ -4,6 +4,17 @@ const pickFields = require('../../utils/pickFields');
 const ExpenseType     = require('./expenseType.model');
 const ExpenseCategory = require('./expenseCategory.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
+const AppError = require('../../utils/AppError');
+const { assertAccountFor } = require('../ledger/accountRules');
+const { missingMappings } = require('./expenseType.logic');
+
+/** Required mappings + account-group checks on the merged type record. */
+const assertMappings = async (merged, changed) => {
+  const missing = missingMappings(merged);
+  if (missing.length) throw new AppError(400, `Required expense type fields missing: ${missing.join(', ')}`, 'EXPENSE_TYPE_INCOMPLETE');
+  if (changed.expenseAccountId) await assertAccountFor(merged.expenseAccountId, 'expense', 'Expense account');
+  if (merged.requiresPda && changed.accrualAccountId) await assertAccountFor(merged.accrualAccountId, 'accrual', 'Accrual account');
+};
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── Auto-upsert category into the categories collection ─────────────────────
@@ -109,7 +120,10 @@ const create = async (data, createdBy) => {
   // Auto-sync category to category collection
   await syncCategory(trimmedCategory, createdBy);
 
-  const et = await ExpenseType.create({ ...pickFields(ExpenseType, data), category: trimmedCategory, createdBy });
+  const fields = { ...pickFields(ExpenseType, data), category: trimmedCategory };
+  if (!fields.requiresPda) fields.accrualAccountId = null; // an accrual account only means something with the PDA workflow
+  await assertMappings({ operationalLevel: 'VOYAGE_LEVEL', ...fields }, { expenseAccountId: true, accrualAccountId: true });
+  const et = await ExpenseType.create({ ...fields, createdBy });
   return et.toObject();
 };
 
@@ -128,7 +142,11 @@ const update = async (id, data, updatedBy) => {
     await syncCategory(data.category, updatedBy);
   }
 
-  Object.assign(et, { ...pickFields(ExpenseType, data), updatedBy });
+  const fields = pickFields(ExpenseType, data);
+  const merged = { ...et.toObject(), ...fields };
+  if (!merged.requiresPda) { merged.accrualAccountId = null; fields.accrualAccountId = null; }
+  await assertMappings(merged, { expenseAccountId: 'expenseAccountId' in fields, accrualAccountId: 'accrualAccountId' in fields && !!fields.accrualAccountId });
+  Object.assign(et, { ...fields, updatedBy });
   await et.save();
   return et.toObject();
 };

@@ -80,11 +80,11 @@ const listCities = async ({ countryId = '', search = '' } = {}) => {
   const query = {};
   if (countryId) query.countryId = countryId;
   if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
-  return City.find(query).populate('countryId', 'name code').sort({ name: 1 }).lean();
+  return City.find(query).populate('countryId', 'name code localCurrency').sort({ name: 1 }).lean();
 };
 
 const getCityById = async (id) => {
-  const city = await City.findOne({ _id: id }).populate('countryId', 'name code').lean();
+  const city = await City.findOne({ _id: id }).populate('countryId', 'name code localCurrency').lean();
   if (!city) throw { status: 404, message: 'City not found' };
   return city;
 };
@@ -146,7 +146,7 @@ const listPorts = async ({ cityId = '', countryId = '', search = '' } = {}) => {
   }
   return Port.find(query)
     .populate('cityId', 'name')
-    .populate('countryId', 'name code')
+    .populate('countryId', 'name code localCurrency')
     .sort({ name: 1 })
     .lean();
 };
@@ -154,7 +154,7 @@ const listPorts = async ({ cityId = '', countryId = '', search = '' } = {}) => {
 const getPortById = async (id) => {
   const port = await Port.findOne({ _id: id })
     .populate('cityId', 'name')
-    .populate('countryId', 'name code')
+    .populate('countryId', 'name code localCurrency')
     .lean();
   if (!port) throw { status: 404, message: 'Port not found' };
   return port;

@@ -34,12 +34,13 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
       reset({
         name: item.name,
         code: item.code || '',
+        localCurrency: item.localCurrency || '',
         countryId: item.countryId?._id || item.countryId || '',
         cityId: item.cityId?._id || item.cityId || '',
         portId: item.portId?._id || item.portId || '',
       });
     } else {
-      reset({ name: '', code: '', countryId: '', cityId: '', portId: '' });
+      reset({ name: '', code: '', localCurrency: '', countryId: '', cityId: '', portId: '' });
     }
   }, [item]);
 
@@ -71,7 +72,7 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
     if (level === 'city') mutation.mutate({ name: data.name, countryId: data.countryId });
     else if (level === 'port') mutation.mutate({ name: data.name, code: data.code, cityId: data.cityId, countryId: data.countryId });
     else if (level === 'terminal') mutation.mutate({ name: data.name, portId: data.portId });
-    else mutation.mutate({ name: data.name, code: data.code });
+    else mutation.mutate({ name: data.name, code: data.code, localCurrency: data.localCurrency?.trim() ? data.localCurrency.trim().toUpperCase() : null });
   };
 
   return (
@@ -135,12 +136,23 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
         />
       )}
 
+      {level === 'country' && (
+        <Input
+          id="localCurrency" label="Local Currency (ISO 4217)"
+          placeholder="e.g. SAR" maxLength={3}
+          style={{ textTransform: 'uppercase' }}
+          error={errors.localCurrency?.message}
+          {...register('localCurrency', { pattern: { value: /^[A-Za-z]{3}$/, message: 'Must be a 3-letter currency code' } })}
+        />
+      )}
+
       {level === 'port' && (
         <Input
-          id="code" label="UNLOCODE"
-          placeholder="e.g. SAJED"
+          id="code" label="Port Code (UN/LOCODE)"
+          placeholder="e.g. SAJED" maxLength={5}
+          style={{ textTransform: 'uppercase' }}
           error={errors.code?.message}
-          {...register('code')}
+          {...register('code', { pattern: { value: /^[A-Za-z]{2}[A-Za-z0-9]{3}$/, message: '2-letter country + 3 letters/digits, e.g. SAJED' } })}
         />
       )}
 

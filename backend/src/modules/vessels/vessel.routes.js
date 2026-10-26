@@ -10,6 +10,8 @@ const { validateCreate, validateUpdate } = require('./vessel.validation');
 const partnerSvc = require('../partners/partner.service');
 const { validateShares } = require('../partners/partner.validation');
 const { success } = require('../../utils/responseHelper');
+const { pdfUpload } = require('../../middleware/upload');
+const vesselService = require('./vessel.service');
 const { recordMoneyEvent } = require('../../utils/moneyAudit');
 
 router.use(auth);
@@ -29,6 +31,23 @@ router.put('/:id/partners',    rbac('partners', 'manage'), audit('vessels'), val
 });
 router.delete('/:id/partners', rbac('partners', 'manage'), audit('vessels'), async (req, res, next) => {
   try { await partnerSvc.clearShares(req.params.id); return success(res, null, 'Partner shares cleared'); } catch (e) { next(e); }
+});
+// Particulars PDF (authenticated download; BEFORE /:id)
+router.get('/:id/particulars', rbac('vessels'), async (req, res, next) => {
+  try {
+    const { absPath, originalName } = await vesselService.getParticularsPath(req.params.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(originalName)}"`);
+    res.sendFile(absPath);
+  } catch (e) { if (e.status) return res.status(e.status).json({ success: false, message: e.message }); next(e); }
+});
+router.post('/:id/particulars', rbac('vessels'), pdfUpload('vessels', 'file'), audit('vessels'), async (req, res, next) => {
+  try { return success(res, await vesselService.setParticulars(req.params.id, req.file, req.user._id), 'Particulars file saved'); }
+  catch (e) { if (e.status) return res.status(e.status).json({ success: false, message: e.message }); next(e); }
+});
+router.delete('/:id/particulars', rbac('vessels'), audit('vessels'), async (req, res, next) => {
+  try { return success(res, await vesselService.clearParticulars(req.params.id, req.user._id), 'Particulars file removed'); }
+  catch (e) { if (e.status) return res.status(e.status).json({ success: false, message: e.message }); next(e); }
 });
 router.get('/:id',        rbac('vessels'), ctrl.getById);
 router.post('/',          rbac('vessels'), audit('vessels'), validateCreate, ctrl.create);

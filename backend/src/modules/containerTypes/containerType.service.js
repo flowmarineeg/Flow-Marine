@@ -3,6 +3,20 @@
 const pickFields = require('../../utils/pickFields');
 const ContainerType = require('./containerType.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
+const { teuFactorForSize } = require('../../utils/masterValidators');
+
+const clean = (data) => {
+  const d = pickFields(ContainerType, data, ['teuFactor']); // teuFactor is server-derived
+  if ('isoCode' in d) d.isoCode = d.isoCode ? String(d.isoCode).toUpperCase().replace(/\s+/g, '') : undefined;
+  return d;
+};
+
+const assertIsoFree = async (isoCode, exceptId = null) => {
+  if (!isoCode) return;
+  const q = { isoCode };
+  if (exceptId) q._id = { $ne: exceptId };
+  if (await ContainerType.exists(q)) throw { status: 400, message: `ISO code "${isoCode}" is already used by another container type` };
+};
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', size = '', type = '' } = {}) => {
@@ -33,7 +47,9 @@ const getById = async (id) => {
 const create = async (data, createdBy) => {
   const exists = await ContainerType.findOne({ code: data.code.toUpperCase() });
   if (exists) throw { status: 400, message: `Container type code "${data.code}" already exists` };
-  const ct = await ContainerType.create({ ...pickFields(ContainerType, data), code: data.code.toUpperCase(), createdBy });
+  const fields = clean(data);
+  await assertIsoFree(fields.isoCode);
+  const ct = await ContainerType.create({ ...fields, code: data.code.toUpperCase(), teuFactor: teuFactorForSize(fields.size), createdBy });
   return ct.toObject();
 };
 
@@ -44,7 +60,11 @@ const update = async (id, data, updatedBy) => {
     const exists = await ContainerType.findOne({ code: data.code.toUpperCase(), _id: { $ne: id } });
     if (exists) throw { status: 400, message: `Container type code "${data.code}" already exists` };
   }
-  Object.assign(ct, { ...pickFields(ContainerType, data), code: (data.code || ct.code).toUpperCase(), updatedBy });
+  const fields = clean(data);
+  await assertIsoFree(fields.isoCode, id);
+  Object.assign(ct, { ...fields, code: (data.code || ct.code).toUpperCase(), updatedBy });
+  ct.teuFactor = teuFactorForSize(ct.size);
+  if ('isoCode' in fields && !fields.isoCode) ct.isoCode = undefined;
   await ct.save();
   return ct.toObject();
 };

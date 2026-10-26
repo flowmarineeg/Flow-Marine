@@ -127,6 +127,9 @@ export default function VesselList() {
                     <td className="text-sm text-gray-600">{v.flag || <span className="text-gray-300">—</span>}</td>
                     <td>
                       <span className="text-xs text-gray-600">{v.ownershipType}</span>
+                      {v.redeliveryAlert && (
+                        <p className="text-[11px] font-semibold text-red-600 mt-0.5">⚠ {v.redeliveryAlert.message}</p>
+                      )}
                       {v.ownershipDescription && (
                         <p className="text-[11px] text-gray-400 mt-0.5 truncate max-w-[140px]" title={v.ownershipDescription}>
                           {v.ownershipDescription}

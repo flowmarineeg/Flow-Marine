@@ -3,6 +3,7 @@
 const Permission = require('./permission.model');
 const cache      = require('../../utils/cache');
 const { MODULES } = require('../../config/constants');
+const AppError   = require('../../utils/AppError');
 
 const getByRoleId = async (roleId) => {
   const existing = await Permission.find({ roleId }).lean();
@@ -16,7 +17,17 @@ const getByRoleId = async (roleId) => {
   });
 };
 
+const ACTION_KEYS = Object.keys(Permission.schema.path('actions').schema.paths).filter((k) => k !== '_id');
+
 const saveByRoleId = async (roleId, permissions, updatedBy) => {
+  // bulkWrite skips schema validators, so check here: known modules only, known boolean actions only (F-09)
+  if (!Array.isArray(permissions)) throw new AppError(400, 'permissions must be an array', 'VALIDATION_ERROR');
+  const bad = permissions.filter((p) => !p || !MODULES.includes(p.module));
+  if (bad.length) throw new AppError(400, `Unknown permission module(s): ${bad.map((p) => p?.module).join(', ')}`, 'INVALID_MODULE');
+  permissions = permissions.map((p) => ({
+    module: p.module,
+    actions: Object.fromEntries(ACTION_KEYS.map((k) => [k, p.actions?.[k] === true])),
+  }));
   const ops = permissions.map((p) => ({
     updateOne: {
       filter: { roleId, module: p.module },

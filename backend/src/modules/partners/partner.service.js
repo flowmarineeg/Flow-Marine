@@ -56,13 +56,15 @@ const hardDelete = async (id) => {
 const getShares = async (vesselId) =>
   VesselPartner.find({ vesselId }).populate('partnerId', 'code name status').sort({ shareBp: -1 }).lean();
 
-// Locked once the vessel has had its first Round (proposal §7).
-const assertSharesUnlocked = async (vesselId) => {
-  // Audit H1: only Rounds created under V2 (v2:true) or a finalised settlement lock the table. The vessel's
-  // pre-V2 Rounds must not, or no existing vessel could ever receive shares.
+// Locked after the vessel's first accounting entry (any ledger line on one of its Rounds) or a Final settlement.
+// Open Rounds with no money posted do NOT lock: shares are only read when a Round is settled, and locking earlier made
+// a vessel whose first Round was created without shares impossible to close (audit F-01).
+const assertSharesUnlocked = async (vesselId, { session = null } = {}) => {
   const Round = require('../rounds/round.model');
-  if (await Round.exists({ vesselId, v2: true })) {
-    throw new AppError(409, 'Partner shares are locked — this vessel already has a Round opened under Version 2', 'VESSEL_SHARES_LOCKED');
+  const JournalEntryLine = require('../ledger/journalEntryLine.model');
+  const roundIds = await Round.find({ vesselId }).session(session).distinct('_id');
+  if (roundIds.length && await JournalEntryLine.exists({ roundId: { $in: roundIds } }).session(session)) {
+    throw new AppError(409, 'Partner shares are locked - this vessel already has accounting entries', 'VESSEL_SHARES_LOCKED');
   }
   const { PartnerSettlement } = require('../partnerSettlement/partnerSettlement.models');
   if (await PartnerSettlement.exists({ vesselId, status: 'Final' })) {
@@ -70,29 +72,31 @@ const assertSharesUnlocked = async (vesselId) => {
   }
 };
 
-const setShares = async (vesselId, shares, createdBy) => {
+// Pass { session } to run inside the caller's transaction (vessel create/update with shares).
+const setShares = async (vesselId, shares, createdBy, { session: outer = null } = {}) => {
   const Vessel = require('../vessels/vessel.model');
-  if (!(await Vessel.exists({ _id: vesselId }))) throw new AppError(404, 'Vessel not found', 'VESSEL_NOT_FOUND');
+  if (!(await Vessel.exists({ _id: vesselId }).session(outer))) throw new AppError(404, 'Vessel not found', 'VESSEL_NOT_FOUND');
 
   const clean = (shares || []).map((s) => ({
     partnerId: s.partnerId, shareBp: s.shareBp, isLead: !!s.isLead,
   }));
   validateShares(clean);
-  await assertSharesUnlocked(vesselId);
+  await assertSharesUnlocked(vesselId, { session: outer });
 
-  const found = await Partner.countDocuments({ _id: { $in: clean.map((s) => s.partnerId) } });
+  const found = await Partner.countDocuments({ _id: { $in: clean.map((s) => s.partnerId) } }).session(outer);
   if (found !== clean.length) throw new AppError(400, 'One or more partners do not exist', 'PARTNER_NOT_FOUND');
 
-  const session = await mongoose.startSession();
-  try {
-    await session.withTransaction(async () => {
-      await VesselPartner.deleteMany({ vesselId }, { session });
-      await VesselPartner.insertMany(clean.map((s) => ({ ...s, vesselId, createdBy })), { session });
-    });
-  } finally {
-    session.endSession();
+  const write = async (session) => {
+    await VesselPartner.deleteMany({ vesselId }, { session });
+    await VesselPartner.insertMany(clean.map((s) => ({ ...s, vesselId, createdBy })), { session });
+  };
+  if (outer) {
+    await write(outer);
+  } else {
+    const session = await mongoose.startSession();
+    try { await session.withTransaction(() => write(session)); } finally { session.endSession(); }
   }
-  return getShares(vesselId);
+  return outer ? undefined : getShares(vesselId);
 };
 
 const clearShares = async (vesselId) => {
@@ -100,4 +104,4 @@ const clearShares = async (vesselId) => {
   await VesselPartner.deleteMany({ vesselId });
 };
 
-module.exports = { list, getById, create, update, hardDelete, getShares, setShares, clearShares };
+module.exports = { assertSharesUnlocked, list, getById, create, update, hardDelete, getShares, setShares, clearShares };

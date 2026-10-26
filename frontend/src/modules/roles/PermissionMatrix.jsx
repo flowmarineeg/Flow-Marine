@@ -43,7 +43,7 @@ const ACTION_COLORS = {
 };
 
 const MODULE_LABELS = {
-  users: 'Users', roles: 'Roles', vessels: 'Vessels', agents: 'Agents',
+  users: 'Users', roles: 'Roles', vessels: 'Vessels', agents: 'Agents', customers: 'Customers',
   locations: 'Locations', containerTypes: 'Container Types', expenseTypes: 'Expense Types',
   services: 'Services', routes: 'Routes', rounds: 'Rounds', voyages: 'Voyages',
   bookings: 'Bookings', expenses: 'Expenses', invoices: 'Invoices',
@@ -54,7 +54,7 @@ const MODULE_LABELS = {
 const MODULE_GROUPS = {
   'Core':       ['users', 'roles', 'auditLogs'],
   'Operations': ['rounds', 'voyages', 'bookings', 'expenses', 'invoices', 'tracking'],
-  'Masters':    ['vessels', 'agents', 'locations', 'containerTypes', 'expenseTypes', 'services', 'routes'],
+  'Masters':    ['vessels', 'agents', 'customers', 'locations', 'containerTypes', 'expenseTypes', 'services', 'routes'],
   'Analytics':  ['reports', 'export'],
   'Accounting (V2)': ['partners', 'ledger'],
 };

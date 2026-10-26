@@ -3,13 +3,13 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: logistics_backend
+    container_name: logistics_backend_dev
     restart: unless-stopped
     env_file: ./backend/.env
     environment:
       - NODE_ENV=production
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5003:5000"
     volumes:
       - uploads_data:/app/src/uploads/expenses
     networks:
@@ -27,10 +27,10 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    container_name: logistics_frontend
+    container_name: logistics_frontend_dev
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3003:3000"
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}

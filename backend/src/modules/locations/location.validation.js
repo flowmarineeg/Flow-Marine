@@ -9,18 +9,26 @@ const handle = (req, res, next) => {
   next();
 };
 
+const { isUnLocode, isCurrencyCode } = require('../../utils/masterValidators');
+const portCode = body('code').optional({ nullable: true, checkFalsy: true }).trim().custom(isUnLocode)
+  .withMessage('Port code must be a UN/LOCODE: 2-letter country + 3 letters/digits (e.g. EGALY)');
+const currency = body('localCurrency').optional({ nullable: true, checkFalsy: true }).custom(isCurrencyCode)
+  .withMessage('Local currency must be a 3-letter code (e.g. EGP)');
+
 // ─── Country ──────────────────────────────────────────────────────────────────
 const validateCountryCreate = [
   body('name').trim().notEmpty().withMessage('Name is required').isLength({ max: 100 }),
   body('code').trim().notEmpty().withMessage('Code is required')
     .isAlpha().withMessage('Code must contain only letters')
     .isLength({ min: 2, max: 2 }).withMessage('Code must be exactly 2 letters'),
+  currency,
   handle,
 ];
 
 const validateCountryUpdate = [
   body('name').optional().trim().notEmpty().isLength({ max: 100 }),
   body('code').optional().trim().isAlpha().withMessage('Code must contain only letters').isLength({ min: 2, max: 2 }).withMessage('Code must be exactly 2 letters'),
+  currency,
   handle,
 ];
 
@@ -42,7 +50,7 @@ const validatePortCreate = [
   body('name').trim().notEmpty().withMessage('Name is required').isLength({ max: 100 }),
   body('cityId').notEmpty().withMessage('City is required').isMongoId().withMessage('Invalid city'),
   body('countryId').notEmpty().withMessage('Country is required').isMongoId().withMessage('Invalid country'),
-  body('code').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 10 }),
+  portCode,
   handle,
 ];
 
@@ -50,7 +58,7 @@ const validatePortUpdate = [
   body('name').optional().trim().notEmpty().isLength({ max: 100 }),
   body('cityId').optional().isMongoId().withMessage('Invalid city'),
   body('countryId').optional().isMongoId().withMessage('Invalid country'),
-  body('code').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 10 }),
+  portCode,
   handle,
 ];
 
