@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 // Master data 11.3B. End customers / shippers - separate from Agents (port agents, commercial agents, direct lines).
 const CUSTOMER_TYPES = ['Commercial Agent', 'NVOCC', 'Freight Forwarder'];
 
+const { bankAccountSchema } = require('../../utils/bankAccounts');
+
 const contactSchema = new mongoose.Schema({
   name:  { type: String, required: true, trim: true, maxlength: 100 },
   title: { type: String, trim: true, default: null, maxlength: 100 },
@@ -23,6 +25,7 @@ const customerSchema = new mongoose.Schema(
     registrationNumber: { type: String, trim: true, default: null, maxlength: 60 },
     taxId:        { type: String, trim: true, default: null, maxlength: 60 },
     contacts:     { type: [contactSchema], default: [] },
+    bankAccounts: { type: [bankAccountSchema], default: [] },
     defaultCurrency: { type: String, trim: true, uppercase: true, minlength: 3, maxlength: 3, default: 'USD' },
     arAccountId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null }, // accounting mapping (receivable)
     status:       { type: String, enum: ['Active', 'Inactive'], default: 'Active' },

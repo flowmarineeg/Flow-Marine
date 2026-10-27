@@ -1,9 +1,9 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const pickFields = require('../../utils/pickFields');
 const Service = require('./service.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
-const { assertAccountFor } = require('../ledger/accountRules');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -71,9 +71,6 @@ const create = async (data, createdBy) => {
   const exists = await Service.findOne({ serviceCode: data.serviceCode.toUpperCase() });
   if (exists) throw { status: 400, message: `Service code "${data.serviceCode}" already exists` };
 
-  if (!data.revenueAccountId) throw { status: 400, message: 'Revenue account is required' };
-  await assertAccountFor(data.revenueAccountId, 'revenue', 'Revenue account');
-
   const service = await Service.create({
     ...pickFields(Service, data),
     serviceCode: data.serviceCode.toUpperCase(),
@@ -94,9 +91,6 @@ const update = async (id, data, updatedBy) => {
     data.serviceCode = code;
   }
 
-  const finalAccount = data.revenueAccountId !== undefined ? data.revenueAccountId : service.revenueAccountId;
-  if (!finalAccount) throw { status: 400, message: 'Revenue account is required' };
-  if (data.revenueAccountId !== undefined) await assertAccountFor(finalAccount, 'revenue', 'Revenue account');
 
   Object.assign(service, { ...pickFields(Service, data), updatedBy });
   await service.save();
@@ -108,15 +102,21 @@ const hardDelete = async (id) => {
   const service = await Service.findOne({ _id: id });
   if (!service) throw { status: 404, message: 'Service not found' };
 
-  // Block if active/planned rounds reference this service
-  let Round;
-  try { Round = require('../rounds/round.model'); } catch { Round = null; }
-  if (Round) {
-    const activeRound = await Round.findOne({ serviceId: id, status: { $in: ['Planned', 'Active'] } });
-    if (activeRound) throw { status: 400, message: `Cannot delete — service is used by round ${activeRound.roundNumber}` };
-  }
+  // A round of ANY status, or a voyage, still pointing at the service blocks the delete (RV-28). Only then
+  // are the service's own Route + legs removed, together with the service, in one transaction.
+  const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
+  await assertNoDependents('service', id, DEPENDENTS.service);
 
-  await Service.findByIdAndDelete(id);
+  const Route    = require('../routes/route.model');
+  const RouteLeg = require('../routes/routeLeg.model');
+  await mongoose.connection.transaction(async (session) => {
+    const route = await Route.findOne({ serviceId: id }).session(session);
+    if (route) {
+      await RouteLeg.deleteMany({ routeId: route._id }, { session });
+      await Route.deleteOne({ _id: route._id }, { session });
+    }
+    await Service.deleteOne({ _id: id }, { session });
+  });
 };
 
 // ─── Get all active (for dropdowns) ──────────────────────────────────────────

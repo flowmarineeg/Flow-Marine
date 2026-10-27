@@ -23,7 +23,9 @@ const ACTION_STYLE = {
 
 // Map module name → frontend route prefix
 const MODULE_ROUTES = {
-  services:       '/services',
+  services:       '/routes',
+  invoiceServices: '/services',
+  accounting:     '/accounting',
   rounds:         '/rounds',
   voyages:        '/voyages',
   bookings:       '/bookings',

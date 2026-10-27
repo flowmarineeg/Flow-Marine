@@ -2,6 +2,8 @@
 
 const mongoose = require('mongoose');
 
+const { bankAccountSchema } = require('../../utils/bankAccounts');
+
 const contactSchema = new mongoose.Schema({
   name:  { type: String, required: true, trim: true, maxlength: 100 },
   title: { type: String, trim: true, default: null, maxlength: 100 },
@@ -28,7 +30,8 @@ const partnerSchema = new mongoose.Schema(
     taxId:   { type: String, trim: true, default: null, maxlength: 60 },
     baseCurrency: { type: String, trim: true, uppercase: true, default: 'USD', minlength: 3, maxlength: 3 },
     contacts: { type: [contactSchema], default: [] },
-    bank:     { type: bankSchema, default: () => ({}) },
+    bankAccounts: { type: [bankAccountSchema], default: [] }, // many bank details (2026-10-27)
+    bank:     { type: bankSchema, default: () => ({}) },      // legacy single bank: read-only, copied into bankAccounts[0] by migrate:masterdata
     // Deprecated single contact: superseded by contacts[]. Kept readable until backfill-partner-contacts has run everywhere.
     contact: {
       person:  { type: String, trim: true, default: null },

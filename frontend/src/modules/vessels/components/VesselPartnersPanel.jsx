@@ -47,16 +47,15 @@ export default function VesselPartnersPanel({ vesselId }) {
 
   const startEdit = () => setRows(
     shares.length
-      ? shares.map(s => ({ partnerId: s.partnerId?._id || '', pct: bpToPct(s.shareBp), isLead: s.isLead }))
-      : [{ partnerId: '', pct: '', isLead: true }]
+      ? shares.map(s => ({ partnerId: s.partnerId?._id || '', pct: bpToPct(s.shareBp) }))
+      : [{ partnerId: '', pct: '' }]
   );
   const setRow = (i, patch) => setRows(r => r.map((x, k) => k === i ? { ...x, ...patch } : x));
-  const setLead = (i) => setRows(r => r.map((x, k) => ({ ...x, isLead: k === i })));
 
   const totalBp = (rows || []).reduce((a, r) => a + (pctToBp(r.pct) || 0), 0);
 
   const submit = () => {
-    const payload = rows.map(r => ({ partnerId: r.partnerId, shareBp: pctToBp(r.pct), isLead: !!r.isLead }));
+    const payload = rows.map(r => ({ partnerId: r.partnerId, shareBp: pctToBp(r.pct) }));
     if (payload.some(p => !p.partnerId || p.shareBp === null)) return toast.error('Every row needs a partner and a valid share');
     save.mutate(payload);
   };
@@ -73,13 +72,12 @@ export default function VesselPartnersPanel({ vesselId }) {
           ? <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>No partner shares set for this vessel.</p>
           : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr className="table-header"><th>Partner</th><th>Share</th><th>Role</th></tr></thead>
+              <thead><tr className="table-header"><th>Partner</th><th>Share</th></tr></thead>
               <tbody>
                 {shares.map(s => (
                   <tr key={s._id} className="table-row">
                     <td>{s.partnerId?.name} <span className="mono" style={{ color: 'var(--text-muted)' }}>{s.partnerId?.code}</span></td>
                     <td>{bpToPct(s.shareBp)}%</td>
-                    <td>{s.isLead ? 'Lead operator' : '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -96,14 +94,11 @@ export default function VesselPartnersPanel({ vesselId }) {
               </select>
               <input value={r.pct} onChange={e => setRow(i, { pct: e.target.value })} placeholder="%"
                 className="text-[13px] border border-gray-200 rounded-lg px-3 py-2" style={{ width: 90 }} />
-              <label style={{ fontSize: 12, display: 'flex', gap: 4, alignItems: 'center' }}>
-                <input type="radio" name="lead" checked={!!r.isLead} onChange={() => setLead(i)} /> Lead
-              </label>
               <button type="button" onClick={() => setRows(x => x.filter((_, k) => k !== i))} style={{ color: '#991B1B', fontSize: 12 }}>Remove</button>
             </div>
           ))}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-            <button type="button" onClick={() => setRows(r => [...r, { partnerId: '', pct: '', isLead: false }])} style={{ fontSize: 12, color: 'var(--teal)' }}>+ Add partner</button>
+            <button type="button" onClick={() => setRows(r => [...r, { partnerId: '', pct: '' }])} style={{ fontSize: 12, color: 'var(--teal)' }}>+ Add partner</button>
             <span style={{ fontSize: 13, fontWeight: 600, color: totalBp === 10000 ? '#065F46' : '#991B1B' }}>
               Total: {bpToPct(totalBp)}%
             </span>
@@ -112,7 +107,7 @@ export default function VesselPartnersPanel({ vesselId }) {
             <Button variant="secondary" onClick={() => setRows(null)}>Cancel</Button>
             <Button onClick={submit} loading={save.isPending}>Save Shares</Button>
           </div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Shares must total 100%, with exactly one lead operator. They lock once the vessel has its first Round.</p>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Shares must total 100%,. They lock once the vessel has its first Round.</p>
         </div>
       )}
     </div>

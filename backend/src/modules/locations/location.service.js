@@ -208,6 +208,9 @@ const deletePort = async (id) => {
   const legCount = await countRouteLegsReferencing({ portId: id });
   if (legCount > 0) throw { status: 400, message: `Cannot delete — ${legCount} route leg${legCount === 1 ? '' : 's'} reference this port` };
 
+  const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
+  await assertNoDependents('port', id, DEPENDENTS.port);
+
   await Port.findByIdAndDelete(id);
 };
 

@@ -1,6 +1,8 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const lock = require('../rounds/roundLock');
+const { validateVoyageState, scheduleWarnings, deleteBlockReason } = require('./voyage.logic');
 const Voyage   = require('./voyage.model');
 const Round    = require('../rounds/round.model');
 const Route    = require('../routes/route.model');
@@ -81,19 +83,21 @@ const getById = async (id) => {
   return voyage;
 };
 
-// ─── Get ports available for a round (from its service route legs) ────────────
-const getRoundRoutePorts = async (roundId) => {
-  const round = await Round.findOne({ _id: roundId }).lean();
-  if (!round) throw { status: 404, message: 'Round not found' };
-
+// ─── Route legs of a round ────────────────────────────────────────────────────
+// The round's own routeSnapshot is the source of truth (RV-13/14). Rounds created before the snapshot
+// existed fall back to the live Service route.
+const roundRouteLegs = async (round) => {
+  if (round.routeSnapshot?.legs?.length) {
+    return [...round.routeSnapshot.legs]
+      .sort((a, b) => a.sequence - b.sequence)
+      .map(l => ({ sequence: l.sequence, portId: l.portId, name: l.portName, code: l.portCode }));
+  }
   const route = await Route.findOne({ serviceId: round.serviceId }).lean();
-  if (!route) throw { status: 404, message: 'No route found for this service' };
-
+  if (!route) return null;
   const legs = await RouteLeg.find({ routeId: route._id })
     .populate('portId', 'name code')
     .sort({ sequence: 1 })
     .lean();
-
   return legs.map(l => ({
     sequence: l.sequence,
     portId:   l.portId?._id || l.portId,
@@ -101,6 +105,36 @@ const getRoundRoutePorts = async (roundId) => {
     code:     l.portId?.code,
   }));
 };
+
+// ─── Get ports available for a round (from the round's route) ─────────────────
+const getRoundRoutePorts = async (roundId) => {
+  const round = await Round.findOne({ _id: roundId }).lean();
+  if (!round) throw { status: 404, message: 'Round not found' };
+
+  const legs = await roundRouteLegs(round);
+  if (!legs) throw { status: 404, message: 'No route found for this service' };
+  return legs;
+};
+
+// Next voyage sequence for a round. lastVoyageSeq only ever grows, so deleting the last voyage can never
+// make its number come back (RV-35). Older rounds without the field are initialised from max(sequence).
+const allocateSequence = async (roundId, session) => {
+  const inc = () => Round.findOneAndUpdate(
+    { _id: roundId, lastVoyageSeq: { $type: 'number' } },
+    { $inc: { lastVoyageSeq: 1 } },
+    { new: true, session, projection: 'lastVoyageSeq' }
+  );
+  let r = await inc();
+  if (!r) {
+    const last = await Voyage.findOne({ roundId }).sort({ sequence: -1 }).select('sequence').session(session).lean();
+    await Round.updateOne({ _id: roundId, lastVoyageSeq: { $exists: false } }, { $set: { lastVoyageSeq: last?.sequence || 0 } }, { session });
+    r = await inc();
+  }
+  return r.lastVoyageSeq;
+};
+
+const previousVoyage = (roundId, sequence) =>
+  Voyage.findOne({ roundId, sequence: { $lt: sequence } }).sort({ sequence: -1 }).select('eta').lean();
 
 // ─── Create Manual Voyage ─────────────────────────────────────────────────────
 const createManualVoyage = async (roundId, data, createdBy) => {
@@ -121,60 +155,58 @@ const createManualVoyage = async (roundId, data, createdBy) => {
   if (!polId || !podId) throw { status: 400, message: 'POL and POD are required' };
   if (String(polId) === String(podId)) throw { status: 400, message: 'POL and POD cannot be the same port' };
 
-  // 4. Validate both ports are in the service route legs
-  const route = await Route.findOne({ serviceId: round.serviceId }).lean();
-  if (!route) throw { status: 400, message: 'Service has no route defined' };
+  // 4. Validate both ports are in the round's route (snapshot, or the live route for older rounds)
+  const legs = await roundRouteLegs(round);
+  if (!legs) throw { status: 400, message: 'Service has no route defined' };
+  const inRoute = (portId) => legs.some(l => String(l.portId) === String(portId));
+  if (!inRoute(polId)) throw { status: 400, message: 'POL is not in the round route legs' };
+  if (!inRoute(podId)) throw { status: 400, message: 'POD is not in the round route legs' };
 
-  const polLeg = await RouteLeg.findOne({ routeId: route._id, portId: polId }).lean();
-  if (!polLeg) throw { status: 400, message: 'POL is not in the service route legs' };
+  // 5. Dates / status must be coherent (RV-18..20)
+  const state = {
+    etd: data.etd || null, eta: data.eta || null, atd: data.atd || null, ata: data.ata || null,
+    status: data.status || 'Scheduled',
+  };
+  validateVoyageState(state, { statusChanged: true });
 
-  const podLeg = await RouteLeg.findOne({ routeId: route._id, portId: podId }).lean();
-  if (!podLeg) throw { status: 400, message: 'POD is not in the service route legs' };
-
-  // 5. Determine next sequence number
-  const lastVoyage = await Voyage.findOne({ roundId }).sort({ sequence: -1 }).lean();
-  const sequence   = (lastVoyage?.sequence || 0) + 1;
-
-  // 6. Generate voyage number
-  const voyageNumber = `${service.serviceCode}-${round.roundNumber}-${String(sequence).padStart(2, '0')}`;
-
-  // 7. Check voyage number uniqueness (edge case)
-  const numExists = await Voyage.findOne({ voyageNumber }).lean();
-  if (numExists) {
-    // Append suffix to avoid collision
-    const safeName = `${voyageNumber}-M`;
-    const safeExists = await Voyage.findOne({ voyageNumber: safeName }).lean();
-    if (safeExists) throw { status: 400, message: 'Could not generate a unique voyage number. Please retry.' };
-  }
-
-  // 8. Create voyage
-  const voyage = await Voyage.create({
-    voyageNumber:   numExists ? `${voyageNumber}-M` : voyageNumber,
-    voyageCode:     data.voyageCode  || null,
-    voyageName:     data.voyageName  || null,
-    roundId,
-    serviceId:      round.serviceId,
-    polId,
-    podId,
-    sequence,
-    etd:            data.etd  || null,
-    eta:            data.eta  || null,
-    etp:            data.etp  || null,
-    atd:            data.atd  || null,
-    ata:            data.ata  || null,
-    status:         data.status || 'Scheduled',
-    isManual:       true,
-    createdBy,
-    updatedBy:      createdBy,
+  // 6. Sequence + number + insert + push to the round, atomically
+  const { voyageId, sequence } = await mongoose.connection.transaction(async (session) => {
+    const seq = await allocateSequence(roundId, session);
+    // Format preserved: {serviceCode}-{roundNumber}-{seq:02d}. The counter is monotonic, so a number is
+    // never re-issued; the unique index stays as the last line of defence.
+    const voyageNumber = `${service.serviceCode}-${round.roundNumber}-${String(seq).padStart(2, '0')}`;
+    const [voyage] = await Voyage.create([{
+      voyageNumber,
+      voyageCode:     data.voyageCode  || null,
+      voyageName:     data.voyageName  || null,
+      roundId,
+      serviceId:      round.serviceId,
+      polId,
+      podId,
+      sequence:       seq,
+      etd:            data.etd  || null,
+      eta:            data.eta  || null,
+      etp:            data.etp  || null,
+      atd:            data.atd  || null,
+      ata:            data.ata  || null,
+      status:         state.status,
+      isManual:       true,
+      createdBy,
+      updatedBy:      createdBy,
+    }], { session });
+    await Round.updateOne({ _id: roundId }, { $push: { voyageIds: voyage._id } }, { session });
+    return { voyageId: voyage._id, sequence: seq };
   });
 
-  // 9. Add to round.voyageIds
-  await Round.findByIdAndUpdate(roundId, { $push: { voyageIds: voyage._id } });
+  // The capacity engine reads this round's voyages: drop its cache only after the write committed (RV-21)
+  invalidateRoundCache(roundId);
 
-  return Voyage.findById(voyage._id)
+  const out = await Voyage.findById(voyageId)
     .populate('polId', 'name code')
     .populate('podId', 'name code')
     .lean();
+  out.warnings = scheduleWarnings(state, round, await previousVoyage(roundId, sequence));
+  return out;
 };
 
 // ─── Update ───────────────────────────────────────────────────────────────────
@@ -182,14 +214,23 @@ const createManualVoyage = async (roundId, data, createdBy) => {
 // bypass — see voyage.controller.js) skips STATUS_TRANSITIONS entirely, same
 // shape as invoice.service.js's invoices:override (Sprint 046). Without it,
 // every caller still goes through validateTransition() exactly as before.
+// It never skips the date rules: Departed needs an ATD, Arrived an ATA, ETA/ATA cannot precede ETD/ATD.
 const update = async (id, data, updatedBy, canOverride = false) => {
   await lock.assertVoyageRoundOpen(id);
   const voyage = await Voyage.findById(id);
   if (!voyage) throw { status: 404, message: 'Voyage not found' };
 
-  if (data.status && data.status !== voyage.status && !canOverride) {
+  const statusChanged = !!data.status && data.status !== voyage.status;
+  if (statusChanged && !canOverride) {
     validateTransition(voyage.status, data.status);
   }
+
+  // Validate the COMPLETE resulting state, not just the patch (RV-18..20)
+  const next = {};
+  ['etd', 'eta', 'atd', 'ata', 'status'].forEach(f => {
+    next[f] = data[f] !== undefined ? (data[f] || null) : voyage[f];
+  });
+  validateVoyageState(next, { statusChanged });
 
   // Extended allowed fields: now includes etp and voyageCode
   const allowed = ['etd', 'eta', 'etp', 'atd', 'ata', 'status', 'voyageCode', 'voyageName'];
@@ -202,19 +243,28 @@ const update = async (id, data, updatedBy, canOverride = false) => {
   // Invalidate capacity cache for this round (status change affects engine output)
   invalidateRoundCache(voyage.roundId);
 
-  return Voyage.findById(id)
+  const round = await Round.findById(voyage.roundId).select('startDate endDate').lean();
+  const out = await Voyage.findById(id)
     .populate('roundId',   'roundNumber roundName')
     .populate('serviceId', 'serviceCode serviceName')
     .populate('polId',     'name code')
     .populate('podId',     'name code')
     .lean();
+  out.warnings = scheduleWarnings(next, round, await previousVoyage(voyage.roundId, voyage.sequence));
+  return out;
 };
 
 // ─── Delete Voyage (hard delete, guarded by bookings) ────────────────────────
+// A manual voyage, or the LAST generated voyage, may be deleted. A middle generated voyage would break
+// the POL/POD chain: cancel it instead (RV-22). Surviving voyages are never renumbered.
 const deleteVoyage = async (id) => {
   await lock.assertVoyageRoundOpen(id);
   const voyage = await Voyage.findById(id).lean();
   if (!voyage) throw { status: 404, message: 'Voyage not found' };
+
+  const siblings = await Voyage.find({ roundId: voyage.roundId, _id: { $ne: voyage._id } }).select('isManual sequence').lean();
+  const blocked = deleteBlockReason(voyage, siblings);
+  if (blocked) throw { status: 400, message: blocked };
 
   // Block if any active (non-Cancelled) bookings exist
   let Booking;
@@ -233,13 +283,16 @@ const deleteVoyage = async (id) => {
   // Audit H5: never orphan ledger lines / posted expenses / invoiced items
   const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
   await assertNoDependents('voyage', id, DEPENDENTS.voyage);
-  await require('mongoose').model('BookingItem').deleteMany({ voyageId: id, locked: false }).catch(() => {});
 
-  // Remove from Round.voyageIds
-  await Round.findByIdAndUpdate(voyage.roundId, { $pull: { voyageIds: voyage._id } });
+  await mongoose.connection.transaction(async (session) => {
+    await mongoose.model('BookingItem').deleteMany({ voyageId: id, locked: false }, { session });
+    // Remove from Round.voyageIds
+    await Round.updateOne({ _id: voyage.roundId }, { $pull: { voyageIds: voyage._id } }, { session });
+    // Hard delete
+    await Voyage.deleteOne({ _id: id }, { session });
+  });
 
-  // Hard delete
-  await Voyage.findByIdAndDelete(id);
+  invalidateRoundCache(voyage.roundId);   // RV-23
 };
 
 // ─── Get allowed next statuses ────────────────────────────────────────────────

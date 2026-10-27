@@ -5,13 +5,16 @@ Module `modules/vessels`, route `/vessels`, perm module `vessels`. UI: `/vessels
 ## Schema `Vessel`
 | Section | Fields |
 |---|---|
-| A. Identity & specifications | `vesselCode` (unique, upper, ≤20), `vesselName`, `imoNumber` (unique, 7 digits), `flag`, `callSign` (**required**), `capacity` (TEU slot capacity, **required** — the number the capacity engine divides by), `reeferPlugs`, `particularsFileUrl` / `particularsOriginalName` (PDF), plus `dwt`, `builtYear`, `manager`, `loa`, `beam`, `summerDraft`, `grossTonnage`, `netTonnage`, `suezGT`, `suezNT` |
-| B. C/P bunker consumption profile (all optional) | `mainEngineFuelType`, `auxEngineFuelType`, `consumptionSeaMtDay`, `consumptionPortIdleMtDay`, `consumptionPortWorkingMtDay`; existing tank capacities `totalBunkerCapacity`, `vlsfoCapacity`, `mdoCapacity`, `fwCapacity` |
-| C. Ownership & charter | `ownershipType` ∈ `Owned|Time Charter|Voyage Charter` (**required**), `ownerName` (Vessel Owner), `ownershipDescription`, `charterStartDate` (= Delivery Date), `charterEndDate` (= Redelivery Date) |
-| D. Financials & JV | `defaultDailyHireRateMinor` (USD cents; the API takes/returns decimal `defaultDailyHireRate`; **required**) and the JV partner matrix (see below) |
+| A. Identity & specifications (one card in the form: identity + specifications + particulars) | `vesselCode` (unique, upper, ≤20), `vesselName`, `imoNumber` (unique, 7 digits), `flag`, `callSign` (**required**), `capacity` (TEU slot capacity, **required** — the number the capacity engine divides by), `reeferPlugs`, `particularsFileUrl` / `particularsOriginalName` (PDF), plus `dwt`, `builtYear`, `manager`, `loa`, `beam`, `summerDraft`, `grossTonnage`, `netTonnage`, `suezGT`, `suezNT` |
+| B. C/P bunker consumption profile (all optional; one card incl. the tank capacities) | `mainEngineFuelType`, `auxEngineFuelType`, `consumptionSeaMtDay`, `consumptionPortIdleMtDay`, `consumptionPortWorkingMtDay`; existing tank capacities `totalBunkerCapacity`, `vlsfoCapacity`, `mdoCapacity`, `fwCapacity` |
+| C. Ownership & charter | `ownershipType` ∈ `Owned|Time Charter|Voyage Charter` (**required**), `ownerName`, `ownershipDescription`, **`ownerContacts[]`** (`name` required, `title`, `phone`, `email`), **`charterHistory[]`** (see below), `charterStartDate`/`charterEndDate` (= the latest entry's Delivery / Redelivery date, set by the server), and `defaultDailyHireRateMinor` (USD cents; the API takes/returns decimal `defaultDailyHireRate`; **required**; moved into this card 2026-10-27) |
+| D. JV partners | the JV partner matrix (see below) |
 | State | `status` ∈ `Active|Inactive|Under Maintenance|Sold`, `notes` |
 
 Responses add derived fields (`vessel.logic.present`): `defaultDailyHireRate`, `redeliveryAlert`, `incompleteFields[]`; the detail response also has `sharesLocked`.
+
+### Charter-party history (2026-10-27)
+`charterHistory[]` entry: `charterPartyDate`, `deliveryDate` + `deliveryPriceMinor`, `redeliveryDate` (no redelivery price; USD minor units for the delivery price, the API takes/returns decimal `deliveryPrice`), `addedBy`, `createdAt`. It is an append-only history in practice: the form shows the **latest** entry, **View history** lists all, **Add new charter entry** appends. `PUT /vessels/:id` takes the whole list (entries keep their `_id`; `addedBy` is preserved); the **last** entry sets `charterStartDate`/`charterEndDate`, so the redelivery alert and the required-field rule for charter types keep working (a charter vessel needs at least one entry; redelivery after delivery; prices ≥ 0). Owned vessels send an empty list. `migrate:masterdata` builds one entry from existing charter dates.
 
 ## Routes
 | Method | Path | Perm |
@@ -23,7 +26,7 @@ Responses add derived fields (`vessel.logic.present`): `defaultDailyHireRate`, `
 | GET / POST / DELETE | `/vessels/:id/particulars` — authenticated PDF download / upload (multipart field `file`, PDF only, magic-byte checked, stored in `uploads/vessels/`) / remove | `vessels` |
 | GET / POST / PUT / DELETE | `/vessels`, `/vessels/:id` | `vessels` |
 
-`POST/PUT /vessels` also accept an optional `shares: [{partnerId, shareBp, isLead}]`, validated first and saved **in the same transaction** as the vessel (all or nothing).
+`POST/PUT /vessels` also accept an optional `shares: [{partnerId, shareBp}]`, validated first and saved **in the same transaction** as the vessel (all or nothing).
 
 ## Rules
 - Code and IMO uniqueness checked in the service (400) and by unique indexes.
@@ -35,8 +38,8 @@ Responses add derived fields (`vessel.logic.present`): `defaultDailyHireRate`, `
 - Migration: `Chartered` and `Leased` become `Time Charter`.
 
 ## Partner shares (`modules/partners/vesselPartner.model.js`, `vesselShares.js`)
-`VesselPartner {vesselId, partnerId, shareBp (1–10000), isLead}`; unique `(vesselId, partnerId)` and a partial unique index `one_lead_per_vessel`. The form edits shares as a percentage with 2 decimals (basis points underneath) with a live total.
-- `PUT /vessels/:id/partners` body `{shares:[{partnerId, shareBp, isLead}]}` **replaces the whole set** in one transaction. `vesselShares.validateShares` requires: ≥1 row, no duplicate partner, integer 1–10000 each, total exactly **10000** (`SHARES_NOT_100`), exactly **one** lead (`LEAD_COUNT_INVALID`). All partners must exist.
+`VesselPartner {vesselId, partnerId, shareBp (1–10000)}`; unique `(vesselId, partnerId)`. The form edits shares as a percentage with 2 decimals (basis points underneath) with a live total.
+- `PUT /vessels/:id/partners` body `{shares:[{partnerId, shareBp}]}` **replaces the whole set** in one transaction. `vesselShares.validateShares` requires: ≥1 row, no duplicate partner, integer 1–10000 each, total exactly **10000** (`SHARES_NOT_100`). All partners must exist.
 - `DELETE /vessels/:id/partners` clears them.
 - **Lock** (`assertSharesUnlocked`, `409 VESSEL_SHARES_LOCKED`): PUT and DELETE are refused once **any ledger line exists on one of the vessel's Rounds** (its first accounting entry) or a `Final` PartnerSettlement exists. Open Rounds with no money posted do **not** lock, so shares can be set or fixed before anything is posted (audit F-01). Later changes need the authorised correction process (reopen/reverse).
 

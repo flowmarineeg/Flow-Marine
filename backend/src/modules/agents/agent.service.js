@@ -4,14 +4,15 @@ const pickFields = require('../../utils/pickFields');
 const Agent = require('./agent.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const AppError = require('../../utils/AppError');
-const { isBookingSource } = require('./agent.logic');
+const { assertAccountFor } = require('../ledger/accountRules');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
-const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '', bookingSource = '' } = {}) => {
+// roles/partyType are no longer editable (profile removed); legacy values stay stored and are still read by agent accounts.
+const NOT_WRITABLE = ['roles', 'partyType', 'ledgerVersion'];
+
+const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', status = '' } = {}) => {
   const query = {};
   if (status) query.status = status;
-  // bookingSource=true: everything except explicitly Port-only agents (see agent.logic.isBookingSource)
-  if (String(bookingSource) === 'true') query.$nor = [{ roles: ['Port'] }];
   if (search) {
     const rx = escapeRegex(search);
     query.$or = [
@@ -30,14 +31,10 @@ const list = async ({ page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search = '', s
   return { data, total };
 };
 
-/** A Port-only agent cannot be the booking source (master data 11.3A). */
+/** Any existing agent can be the booking source (owner 2026-10-27: roles/profile removed). */
 const assertBookingSource = async (agentId) => {
   if (!agentId) return;
-  const agent = await Agent.findById(agentId).select('agentName roles').lean();
-  if (!agent) throw new AppError(400, 'Agent not found', 'AGENT_NOT_FOUND');
-  if (!isBookingSource(agent)) {
-    throw new AppError(400, `"${agent.agentName}" is a Port Agent only - enable "Commercial Agent / Booking Agent" on the agent to book against it`, 'AGENT_NOT_BOOKING_SOURCE');
-  }
+  if (!(await Agent.exists({ _id: agentId }))) throw new AppError(400, 'Agent not found', 'AGENT_NOT_FOUND');
 };
 
 const getById = async (id) => {
@@ -53,8 +50,10 @@ const create = async (data, createdBy) => {
     if (exists) throw { status: 400, message: `Agent code "${data.agentCode}" already exists` };
   }
 
+  if (data.receivableAccountId) await assertAccountFor(data.receivableAccountId, 'receivable', 'AR account');
+
   const payload = {
-    ...pickFields(Agent, data),
+    ...pickFields(Agent, data, NOT_WRITABLE),
     agentCode: (data.agentCode && data.agentCode.trim() !== '')
       ? data.agentCode.toUpperCase()
       : null,
@@ -82,7 +81,8 @@ const update = async (id, data, updatedBy) => {
     data.agentCode = null;
   }
 
-  Object.assign(agent, { ...pickFields(Agent, data), updatedBy });
+  if (data.receivableAccountId) await assertAccountFor(data.receivableAccountId, 'receivable', 'AR account');
+  Object.assign(agent, { ...pickFields(Agent, data, NOT_WRITABLE), updatedBy });
   await agent.save();
   return agent.toObject();
 };

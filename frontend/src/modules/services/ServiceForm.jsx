@@ -7,8 +7,7 @@ import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { servicesService } from '@/services/services.service';
 import { vesselsService } from '@/services/vessels.service';
-import { accountsService } from '@/services/accounts.service';
-import { SERVICE_STATUS, SERVICE_APPLICABILITY } from '@/utils/constants';
+import { SERVICE_STATUS } from '@/utils/constants';
 
 export default function ServiceForm({ item, onSuccess, onCancel }) {
   const qc        = useQueryClient();
@@ -21,15 +20,7 @@ export default function ServiceForm({ item, onSuccess, onCancel }) {
       defaultVesselId: item?.defaultVesselId?._id || item?.defaultVesselId || '',
       description:     item?.description     || '',
       status:          item?.status          || 'Active',
-      applicability:   item?.applicability   || 'SOC_ONLY',
-      isTaxable:       item?.isTaxable ? 'true' : 'false',
-      revenueAccountId: item?.revenueAccountId?._id || item?.revenueAccountId || '',
     },
-  });
-
-  const { data: revenueAccounts = [] } = useQuery({
-    queryKey: ['accounts', 'revenue'],
-    queryFn:  () => accountsService.lookup('revenue').then(r => r.data.data),
   });
 
   const { data: vesselData } = useQuery({
@@ -40,11 +31,11 @@ export default function ServiceForm({ item, onSuccess, onCancel }) {
 
   const mutation = useMutation({
     mutationFn: (data) => {
-      const payload = { ...data, isTaxable: data.isTaxable === 'true' };
+      const payload = data;
       return isEditing ? servicesService.update(item._id, payload) : servicesService.create(payload);
     },
     onSuccess: () => {
-      toast.success(isEditing ? 'Service updated' : 'Service created');
+      toast.success(isEditing ? 'Route updated' : 'Route created');
       qc.invalidateQueries(['services']);
       onSuccess?.();
     },
@@ -101,38 +92,6 @@ export default function ServiceForm({ item, onSuccess, onCancel }) {
         </select>
       </div>
 
-      {/* Invoice setup */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-            Applicability <span className="text-red-400">*</span>
-          </label>
-          <select {...register('applicability', { required: true })} className="input-base">
-            {SERVICE_APPLICABILITY.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-            Taxable <span className="text-red-400">*</span>
-          </label>
-          <select {...register('isTaxable', { required: true })} className="input-base">
-            <option value="false">No</option>
-            <option value="true">Yes</option>
-          </select>
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-          Revenue Account <span className="text-red-400">*</span>
-        </label>
-        <select {...register('revenueAccountId', { required: 'Revenue account is required' })} className={`input-base ${errors.revenueAccountId ? 'input-error' : ''}`}>
-          <option value="">Select revenue account…</option>
-          {revenueAccounts.map(a => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
-        </select>
-        {errors.revenueAccountId && <p className="mt-1 text-xs text-red-500">{errors.revenueAccountId.message}</p>}
-        <p className="mt-1 text-[11px] text-gray-400">Prices are not stored on the service — they are entered on the booking or invoice.</p>
-      </div>
-
       {/* Description */}
       <div>
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
@@ -166,7 +125,7 @@ export default function ServiceForm({ item, onSuccess, onCancel }) {
           disabled={mutation.isPending}
           className="btn btn-primary btn-md"
         >
-          {mutation.isPending ? 'Saving…' : isEditing ? 'Save Changes' : 'Create Service'}
+          {mutation.isPending ? 'Saving…' : isEditing ? 'Save Changes' : 'Create Route'}
         </button>
       </div>
     </form>

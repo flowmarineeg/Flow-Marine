@@ -131,6 +131,7 @@ const create = async (data, createdBy) => {
   if (['Cancelled', 'Completed'].includes(voyage.status)) {
     throw { status: 400, message: `Cannot book on a voyage with status "${voyage.status}"` };
   }
+  await lock.assertRoundBookable(voyage);
 
   const rows = data.cargoRows || [];
   if (!rows.length) throw { status: 400, message: 'At least one cargo row is required' };

@@ -10,10 +10,12 @@ import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import ServiceForm from '@/modules/services/ServiceForm';
 import RouteEditor from '@/modules/services/RouteEditor';
+import ServiceRounds from '@/modules/services/ServiceRounds';
 
 const tabs = [
-  { key: 'details', label: 'Service Details' },
+  { key: 'details', label: 'Route Details' },
   { key: 'route',   label: 'Route' },
+  { key: 'rounds',  label: 'Rounds' },
 ];
 
 export default function ServiceDetailPage({ serviceId, defaultTab = 'details' }) {
@@ -31,9 +33,9 @@ export default function ServiceDetailPage({ serviceId, defaultTab = 'details' })
   if (isError || !data) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-400">
-        <p className="text-sm">Service not found</p>
-        <button onClick={() => router.push('/services')} className="mt-3 text-sm text-teal-600 hover:underline">
-          ← Back to Services
+        <p className="text-sm">Route not found</p>
+        <button onClick={() => router.push('/routes')} className="mt-3 text-sm text-teal-600 hover:underline">
+          ← Back to Routes
         </button>
       </div>
     );
@@ -45,13 +47,13 @@ export default function ServiceDetailPage({ serviceId, defaultTab = 'details' })
       {/* Top breadcrumb + back */}
       <div className="flex items-center gap-2 mb-5">
         <button
-          onClick={() => router.push('/services')}
+          onClick={() => router.push('/routes')}
           className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition"
         >
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" d="M15 19l-7-7 7-7"/>
           </svg>
-          Services
+          Routes
         </button>
         <span className="text-gray-200">/</span>
         <span className="text-sm font-medium text-gray-700">{data.serviceCode}</span>
@@ -98,7 +100,7 @@ export default function ServiceDetailPage({ serviceId, defaultTab = 'details' })
       {activeTab === 'details' && (
         <div className="max-w-xl">
           <div className="card p-6">
-            <h2 className="text-sm font-semibold text-gray-600 mb-4">Edit Service Details</h2>
+            <h2 className="text-sm font-semibold text-gray-600 mb-4">Edit Route Details</h2>
             {can('services', 'update') ? (
               <ServiceForm
                 item={data}
@@ -106,7 +108,7 @@ export default function ServiceDetailPage({ serviceId, defaultTab = 'details' })
                   qc.invalidateQueries(['service', serviceId]);
                   qc.invalidateQueries(['services']);
                 }}
-                onCancel={() => router.push('/services')}
+                onCancel={() => router.push('/routes')}
               />
             ) : (
               <div className="space-y-4 text-sm text-gray-600">
@@ -118,6 +120,10 @@ export default function ServiceDetailPage({ serviceId, defaultTab = 'details' })
             )}
           </div>
         </div>
+      )}
+
+      {activeTab === 'rounds' && (
+        <div className="card p-6"><ServiceRounds serviceId={serviceId} /></div>
       )}
 
       {activeTab === 'route' && (

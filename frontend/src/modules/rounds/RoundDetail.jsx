@@ -156,6 +156,16 @@ export default function RoundDetailPage({ roundId }) {
           </div>
         </div>
 
+        {/* Route as it was when the round was created (later Service route edits do not change it) */}
+        {round.routeSnapshot?.legs?.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Route (at round creation)</p>
+            <p className="text-sm text-gray-600">
+              {round.routeSnapshot.legs.map(l => l.portName || l.portCode || '—').join(' → ')}
+            </p>
+          </div>
+        )}
+
         {/* Notes */}
         {round.notes && (
           <div className="mt-4 pt-4 border-t border-gray-100">

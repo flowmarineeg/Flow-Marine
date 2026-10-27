@@ -75,6 +75,8 @@ const MODULES = [
   'auditLogs',
   'partners',    // Sprint050 V2
   'ledger',      // Sprint050 V2
+  'accounting',  // master data 2026-10-27: Masters -> Accounting (chart of accounts)
+  'invoiceServices', // master data 2026-10-27: invoice service master
 ];
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

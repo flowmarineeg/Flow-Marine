@@ -30,7 +30,7 @@ Password policy (validators): ≥ 8 chars, at least one uppercase and one number
 - `PUT` — `rbac('roles')` (update) and `notOwnRole`: only SuperAdmin may edit the role they belong to. Rejects unknown modules (`400 INVALID_MODULE`) and keeps only known actions as booleans, then writes via `bulkWrite` upserts (audit F-09, validation fixed 2026-10-25; a `roles:update` holder can still grant any permission to another role — deliberate, unchanged) and calls `cache.delByPrefix('perm:<roleId>:')`.
 
 ### Modules (`config/constants.js#MODULES`)
-`users, roles, vessels, agents, customers, locations, containerTypes, expenseTypes, services, routes, rounds, voyages, bookings, expenses, invoices, tracking, reports, export, dashboard, auditLogs, partners, ledger`. (Agent accounts reuse `agents`; round accounting reuses `rounds`/`partners`/`reports`.)
+`users, roles, vessels, agents, customers, locations, containerTypes, expenseTypes, services, routes, rounds, voyages, bookings, expenses, invoices, tracking, reports, export, dashboard, auditLogs, partners, ledger, accounting, invoiceServices`. (Agent accounts reuse `agents`; round accounting reuses `rounds`/`partners`/`reports`.)
 
 ### Actions (`permission.model.js`)
 | Action | Meaning / where used |
@@ -56,7 +56,7 @@ Password policy (validators): ≥ 8 chars, at least one uppercase and one number
 | Operations Manager | CRUD services, rounds, voyages, tracking; bookings CRUD + import/export; CRUD customers; read vessels, agents, locations, container types, routes, expenses, invoices, reports(+export) |
 | Finance Officer | expenses CRUD + approve; invoices CRUD + issue/cancel/record; read agents, customers, vessels, rounds, voyages, bookings; reports and export read+export |
 | Tracking Officer | tracking CRUD, voyages read |
-| Viewer | read on every module except users, roles, ledger, partners, dashboard, auditLogs |
+| Viewer | read on every module except users, roles, ledger, accounting, partners, dashboard, auditLogs |
 Demo users after seeding: `ops|finance|tracking|viewer@logistics.com` / `Demo@123456`; admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 
 ## Audit logs (`/audit-logs`, perm `auditLogs`)

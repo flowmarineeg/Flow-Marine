@@ -31,7 +31,12 @@ const isCurrencyCode = (v) => /^[A-Z]{3}$/.test(String(v ?? '').trim().toUpperCa
 
 const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v ?? '').trim());
 
-/** TEU factor from a container size label (20ft -> 1, 40ft/40HC/45ft -> 2). Mirrors teuResolver without importing it. */
-const teuFactorForSize = (size) => (String(size || '').startsWith('20') ? 1 : 2);
+/** TEU factor from a container size label (20ft -> 1, 40ft/40HC -> 2, 45ft -> 2.25). Informational master data only; capacity uses teuResolver (R10). */
+const teuFactorForSize = (size) => {
+  const s = String(size || '');
+  if (s.startsWith('20')) return 1;
+  if (s.startsWith('45')) return 2.25;
+  return 2;
+};
 
 module.exports = { isIban, isSwift, isUnLocode, isIsoContainerCode, isCurrencyCode, isEmail, teuFactorForSize, stripSpaces };

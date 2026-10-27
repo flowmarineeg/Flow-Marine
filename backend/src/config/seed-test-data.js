@@ -121,7 +121,7 @@ const seedMasterData = async (uid) => {
     ['40HCRF', '40HC', 'Reefer', "40' High cube reefer"], ['20OT', '20ft', 'Open Top', "20' Open top"],
   ]) {
     const isoCode = { '20DRY': '22G1', '40DRY': '42G1', '40HC': '45G1', '20RF': '22R1', '40HCRF': '45R1', '20OT': '22U1' }[code];
-    W.ct[code] = await upsert(m.ContainerType, { code }, { code, isoCode, size, type, description, teuFactor: size.startsWith('20') ? 1 : 2, createdBy: uid });
+    W.ct[code] = await upsert(m.ContainerType, { code }, { code, isoCode, size, type, description, teuFactor: require('../utils/masterValidators').teuFactorForSize(size), createdBy: uid });
   }
 
   // Port Expense -> "Voyage Cost"; everything else -> "Other Voyage Cost" (reports read this flag, never a name)
@@ -200,11 +200,11 @@ const seedMasterData = async (uid) => {
 };
 
 const seedPartnersAndAgreements = async (W, uid) => {
-  const sh = (code, bp, lead = false) => ({ partnerId: W.partner[code]._id, shareBp: bp, isLead: lead });
+  const sh = (code, bp) => ({ partnerId: W.partner[code]._id, shareBp: bp });
   const SHARES = {
-    ALNOOR: [sh('ALFA', 5000, true), sh('BETA', 3000), sh('GAMMA', 2000)],
-    RSTAR: [sh('ALFA', 6000, true), sh('BETA', 4000)],
-    GPION: [sh('BETA', 5000, true), sh('GAMMA', 5000)],
+    ALNOOR: [sh('ALFA', 5000), sh('BETA', 3000), sh('GAMMA', 2000)],
+    RSTAR: [sh('ALFA', 6000), sh('BETA', 4000)],
+    GPION: [sh('BETA', 5000), sh('GAMMA', 5000)],
   };
   for (const [code, shares] of Object.entries(SHARES)) {
     if (!(await m.VesselPartner.exists({ vesselId: W.vessel[code]._id }))) await m.partnerSvc.setShares(W.vessel[code]._id, shares, uid);

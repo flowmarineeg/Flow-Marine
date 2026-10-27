@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { locationsService } from '@/services/locations.service';
-import Select from '../ui/Select';
+import SearchSelect from '../ui/SearchSelect';
 
 /**
  * Reusable cascading location picker: Country -> City -> Port -> Terminal.
@@ -41,29 +41,21 @@ export default function LocationSelect({
     enabled:  !!portId && showTerminal,
   });
 
-  const handleCountryChange = (e) => {
-    onChange({ countryId: e.target.value, cityId: '', portId: '', terminalId: '' });
-  };
-  const handleCityChange = (e) => {
-    onChange({ countryId, cityId: e.target.value, portId: '', terminalId: '' });
-  };
-  const handlePortChange = (e) => {
-    onChange({ countryId, cityId, portId: e.target.value, terminalId: '' });
-  };
-  const handleTerminalChange = (e) => {
-    onChange({ countryId, cityId, portId, terminalId: e.target.value });
-  };
+  const handleCountryChange = (v) => { onChange({ countryId: v, cityId: '', portId: '', terminalId: '' }); };
+  const handleCityChange = (v) => { onChange({ countryId, cityId: v, portId: '', terminalId: '' }); };
+  const handlePortChange = (v) => { onChange({ countryId, cityId, portId: v, terminalId: '' }); };
+  const handleTerminalChange = (v) => { onChange({ countryId, cityId, portId, terminalId: v }); };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Select
+      <SearchSelect
         label="Country" required={required} disabled={disabled}
         value={countryId} onChange={handleCountryChange}
         options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))}
         placeholder="Select country…"
       />
       {countryId && (
-        <Select
+        <SearchSelect
           label="City" required={required} disabled={disabled}
           value={cityId} onChange={handleCityChange}
           options={(cities || []).map(c => ({ value: c._id, label: c.name }))}
@@ -71,7 +63,7 @@ export default function LocationSelect({
         />
       )}
       {cityId && (
-        <Select
+        <SearchSelect
           label="Port" required={required} disabled={disabled}
           value={portId} onChange={handlePortChange}
           options={(ports || []).map(p => ({ value: p._id, label: p.name }))}
@@ -79,7 +71,7 @@ export default function LocationSelect({
         />
       )}
       {showTerminal && portId && (
-        <Select
+        <SearchSelect
           label="Terminal" disabled={disabled}
           value={terminalId} onChange={handleTerminalChange}
           options={(terminals || []).map(t => ({ value: t._id, label: t.name }))}

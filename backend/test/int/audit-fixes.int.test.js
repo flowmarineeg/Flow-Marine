@@ -80,7 +80,7 @@ describe('V2 audit regression - HIGH findings', { skip: SKIP }, () => {
   it('H1/F-01: a vessel with open Rounds (even v2) can still receive shares; only a Final settlement locks them', async () => {
     await mkRound(W.vessel._id);
     await m.Round.updateOne({ vesselId: W.vessel._id }, { $set: { v2: true } });
-    const sh = [{ partnerId: W.pA._id, shareBp: 6000, isLead: true }, { partnerId: W.pB._id, shareBp: 4000 }];
+    const sh = [{ partnerId: W.pA._id, shareBp: 6000 }, { partnerId: W.pB._id, shareBp: 4000 }];
     const saved = await m.partnerSvc.setShares(W.vessel._id, sh, U);
     assert.equal(saved.length, 2);
     // a finalised settlement locks
@@ -133,7 +133,7 @@ describe('V2 audit regression - HIGH findings', { skip: SKIP }, () => {
 
   it('H4: a posting racing a Round close can never leave a line the final settlement missed', async () => {
     await m.VesselPartner.deleteMany({ vesselId: W.v2Vessel._id });
-    await m.VesselPartner.insertMany([{ vesselId: W.v2Vessel._id, partnerId: W.pA._id, shareBp: 10000, isLead: true }]);
+    await m.VesselPartner.insertMany([{ vesselId: W.v2Vessel._id, partnerId: W.pA._id, shareBp: 10000 }]);
     for (let trial = 0; trial < 6; trial++) {
       const R = await mkRound(W.v2Vessel._id);
       await m.ledger.post({ date: new Date(), sourceType: 'Invoice', roundId: R.round._id, currency: 'USD' },

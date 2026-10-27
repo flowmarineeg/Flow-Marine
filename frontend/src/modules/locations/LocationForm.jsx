@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { locationsService } from '@/services/locations.service';
 import Input from '@/components/ui/Input';
-import Select from '@/components/ui/Select';
+import SearchSelect from '@/components/ui/SearchSelect';
 import Button from '@/components/ui/Button';
 
 const CREATE_FN = {
@@ -25,7 +25,7 @@ const UPDATE_FN = {
 
 export default function LocationForm({ level, item = null, onSuccess, onCancel }) {
   const isEdit = !!item;
-  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm();
+  const { register, handleSubmit, watch, setValue, reset, control, formState: { errors } } = useForm();
 
   const selectedCountryId = watch('countryId');
 
@@ -78,42 +78,39 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
   return (
     <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {level === 'port' && (
-        <Select
-          id="countryId" label="Country" required
-          options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))}
-          error={errors.countryId?.message}
-          {...register('countryId', {
-            required: 'Country is required',
-            onChange: () => setValue('cityId', ''),
-          })}
-        />
+        <Controller name="countryId" control={control} rules={{ required: 'Country is required' }}
+          render={({ field }) => (
+            <SearchSelect id="countryId" label="Country" required value={field.value || ''}
+              onChange={(v) => { field.onChange(v);setValue('cityId', ''); }}
+              options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))} error={errors.countryId?.message} placeholder="Select country…" />
+          )} />
       )}
 
       {level === 'city' && (
-        <Select
-          id="countryId" label="Country" required
-          options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))}
-          error={errors.countryId?.message}
-          {...register('countryId', { required: 'Country is required' })}
-        />
+        <Controller name="countryId" control={control} rules={{ required: 'Country is required' }}
+          render={({ field }) => (
+            <SearchSelect id="countryId" label="Country" required value={field.value || ''}
+              onChange={(v) => { field.onChange(v); }}
+              options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))} error={errors.countryId?.message} placeholder="Select country…" />
+          )} />
       )}
 
       {level === 'port' && (
-        <Select
-          id="cityId" label="City" required disabled={!selectedCountryId}
-          options={(cities || []).map(c => ({ value: c._id, label: c.name }))}
-          error={errors.cityId?.message}
-          {...register('cityId', { required: 'City is required' })}
-        />
+        <Controller name="cityId" control={control} rules={{ required: 'City is required' }}
+          render={({ field }) => (
+            <SearchSelect id="cityId" label="City" required disabled={!selectedCountryId} value={field.value || ''}
+              onChange={(v) => { field.onChange(v); }}
+              options={(cities || []).map(c => ({ value: c._id, label: c.name }))} error={errors.cityId?.message} placeholder="Select city…" />
+          )} />
       )}
 
       {level === 'terminal' && (
-        <Select
-          id="portId" label="Port" required
-          options={(ports || []).map(p => ({ value: p._id, label: p.name }))}
-          error={errors.portId?.message}
-          {...register('portId', { required: 'Port is required' })}
-        />
+        <Controller name="portId" control={control} rules={{ required: 'Port is required' }}
+          render={({ field }) => (
+            <SearchSelect id="portId" label="Port" required value={field.value || ''}
+              onChange={(v) => { field.onChange(v); }}
+              options={(ports || []).map(p => ({ value: p._id, label: p.name }))} error={errors.portId?.message} placeholder="Select port…" />
+          )} />
       )}
 
       <Input

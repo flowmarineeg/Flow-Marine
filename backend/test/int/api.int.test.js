@@ -177,9 +177,9 @@ describe('Version 2 API (real server, cookies, CSRF, RBAC)', { skip: SKIP }, () 
       pa = (await fin.post('/partners', { code: 'PA', name: 'Partner A' })).data;
       pb = (await fin.post('/partners', { code: 'PB', name: 'Partner B' })).data;
       const vid = W.vessel._id;
-      const bad = await fin.put(`/vessels/${vid}/partners`, { shares: [{ partnerId: pa._id, shareBp: 6000, isLead: true }, { partnerId: pb._id, shareBp: 3000 }] });
+      const bad = await fin.put(`/vessels/${vid}/partners`, { shares: [{ partnerId: pa._id, shareBp: 6000 }, { partnerId: pb._id, shareBp: 3000 }] });
       assert.equal(bad.status, 400); assert.equal(bad.code, 'SHARES_NOT_100');
-      const good = await fin.put(`/vessels/${vid}/partners`, { shares: [{ partnerId: pa._id, shareBp: 6000, isLead: true }, { partnerId: pb._id, shareBp: 4000 }] });
+      const good = await fin.put(`/vessels/${vid}/partners`, { shares: [{ partnerId: pa._id, shareBp: 6000 }, { partnerId: pb._id, shareBp: 4000 }] });
       assert.equal(good.status, 200); assert.equal(good.data.length, 2);
       const del = await fin.del(`/partners/${pa._id}`);
       assert.equal(del.status, 409); assert.equal(del.code, 'HAS_DEPENDENTS'); assert.match(del.body.message, /vessel share rows/);

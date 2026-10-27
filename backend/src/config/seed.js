@@ -38,7 +38,7 @@ const ROLE_DEFS = [
     name: 'Operations Manager',
     description: 'Rounds, voyages, bookings, tracking, services',
     grants: () => ({
-      vessels: READ, agents: READ, customers: CRUD, locations: READ, containerTypes: READ, routes: READ,
+      vessels: READ, agents: READ, customers: CRUD, locations: READ, containerTypes: READ, routes: READ, invoiceServices: READ,
       services: CRUD,
       rounds: CRUD, voyages: CRUD,
       bookings: { ...CRUD, import: true, export: true },
@@ -51,6 +51,7 @@ const ROLE_DEFS = [
     description: 'Expenses, invoices, reports, export',
     grants: () => ({
       agents: READ, customers: READ, vessels: READ, rounds: READ, voyages: READ, bookings: READ,
+      invoiceServices: CRUD, accounting: CRUD,
       expenses: { ...CRUD, approve: true },
       invoices: { ...CRUD, issue: true, cancel: true, record: true },
       reports: { ...READ, export: true },
@@ -66,7 +67,7 @@ const ROLE_DEFS = [
     name: 'Viewer',
     description: 'Read-only access',
     grants: () => Object.fromEntries(
-      MODULES.filter((m) => !['users', 'roles', 'ledger', 'partners', 'dashboard', 'auditLogs'].includes(m))
+      MODULES.filter((m) => !['users', 'roles', 'ledger', 'accounting', 'partners', 'dashboard', 'auditLogs'].includes(m))
         .map((m) => [m, READ])),
   },
 ];

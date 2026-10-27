@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -13,9 +13,10 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
 import { partnersService } from '@/services/partners.service';
 import JvMatrix, { pctToBp, bpToPct, validateRows } from './components/JvMatrix';
+import CharterHistory from './components/CharterHistory';
 
 const CHARTER = ['Time Charter', 'Voyage Charter'];
-const sharesKey = (rows) => JSON.stringify(rows.map((r) => [r.partnerId, pctToBp(r.pct), !!r.isLead]).sort());
+const sharesKey = (rows) => JSON.stringify(rows.map((r) => [r.partnerId, pctToBp(r.pct)]).sort());
 
 const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
 const ic = (err) => `w-full text-[13px] border rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:ring-2 transition ${err ? 'border-red-400 focus:ring-red-400/20' : 'border-gray-200 focus:border-teal-500 focus:ring-teal-500/10'}`;
@@ -38,7 +39,9 @@ export default function VesselForm({ id = null }) {
     enabled:  isEdit,
   });
 
-  const { register, handleSubmit, watch, reset, formState: { errors, isSubmitting } } = useForm();
+  const { register, handleSubmit, watch, reset, control, formState: { errors, isSubmitting } } = useForm({ defaultValues: { ownerContacts: [] } });
+  const { fields: contactFields, append: addContact, remove: removeContact } = useFieldArray({ control, name: 'ownerContacts' });
+  const [charter, setCharter] = useState([]);
   const ownershipType = watch('ownershipType');
   const [shares, setShares] = useState([]);
   const [loadedShares, setLoadedShares] = useState('[]');
@@ -51,7 +54,7 @@ export default function VesselForm({ id = null }) {
   });
   useEffect(() => {
     if (!shareData) return;
-    const rows = shareData.map(s => ({ partnerId: s.partnerId?._id || s.partnerId, pct: bpToPct(s.shareBp), isLead: !!s.isLead }));
+    const rows = shareData.map(s => ({ partnerId: s.partnerId?._id || s.partnerId, pct: bpToPct(s.shareBp) }));
     setShares(rows); setLoadedShares(sharesKey(rows));
   }, [shareData]);
 
@@ -73,8 +76,7 @@ export default function VesselForm({ id = null }) {
         ownershipType:        vesselData.ownershipType,
         ownerName:            vesselData.ownerName             || '',
         ownershipDescription: vesselData.ownershipDescription  || '',
-        charterStartDate:     vesselData.charterStartDate ? vesselData.charterStartDate.split('T')[0] : '',
-        charterEndDate:       vesselData.charterEndDate   ? vesselData.charterEndDate.split('T')[0]   : '',
+        ownerContacts:        (vesselData.ownerContacts || []).map(c => ({ name: c.name || '', title: c.title || '', phone: c.phone || '', email: c.email || '' })),
         capacity:             vesselData.capacity  ?? '',
         dwt:                  vesselData.dwt       ?? '',
         builtYear:            vesselData.builtYear ?? '',
@@ -96,17 +98,23 @@ export default function VesselForm({ id = null }) {
         notes:                vesselData.notes || '',
       });
     }
+    if (isEdit && vesselData) setCharter((vesselData.charterHistory || []).map(e => ({ ...e, charterPartyDate: e.charterPartyDate ? String(e.charterPartyDate).split('T')[0] : '', deliveryDate: String(e.deliveryDate).split('T')[0], redeliveryDate: String(e.redeliveryDate).split('T')[0], deliveryPrice: e.deliveryPrice ?? '' })));
   }, [vesselData, isEdit]);
 
   const mutation = useMutation({
     mutationFn: async (data) => {
       const payload = { ...data };
-      if (!CHARTER.includes(payload.ownershipType)) { payload.charterStartDate = null; payload.charterEndDate = null; }
+      payload.ownerContacts = (payload.ownerContacts || []).filter(c => c.name?.trim()).map(c => ({ name: c.name.trim(), title: c.title || null, phone: c.phone || null, email: c.email || null }));
+      if (CHARTER.includes(payload.ownershipType) && charter.length === 0) throw Object.assign(new Error('Add at least one charter entry'), { clientMessage: 'Add at least one charter entry (delivery and redelivery dates)' });
+      // Charter history is append-only on the server; Owned vessels send an empty list
+      payload.charterHistory = CHARTER.includes(payload.ownershipType)
+        ? charter.map(e => ({ ...(e._id ? { _id: e._id } : {}), charterPartyDate: e.charterPartyDate || null, deliveryDate: e.deliveryDate, deliveryPrice: e.deliveryPrice === '' ? null : e.deliveryPrice, redeliveryDate: e.redeliveryDate }))
+        : [];
       // JV matrix: validated client-side, and sent only when new or changed (the server locks it once money is posted).
       const err = (!isEdit || shares.length) ? validateRows(shares) : null;
       if (err) throw Object.assign(new Error(err), { clientMessage: err });
       if (!isEdit || sharesKey(shares) !== loadedShares) {
-        payload.shares = shares.map(r => ({ partnerId: r.partnerId, shareBp: pctToBp(r.pct), isLead: !!r.isLead }));
+        payload.shares = shares.map(r => ({ partnerId: r.partnerId, shareBp: pctToBp(r.pct) }));
       }
       const res = isEdit ? await vesselsService.update(id, payload) : await vesselsService.create(payload);
       const vesselId = res.data.data._id;
@@ -190,10 +198,8 @@ export default function VesselForm({ id = null }) {
                 className="block w-full text-[12px] text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:text-teal-700" />
             </div>
           </div>
-        </SectionCard>
+          <div className="border-t border-gray-100 my-6" />
 
-        {/* ── Specifications ───────────────────────────────────────────── */}
-        <SectionCard title="Vessel Specifications (continued)">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lc}>DWT (tonnes)</label>
@@ -208,10 +214,8 @@ export default function VesselForm({ id = null }) {
                 placeholder="e.g. 2015" className={ic(false)} />
             </div>
           </div>
-        </SectionCard>
+          <div className="border-t border-gray-100 my-6" />
 
-        {/* ── Vessel Particulars (extended) ───────────────────────────── */}
-        <SectionCard title="Vessel Particulars">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="sm:col-span-2">
               <label className={lc}>Manager / Operator</label>
@@ -288,10 +292,8 @@ export default function VesselForm({ id = null }) {
               <input type="number" min="0" step="0.1" {...register('consumptionPortWorkingMtDay')} className={ic(false)} />
             </div>
           </div>
-        </SectionCard>
-
-        {/* ── Bunker Capacities ────────────────────────────────────────── */}
-        <SectionCard title="Bunker Capacities (MT)">
+          <div className="border-t border-gray-100 my-6" />
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4">Bunker Capacities (MT)</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div>
               <label className={lc}>Total Bunker Cap.</label>
@@ -335,24 +337,30 @@ export default function VesselForm({ id = null }) {
               <input {...register('ownerName')} placeholder="e.g. Maritime Solutions LLC" className={ic(false)} />
             </div>
 
-            {CHARTER.includes(ownershipType) && (
-              <>
-                <div>
-                  <label className={lc}>Delivery Date <span className="text-red-400">*</span></label>
-                  <input type="date"
-                    {...register('charterStartDate', { required: 'Required for chartered vessels' })}
-                    className={ic(errors.charterStartDate)} />
-                  {errors.charterStartDate && <p className={ec}>{errors.charterStartDate.message}</p>}
+            {CHARTER.includes(ownershipType) && <CharterHistory entries={charter} onChange={setCharter} />}
+
+            <div>
+              <label className={lc}>Default Daily Hire Rate (USD) <span className="text-red-400">*</span></label>
+              <input type="number" min="0" step="0.01"
+                {...register('defaultDailyHireRate', { required: 'Default daily hire rate is required' })}
+                placeholder="e.g. 12500.00" className={ic(errors.defaultDailyHireRate)} />
+              {errors.defaultDailyHireRate && <p className={ec}>{errors.defaultDailyHireRate.message}</p>}
+            </div>
+
+            <div className="sm:col-span-2">
+              <p className={lc}>Contacts</p>
+              {contactFields.length === 0 && <p className="text-[13px] text-gray-400 mb-2">No contacts yet.</p>}
+              {contactFields.map((f, i) => (
+                <div key={f.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] gap-3 items-end mb-3">
+                  <div><label className={lc}>Name</label><input {...register(`ownerContacts.${i}.name`)} className={ic(false)} /></div>
+                  <div><label className={lc}>Title</label><input {...register(`ownerContacts.${i}.title`)} className={ic(false)} /></div>
+                  <div><label className={lc}>Phone</label><input {...register(`ownerContacts.${i}.phone`)} className={ic(false)} /></div>
+                  <div><label className={lc}>Email</label><input type="email" {...register(`ownerContacts.${i}.email`)} className={ic(false)} /></div>
+                  <button type="button" onClick={() => removeContact(i)} className="text-[12px] text-red-500 hover:underline h-[38px]">Remove</button>
                 </div>
-                <div>
-                  <label className={lc}>Redelivery Date <span className="text-red-400">*</span></label>
-                  <input type="date"
-                    {...register('charterEndDate', { required: 'Required for chartered vessels' })}
-                    className={ic(errors.charterEndDate)} />
-                  {errors.charterEndDate && <p className={ec}>{errors.charterEndDate.message}</p>}
-                </div>
-              </>
-            )}
+              ))}
+              <button type="button" onClick={() => addContact({ name: '', title: '', phone: '', email: '' })} className="text-[12px] font-semibold text-teal-600 hover:underline">+ Add contact</button>
+            </div>
 
             <div className="sm:col-span-2">
               <label className={lc}>Ownership Description</label>
@@ -366,17 +374,8 @@ export default function VesselForm({ id = null }) {
           </div>
         </SectionCard>
 
-        {/* ── D. Financials & JV Partners ──────────────────────────────── */}
-        <SectionCard title="D. Financials & JV Partners">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-            <div>
-              <label className={lc}>Default Daily Hire Rate (USD) <span className="text-red-400">*</span></label>
-              <input type="number" min="0" step="0.01"
-                {...register('defaultDailyHireRate', { required: 'Default daily hire rate is required' })}
-                placeholder="e.g. 12500.00" className={ic(errors.defaultDailyHireRate)} />
-              {errors.defaultDailyHireRate && <p className={ec}>{errors.defaultDailyHireRate.message}</p>}
-            </div>
-          </div>
+        {/* ── D. JV Partners ───────────────────────────────────────────── */}
+        <SectionCard title="D. JV Partners">
           <p className={lc}>JV Partners Matrix <span className="text-red-400">*</span></p>
           <JvMatrix rows={shares} onChange={setShares} disabled={!!vesselData?.sharesLocked} />
         </SectionCard>

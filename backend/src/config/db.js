@@ -3,6 +3,10 @@
 const mongoose = require('mongoose');
 const logger   = require('../utils/logger');
 
+// Operations inside mongoose.connection.transaction() join the transaction automatically, so services can
+// wrap helpers that take no session argument (utils/voyageGenerator.js must stay untouched).
+mongoose.set('transactionAsyncLocalStorage', true);
+
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {

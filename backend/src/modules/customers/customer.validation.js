@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const { badRequest } = require('../../utils/responseHelper');
 const { isCurrencyCode, isEmail } = require('../../utils/masterValidators');
 const { CUSTOMER_TYPES } = require('./customer.model');
+const { bankAccountRules } = require('../../utils/bankAccounts');
 
 const handle = (req, res, next) => {
   const errors = validationResult(req);
@@ -13,6 +14,7 @@ const handle = (req, res, next) => {
 
 const nn = { nullable: true, checkFalsy: true };
 const shared = [
+  ...bankAccountRules,
   body('status').optional().isIn(['Active', 'Inactive']),
   body('defaultCurrency').optional(nn).custom(isCurrencyCode).withMessage('Default currency must be a 3-letter code'),
   body('arAccountId').optional(nn).isMongoId().withMessage('Invalid AR account'),

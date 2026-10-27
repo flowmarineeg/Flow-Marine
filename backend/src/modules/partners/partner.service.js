@@ -33,14 +33,14 @@ const getById = async (id) => {
 };
 
 const create = async (data, createdBy) => {
-  const doc = await Partner.create({ ...pickFields(Partner, data), createdBy });
+  const doc = await Partner.create({ ...pickFields(Partner, data, ['bank']), createdBy });
   return doc.toObject();
 };
 
 const update = async (id, data, updatedBy) => {
   const p = await Partner.findById(id);
   if (!p) throw new AppError(404, 'Partner not found', 'PARTNER_NOT_FOUND');
-  Object.assign(p, { ...pickFields(Partner, data), updatedBy });
+  Object.assign(p, { ...pickFields(Partner, data, ['bank']), updatedBy });
   await p.save();
   return p.toObject();
 };
@@ -78,7 +78,7 @@ const setShares = async (vesselId, shares, createdBy, { session: outer = null } 
   if (!(await Vessel.exists({ _id: vesselId }).session(outer))) throw new AppError(404, 'Vessel not found', 'VESSEL_NOT_FOUND');
 
   const clean = (shares || []).map((s) => ({
-    partnerId: s.partnerId, shareBp: s.shareBp, isLead: !!s.isLead,
+    partnerId: s.partnerId, shareBp: s.shareBp,
   }));
   validateShares(clean);
   await assertSharesUnlocked(vesselId, { session: outer });

@@ -23,7 +23,7 @@ export default function ContainerTypeForm({ item = null, onSuccess, onCancel }) 
   }, [item]);
 
   const size = watch('size');
-  const teuFactor = size ? (String(size).startsWith('20') ? 1 : 2) : null;
+  const teuFactor = size ? (String(size).startsWith('20') ? 1 : String(size).startsWith('45') ? 2.25 : 2) : null;
 
   const mutation = useMutation({
     mutationFn: (data) => {

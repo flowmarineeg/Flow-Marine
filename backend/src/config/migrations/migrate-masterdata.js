@@ -50,6 +50,21 @@ steps.push({
 });
 
 steps.push({
+  name: 'partners: single bank -> bankAccounts[0]',
+  run: async () => {
+    const Partner = require('../../modules/partners/partner.model');
+    let n = 0;
+    for (const p of await Partner.find({ 'bankAccounts.0': { $exists: false } })) {
+      const b = p.bank || {};
+      if (!(b.bankName || b.bankAddress || b.usdAccountNumber || b.usdIban || b.swiftCode)) continue;
+      n += 1;
+      if (!DRY) { p.bankAccounts = [{ bankName: b.bankName || 'Bank', swiftCode: b.swiftCode || null, bankAddress: b.bankAddress || null, usdAccountNumber: b.usdAccountNumber || null, usdIban: b.usdIban || null }]; await p.save(); }
+    }
+    return n;
+  },
+});
+
+steps.push({
   name: 'vessels: Chartered/Leased -> Time Charter',
   run: async () => {
     const Vessel = require('../../modules/vessels/vessel.model');
@@ -87,6 +102,34 @@ steps.push({
       await Service.collection.updateMany({ $or: [{ revenueAccountId: null }, { revenueAccountId: { $exists: false } }] }, { $set: { revenueAccountId: rev._id } });
       await Service.collection.updateMany({ applicability: { $exists: false } }, { $set: { applicability: 'SOC_ONLY' } });
       await Service.collection.updateMany({ isTaxable: { $exists: false } }, { $set: { isTaxable: false } });
+    }
+    return n;
+  },
+});
+
+steps.push({
+  name: 'invoiceServices: copy existing liner services once (name, applicability, taxable, revenue account)',
+  run: async () => {
+    const Service = require('../../modules/services/service.model');
+    const InvoiceService = require('../../modules/invoiceServices/invoiceService.model');
+    let n = 0;
+    for (const s of await Service.find({ revenueAccountId: { $ne: null } }).lean()) {
+      if (await InvoiceService.exists({ serviceName: s.serviceName })) continue;
+      n += 1;
+      if (!DRY) await InvoiceService.create({ serviceName: s.serviceName, applicability: s.applicability || 'SOC_ONLY', isTaxable: !!s.isTaxable, revenueAccountId: s.revenueAccountId, status: s.status || 'Active' });
+    }
+    return n;
+  },
+});
+
+steps.push({
+  name: 'vessels: charterHistory from the existing charter dates',
+  run: async () => {
+    const Vessel = require('../../modules/vessels/vessel.model');
+    let n = 0;
+    for (const v of await Vessel.find({ charterStartDate: { $ne: null }, 'charterHistory.0': { $exists: false } })) {
+      n += 1;
+      if (!DRY) { v.charterHistory = [{ charterPartyDate: v.charterStartDate, deliveryDate: v.charterStartDate, redeliveryDate: v.charterEndDate }]; await v.save(); }
     }
     return n;
   },

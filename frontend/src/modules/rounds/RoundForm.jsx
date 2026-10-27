@@ -14,6 +14,12 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
   const qc        = useQueryClient();
   const isEditing = !!item;
 
+  // Mirrors the backend: a new round starts Planned/Active; an existing one moves along the transition table.
+  const NEXT_STATUS = { Planned: ['Active', 'Cancelled'], Active: ['Completed', 'Cancelled'], Completed: [], Cancelled: [] };
+  const statusOptions = isEditing
+    ? [item.status, ...(NEXT_STATUS[item.status] || [])]
+    : ROUND_STATUS.filter(s => s === 'Planned' || s === 'Active');
+
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
     defaultValues: {
       serviceId: item?.serviceId?._id || item?.serviceId || '',
@@ -144,8 +150,9 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
       <div>
         <label className={labelCls}>Status</label>
         <select {...register('status')} className={`${inputCls(false)} cursor-pointer`}>
-          {ROUND_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
+          {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        {!isEditing && <p className="mt-1 text-[11px] text-gray-400">A new round starts as Planned or Active; it is completed or cancelled later.</p>}
       </div>
 
       {/* Notes */}

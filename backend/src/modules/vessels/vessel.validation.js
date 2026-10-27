@@ -16,6 +16,16 @@ const nn = { nullable: true, checkFalsy: true };
 // Master-data fields shared by create and update. Required-ness (callSign, capacity, hire rate) is enforced in the
 // service against the merged record, so a partial update of an older vessel is judged on its final state.
 const masterFields = [
+  body('ownerContacts').optional().isArray({ max: 20 }).withMessage('ownerContacts must be an array (max 20)'),
+  body('ownerContacts.*.name').isString().trim().notEmpty().withMessage('Each owner contact needs a name'),
+  body('ownerContacts.*.email').optional(nn).isEmail().withMessage('Invalid contact email'),
+  body('ownerContacts.*.phone').optional(nn).isString().trim().isLength({ max: 40 }),
+  body('ownerContacts.*.title').optional(nn).isString().trim().isLength({ max: 100 }),
+  body('charterHistory').optional().isArray({ max: 200 }).withMessage('charterHistory must be an array'),
+  body('charterHistory.*.charterPartyDate').optional(nn).isISO8601().withMessage('Invalid charter party date'),
+  body('charterHistory.*.deliveryDate').isISO8601().withMessage('Each charter entry needs a delivery date'),
+  body('charterHistory.*.redeliveryDate').isISO8601().withMessage('Each charter entry needs a redelivery date'),
+  body('charterHistory.*.deliveryPrice').optional(nn).isFloat({ min: 0 }).withMessage('Delivery price must be a positive number'),
   body('reeferPlugs').optional(nn).isInt({ min: 0 }).withMessage('Reefer plugs must be a whole number'),
   body('mainEngineFuelType').optional(nn).trim().isLength({ max: 40 }),
   body('auxEngineFuelType').optional(nn).trim().isLength({ max: 40 }),
@@ -26,7 +36,6 @@ const masterFields = [
   body('shares').optional().isArray().withMessage('shares must be an array'),
   body('shares.*.partnerId').optional().isMongoId().withMessage('Invalid partnerId'),
   body('shares.*.shareBp').optional().isInt({ min: 1, max: 10000 }).withMessage('shareBp must be an integer 1-10000').toInt(),
-  body('shares.*.isLead').optional().isBoolean().toBoolean(),
 ];
 
 const validateCreate = [

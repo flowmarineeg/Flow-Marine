@@ -373,6 +373,33 @@ export default function VesselDetail({ id }) {
                   <p className="text-[13px] text-gray-600 leading-relaxed">{vessel.ownershipDescription}</p>
                 </div>
               )}
+              {(vessel.ownerContacts || []).length > 0 && (
+                <div className="col-span-2 sm:col-span-3">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Owner Contacts</p>
+                  <div className="flex flex-col gap-1 text-[13px] text-gray-600">
+                    {vessel.ownerContacts.map(c => (
+                      <p key={c._id || c.name}>{c.name}{c.title ? ` (${c.title})` : ''}{c.phone ? ` · ${c.phone}` : ''}{c.email ? ` · ${c.email}` : ''}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(vessel.charterHistory || []).length > 0 && (
+                <div className="col-span-2 sm:col-span-3 overflow-x-auto">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Charter Party History</p>
+                  <table className="w-full text-[12px] border-collapse">
+                    <thead><tr className="text-left text-gray-400"><th className="py-1 pr-3">C/P date</th><th className="pr-3">Delivery</th><th className="pr-3">Delivery price</th><th>Redelivery</th></tr></thead>
+                    <tbody>
+                      {[...vessel.charterHistory].reverse().map((e, i) => (
+                        <tr key={e._id} className={`border-t border-gray-100 ${i === 0 ? 'font-medium text-gray-800' : 'text-gray-600'}`}>
+                          <td className="py-1 pr-3">{e.charterPartyDate ? String(e.charterPartyDate).split('T')[0] : '—'}</td>
+                          <td className="pr-3">{String(e.deliveryDate).split('T')[0]}</td><td className="pr-3">{e.deliveryPrice ? `${e.deliveryPrice}` : '—'}</td>
+                          <td>{String(e.redeliveryDate).split('T')[0]}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Dimensions & Tonnage */}

@@ -45,18 +45,18 @@ const ACTION_COLORS = {
 const MODULE_LABELS = {
   users: 'Users', roles: 'Roles', vessels: 'Vessels', agents: 'Agents', customers: 'Customers',
   locations: 'Locations', containerTypes: 'Container Types', expenseTypes: 'Expense Types',
-  services: 'Services', routes: 'Routes', rounds: 'Rounds', voyages: 'Voyages',
+  services: 'Routes (liner services)', routes: 'Route legs', rounds: 'Rounds', voyages: 'Voyages',
   bookings: 'Bookings', expenses: 'Expenses', invoices: 'Invoices',
   tracking: 'Tracking', reports: 'Reports', export: 'Export', auditLogs: 'Audit Logs',
-  partners: 'Partners', ledger: 'Ledger',
+  partners: 'Partners', ledger: 'Ledger', accounting: 'Accounting (chart of accounts)', invoiceServices: 'Invoice Services',
 };
 
 const MODULE_GROUPS = {
   'Core':       ['users', 'roles', 'auditLogs'],
   'Operations': ['rounds', 'voyages', 'bookings', 'expenses', 'invoices', 'tracking'],
-  'Masters':    ['vessels', 'agents', 'customers', 'locations', 'containerTypes', 'expenseTypes', 'services', 'routes'],
+  'Masters':    ['vessels', 'agents', 'customers', 'locations', 'containerTypes', 'expenseTypes', 'invoiceServices', 'services', 'routes'],
   'Analytics':  ['reports', 'export'],
-  'Accounting (V2)': ['partners', 'ledger'],
+  'Accounting (V2)': ['partners', 'ledger', 'accounting'],
 };
 
 export default function PermissionMatrix({ roleId }) {

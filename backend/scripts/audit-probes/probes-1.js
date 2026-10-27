@@ -106,7 +106,7 @@ const rec = (id, finding, detail) => { out.push({ id, finding, detail }); consol
   // P-H: existing vessel with rounds can never receive partner shares
   {
     const pA = await m.Partner.create({ code: 'PA', name: 'A' });
-    try { await m.psvc.setShares(vessel._id, [{ partnerId: pA._id, shareBp: 10000, isLead: true }], U); rec('P-H', 'not reproduced', 'shares saved'); }
+    try { await m.psvc.setShares(vessel._id, [{ partnerId: pA._id, shareBp: 10000 }], U); rec('P-H', 'not reproduced', 'shares saved'); }
     catch (e) { rec('P-H', e.code === 'VESSEL_SHARES_LOCKED' ? 'CONFIRMED: a vessel that already has Rounds can never get shares via the API' : 'other', e.code); }
   }
 

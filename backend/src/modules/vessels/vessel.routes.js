@@ -25,7 +25,7 @@ router.put('/:id/partners',    rbac('partners', 'manage'), audit('vessels'), val
   try {
     const before = await partnerSvc.getShares(req.params.id);
     const saved = await partnerSvc.setShares(req.params.id, req.body.shares, req.user._id);
-    recordMoneyEvent({ user: req.user, module: 'vessels', event: 'vessel.shares.set', recordId: req.params.id, before: { shares: before.map((s) => ({ partnerId: s.partnerId?._id, shareBp: s.shareBp, isLead: s.isLead })) }, after: { shares: saved.map((s) => ({ partnerId: s.partnerId?._id, shareBp: s.shareBp, isLead: s.isLead })) } });
+    recordMoneyEvent({ user: req.user, module: 'vessels', event: 'vessel.shares.set', recordId: req.params.id, before: { shares: before.map((s) => ({ partnerId: s.partnerId?._id, shareBp: s.shareBp })) }, after: { shares: saved.map((s) => ({ partnerId: s.partnerId?._id, shareBp: s.shareBp })) } });
     return success(res, saved, 'Partner shares saved');
   } catch (e) { next(e); }
 });

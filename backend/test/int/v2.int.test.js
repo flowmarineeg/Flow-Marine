@@ -147,11 +147,10 @@ describe('Version 2 integration (real MongoDB replica set)', { skip: SKIP }, () 
       assert.equal((await m.ledger.trialBalance({})).balanced, true);
     });
 
-    it('vessel shares: must total 100%, one lead, locked once a Round is settled (Final)', async () => {
-      const s = (p, bp, lead = false) => ({ partnerId: p._id, shareBp: bp, isLead: lead });
-      await rejectsWith(m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000, true), s(W.pB, 4000)], USER_ID), 'SHARES_NOT_100');
-      await rejectsWith(m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000, true), s(W.pB, 5000, true)], USER_ID), 'LEAD_COUNT_INVALID');
-      const saved = await m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000, true), s(W.pB, 3000), s(W.pC, 2000)], USER_ID);
+    it('vessel shares: must total 100%, locked once a Round is settled (Final)', async () => {
+      const s = (p, bp) => ({ partnerId: p._id, shareBp: bp });
+      await rejectsWith(m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000), s(W.pB, 4000)], USER_ID), 'SHARES_NOT_100');
+      const saved = await m.partnerSvc.setShares(W.shareVessel._id, [s(W.pA, 5000), s(W.pB, 3000), s(W.pC, 2000)], USER_ID);
       assert.equal(saved.length, 3);
       const lockRound = await mkRound(W.shareVessel._id);
       await m.Round.updateOne({ _id: lockRound.round._id }, { $set: { v2: true } });
@@ -360,7 +359,7 @@ describe('Version 2 integration (real MongoDB replica set)', { skip: SKIP }, () 
   // ───────────────────────── Sprint 053 ─────────────────────────
   describe('Sprint 053 - partner settlement and round closing', () => {
     let R; let st; let transfers;
-    const sh = (p, bp, lead = false) => ({ partnerId: p._id, shareBp: bp, isLead: lead });
+    const sh = (p, bp) => ({ partnerId: p._id, shareBp: bp });
     const jp = (lines, source, roundId, memo) => m.ledger.post({ date: new Date(), sourceType: source, roundId, currency: 'USD', memo, postedBy: USER_ID }, lines);
 
     before(async () => {

@@ -55,6 +55,7 @@ app.use('/api/v1/expense-types', require('./modules/expenseTypes/expenseType.rou
 app.use('/api/v1/export', require('./modules/export/export.routes'));
 app.use('/api/v1/locations', require('./modules/locations/location.routes'));
 app.use('/api/v1/services', require('./modules/services/service.routes'));
+app.use('/api/v1/invoice-services', require('./modules/invoiceServices/invoiceService.routes')); // master data 2026-10-27
 app.use('/api/v1/rounds', require('./modules/rounds/round.routes'));
 app.use('/api/v1/voyages', require('./modules/voyages/voyage.routes'));
 app.use('/api/v1/bookings', require('./modules/bookings/booking.routes'));
@@ -66,6 +67,7 @@ app.use('/api/v1/dashboard', require('./modules/dashboard/dashboard.routes'));
 app.use('/api/v1/capacity', require('./modules/capacity/capacity.routes'));
 app.use('/api/v1/partners', require('./modules/partners/partner.routes'));   // Sprint050 V2
 app.use('/api/v1/ledger', require('./modules/ledger/ledger.routes'));       // Sprint050 V2
+app.use('/api/v1/accounting', require('./modules/accounting/accounting.routes')); // master data 2026-10-27
 app.use('/api/v1/agent-accounts', require('./modules/agentAccounts/agentAccounts.routes')); // Sprint052 V2
 app.use('/api/v1/round-accounting', require('./modules/partnerSettlement/partnerSettlement.routes')); // Sprint053 V2
 

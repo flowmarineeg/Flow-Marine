@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { customersService, CUSTOMER_TYPES } from '@/services/customers.service';
 import { accountsService } from '@/services/accounts.service';
 import Button from '@/components/ui/Button';
+import SearchSelect from '@/components/ui/SearchSelect';
+import { locationsService } from '@/services/locations.service';
+import BankAccountsRows, { cleanBankAccounts } from '@/components/forms/BankAccountsRows';
 
 const LABEL = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
 const INPUT = 'w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:border-teal-500 focus:ring-teal-500/10 transition';
@@ -15,7 +18,7 @@ const SECTION = 'text-[12px] font-semibold text-gray-600 uppercase tracking-wide
 
 const EMPTY = {
   customerCode: '', customerName: '', nameAr: '', customerType: '', country: '', address: '',
-  registrationNumber: '', taxId: '', defaultCurrency: 'USD', arAccountId: '', status: 'Active', contacts: [],
+  registrationNumber: '', taxId: '', defaultCurrency: 'USD', arAccountId: '', status: 'Active', contacts: [], bankAccounts: [],
 };
 
 const nul = (v) => (v === '' || v === undefined ? null : v);
@@ -24,6 +27,13 @@ export default function CustomerForm({ item = null, onSuccess, onCancel }) {
   const isEdit = !!item;
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm({ defaultValues: EMPTY });
   const { fields, append, remove } = useFieldArray({ control, name: 'contacts' });
+
+  const { data: countryList = [] } = useQuery({
+    queryKey: ['locationSelect', 'countries'],
+    queryFn: () => locationsService.getCountries().then(r => r.data.data),
+  });
+  // stored as the country name; an older free-text value that is not in the list stays selectable
+  const countryOptions = (value) => { const base = countryList.map(c => ({ value: c.name, label: c.name })); return value && !base.some(o => o.value === value) ? [{ value, label: value }, ...base] : base; };
 
   const { data: arAccounts = [] } = useQuery({
     queryKey: ['accounts', 'receivable'],
@@ -37,6 +47,7 @@ export default function CustomerForm({ item = null, onSuccess, onCancel }) {
       registrationNumber: item.registrationNumber || '', taxId: item.taxId || '',
       arAccountId: item.arAccountId?._id || item.arAccountId || '',
       contacts: (item.contacts || []).map(c => ({ name: c.name || '', title: c.title || '', email: c.email || '', phone: c.phone || '' })),
+      bankAccounts: (item.bankAccounts || []).map(b => ({ bankName: b.bankName || '', swiftCode: b.swiftCode || '', bankAddress: b.bankAddress || '', usdAccountNumber: b.usdAccountNumber || '', usdIban: b.usdIban || '' })),
     } : EMPTY);
   }, [item]);
 
@@ -47,6 +58,7 @@ export default function CustomerForm({ item = null, onSuccess, onCancel }) {
         country: nul(d.country), address: nul(d.address), registrationNumber: nul(d.registrationNumber), taxId: nul(d.taxId),
         defaultCurrency: (d.defaultCurrency || 'USD').toUpperCase(), arAccountId: nul(d.arAccountId), status: d.status,
         contacts: d.contacts.filter(c => c.name?.trim()).map(c => ({ name: c.name.trim(), title: nul(c.title), email: nul(c.email), phone: nul(c.phone) })),
+        bankAccounts: cleanBankAccounts(d.bankAccounts),
       };
       return isEdit ? customersService.update(item._id, payload) : customersService.create(payload);
     },
@@ -80,7 +92,9 @@ export default function CustomerForm({ item = null, onSuccess, onCancel }) {
         <div><label className={LABEL}>Customer Name (AR)</label><input dir="rtl" {...register('nameAr')} className={INPUT} /></div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className={LABEL}>Country</label><input {...register('country')} className={INPUT} /></div>
+        <div><Controller name="country" control={control} render={({ field }) => (
+          <SearchSelect label="Country" value={field.value || ''} onChange={field.onChange} options={countryOptions(field.value)} placeholder="Select country…" searchPlaceholder="Search country…" />
+        )} /></div>
         <div><label className={LABEL}>Default Currency</label><input maxLength={3} {...register('defaultCurrency')} className={`${INPUT} uppercase`} /></div>
       </div>
       <div><label className={LABEL}>Address</label><input {...register('address')} className={INPUT} /></div>
@@ -113,6 +127,9 @@ export default function CustomerForm({ item = null, onSuccess, onCancel }) {
         </div>
       ))}
       <div><Button type="button" variant="secondary" onClick={() => append({ name: '', title: '', email: '', phone: '' })}>+ Add contact</Button></div>
+
+      <p className={SECTION}>Bank Details</p>
+      <BankAccountsRows control={control} register={register} errors={errors} />
 
       <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
         <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>

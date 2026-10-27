@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import SearchSelect from '@/components/ui/SearchSelect';
 import { routesService }    from '@/services/routes.service';
 import { locationsService } from '@/services/locations.service';
 import { agentsService }    from '@/services/agents.service';
@@ -44,9 +45,9 @@ function LegRow({ leg, index, total, onChange, onRemove, disabled, agents }) {
   });
 
   const update       = (field, val) => onChange(index, { ...leg, [field]: val });
-  const handleCountry = (e) => onChange(index, { ...leg, countryId: e.target.value, cityId: '', portId: '', terminalId: '' });
-  const handleCity    = (e) => onChange(index, { ...leg, cityId: e.target.value, portId: '', terminalId: '' });
-  const handlePort    = (e) => onChange(index, { ...leg, portId: e.target.value, terminalId: '' });
+  const handleCountry = (v) => onChange(index, { ...leg, countryId: v, cityId: '', portId: '', terminalId: '' });
+  const handleCity    = (v) => onChange(index, { ...leg, cityId: v, portId: '', terminalId: '' });
+  const handlePort    = (v) => onChange(index, { ...leg, portId: v, terminalId: '' });
 
   return (
     <div className="relative flex gap-3 items-start bg-white border border-gray-200 rounded-xl p-4 hover:border-teal-300 hover:shadow-sm transition-all group">
@@ -64,12 +65,8 @@ function LegRow({ leg, index, total, onChange, onRemove, disabled, agents }) {
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             Country <span className="text-red-400">*</span>
           </label>
-          <select value={leg.countryId} onChange={handleCountry} disabled={disabled} className={sc}>
-            <option value="">Country…</option>
-            {(countries || []).map(c => (
-              <option key={c._id} value={c._id}>{c.name} ({c.code})</option>
-            ))}
-          </select>
+          <SearchSelect value={leg.countryId} onChange={handleCountry} disabled={disabled} placeholder="Country…" searchPlaceholder="Search country…"
+            options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))} />
         </div>
 
         {/* City */}
@@ -77,12 +74,8 @@ function LegRow({ leg, index, total, onChange, onRemove, disabled, agents }) {
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             City <span className="text-red-400">*</span>
           </label>
-          <select value={leg.cityId} onChange={handleCity} disabled={disabled || !leg.countryId} className={sc}>
-            <option value="">City…</option>
-            {(cities || []).map(c => (
-              <option key={c._id} value={c._id}>{c.name}</option>
-            ))}
-          </select>
+          <SearchSelect value={leg.cityId} onChange={handleCity} disabled={disabled || !leg.countryId} placeholder="City…" searchPlaceholder="Search city…"
+            options={(cities || []).map(c => ({ value: c._id, label: c.name }))} />
         </div>
 
         {/* Port */}
@@ -90,12 +83,8 @@ function LegRow({ leg, index, total, onChange, onRemove, disabled, agents }) {
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             Port <span className="text-red-400">*</span>
           </label>
-          <select value={leg.portId} onChange={handlePort} disabled={disabled || !leg.cityId} className={sc}>
-            <option value="">Port…</option>
-            {(ports || []).map(p => (
-              <option key={p._id} value={p._id}>{p.name}</option>
-            ))}
-          </select>
+          <SearchSelect value={leg.portId} onChange={handlePort} disabled={disabled || !leg.cityId} placeholder="Port…" searchPlaceholder="Search port…"
+            options={(ports || []).map(p => ({ value: p._id, label: p.name }))} />
         </div>
 
         {/* Terminal */}

@@ -123,6 +123,7 @@ const create = async (data, createdBy) => {
   if (['Cancelled', 'Completed'].includes(voyage.status)) {
     throw { status: 400, message: `Cannot book on a voyage with status "${voyage.status}"` };
   }
+  await lock.assertRoundBookable(voyage);
 
   const bookingNumber = await nextNumber('booking');
   // Sprint 024: each L2 booking = ONE container; totalFreight = freightRate (flat per container)

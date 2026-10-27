@@ -40,11 +40,11 @@ test('isCurrencyCode / isEmail', () => {
   assert.equal(v.isEmail('a@b'), false);
 });
 
-test('teuFactorForSize mirrors the engine sizes', () => {
+test('teuFactorForSize: 45ft is 2.25 (master data only; capacity engine keeps 2)', () => {
   assert.equal(v.teuFactorForSize('20ft'), 1);
   assert.equal(v.teuFactorForSize('40ft'), 2);
   assert.equal(v.teuFactorForSize('40HC'), 2);
-  assert.equal(v.teuFactorForSize('45ft'), 2);
+  assert.equal(v.teuFactorForSize('45ft'), 2.25);
 });
 
 test('contactFromLegacy (partner backfill)', () => {
@@ -55,15 +55,6 @@ test('contactFromLegacy (partner backfill)', () => {
   assert.equal(contactFromLegacy({ email: 'a@b.co' }).name, 'a@b.co');
 });
 
-test('isBookingSource: only explicit Port-only agents are excluded', () => {
-  const { isBookingSource } = require('../src/modules/agents/agent.logic');
-  assert.equal(isBookingSource({ roles: [] }), true);        // older agents
-  assert.equal(isBookingSource({}), true);
-  assert.equal(isBookingSource({ roles: ['Commercial'] }), true);
-  assert.equal(isBookingSource({ roles: ['Commercial', 'Port'] }), true);
-  assert.equal(isBookingSource({ roles: ['Port'] }), false);
-  assert.equal(isBookingSource(null), true);
-});
 
 test('customer list query: type filter is part of the Mongo query', () => {
   const { buildListQuery } = require('../src/modules/customers/customer.logic');

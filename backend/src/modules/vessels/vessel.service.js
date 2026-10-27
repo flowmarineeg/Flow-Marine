@@ -20,8 +20,20 @@ const deleteParticularsFile = (url) => {
 };
 
 /** API body -> storable fields: decimal hire rate becomes integer minor units. */
-const prepare = (data) => {
+const prepare = (data, by = null, existingHistory = []) => {
   const d = { ...data };
+  if ('charterHistory' in d) {
+    let entries;
+    try { entries = L.prepareCharterHistory(d.charterHistory); } catch (e) { throw { status: 400, message: e.message }; }
+    const old = new Map((existingHistory || []).map((e) => [String(e._id), e]));
+    d.charterHistory = entries.map((e) => {
+      const prev = e._id && old.get(String(e._id));
+      return prev ? { ...e, addedBy: prev.addedBy, createdAt: prev.createdAt } : { ...e, _id: undefined, addedBy: by };
+    });
+    const last = L.latestCharter(d.charterHistory);   // newest entry drives the current dates
+    d.charterStartDate = last ? last.deliveryDate : null;
+    d.charterEndDate = last ? last.redeliveryDate : null;
+  }
   if ('defaultDailyHireRate' in d) {
     try { d.defaultDailyHireRateMinor = L.hireRateToMinor(d.defaultDailyHireRate); } catch (_) {
       throw { status: 400, message: 'Default daily hire rate must be a valid amount' };
@@ -42,7 +54,7 @@ const assertMasterRules = (merged) => {
 /** Validates a JV shares payload before any write (throws AppError with the share error codes). */
 const checkShares = (shares) => {
   if (shares === undefined) return null;
-  const clean = (shares || []).map((s) => ({ partnerId: s.partnerId, shareBp: s.shareBp, isLead: !!s.isLead }));
+  const clean = (shares || []).map((s) => ({ partnerId: s.partnerId, shareBp: s.shareBp }));
   validateShares(clean);
   return clean;
 };
@@ -87,7 +99,7 @@ const create = async (data, createdBy) => {
   if (imoExists) throw { status: 400, message: `IMO number "${data.imoNumber}" already registered` };
 
   const { shares, ...rest } = data;
-  const fields = pickFields(Vessel, prepare(rest), SERVER_OWNED);
+  const fields = pickFields(Vessel, prepare(rest, createdBy), SERVER_OWNED);
   assertMasterRules(fields);
   const cleanShares = checkShares(shares);
 
@@ -116,7 +128,7 @@ const update = async (id, data, updatedBy) => {
   }
 
   const { shares, ...rest } = data;
-  const fields = pickFields(Vessel, prepare(rest), SERVER_OWNED);
+  const fields = pickFields(Vessel, prepare(rest, updatedBy, vessel.charterHistory), SERVER_OWNED);
   assertMasterRules({ ...vessel.toObject(), ...fields });
   const cleanShares = checkShares(shares);
 

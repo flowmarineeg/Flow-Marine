@@ -3,6 +3,8 @@
 const mongoose = require('mongoose');
 const { AGENT_STATUS } = require('../../config/constants');
 
+const { bankAccountSchema } = require('../../utils/bankAccounts');
+
 const contactSchema = new mongoose.Schema({
   contactPerson: { type: String, trim: true, default: null },
   mobile:        { type: String, trim: true, default: null },
@@ -25,6 +27,9 @@ const agentSchema = new mongoose.Schema(
     port:      { type: String, trim: true, default: null },
     address:   { type: String, trim: true, default: null },
     contacts:  { type: [contactSchema], default: [] },
+    registrationNumber: { type: String, trim: true, default: null, maxlength: 60 },
+    taxId:     { type: String, trim: true, default: null, maxlength: 60 },
+    bankAccounts: { type: [bankAccountSchema], default: [] },
     status:    { type: String, enum: AGENT_STATUS, default: 'Active' },
     // Sprint 052 V2 (additive). Old agents read as a plain commercial 'Agent'.
     ledgerVersion: { type: Number, default: 0 }, // bumped to serialise agent cash movements (audit H2)

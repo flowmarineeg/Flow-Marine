@@ -52,11 +52,11 @@ export default function ServiceList() {
   return (
     <div className="animate-fadeIn">
       <PageHeader
-        title="Services"
-        subtitle="Manage shipping services and their routes"
+        title="Routes"
+        subtitle="Liner services, their port-call routes and rounds"
         action={
           can('services', 'create') && (
-            <Button onClick={() => setModal('create')}>+ New Service</Button>
+            <Button onClick={() => setModal('create')}>+ New Route</Button>
           )
         }
       />
@@ -85,15 +85,15 @@ export default function ServiceList() {
           <LoadingSpinner fullPage />
         ) : services.length === 0 ? (
           <EmptyState
-            title="No services found"
-            message="Create your first service to define shipping lanes and routes."
+            title="No routes found"
+            message="Create your first liner service to define its route and rounds."
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
-                  {['Code', 'Name', 'Default Vessel', 'Port Calls', 'Applies To', 'Taxable', 'Revenue Acct', 'Status', 'Actions'].map(h => (
+                  {['Code', 'Name', 'Default Vessel', 'Port Calls', 'Rounds', 'Status', 'Actions'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -144,14 +144,9 @@ export default function ServiceList() {
                         </span>
                       )}
                     </td>
-
-                    {/* Invoice setup */}
-                    <td><span className="text-xs text-gray-600">{{ SOC_ONLY: 'SOC', COC_ONLY: 'COC', BOTH: 'SOC & COC' }[svc.applicability] || 'SOC'}</span></td>
-                    <td><span className="text-xs text-gray-600">{svc.isTaxable ? 'Yes' : 'No'}</span></td>
+                    {/* Rounds */}
                     <td>
-                      {svc.revenueAccountId?.code
-                        ? <span className="mono text-xs text-gray-600">{svc.revenueAccountId.code}</span>
-                        : <span className="text-xs text-amber-500">Not set</span>}
+                      <button onClick={() => router.push(`/routes/${svc._id}?tab=rounds`)} className="text-xs font-medium text-teal-600 hover:text-teal-800 transition">View rounds</button>
                     </td>
 
                     {/* Status */}
@@ -161,13 +156,13 @@ export default function ServiceList() {
                     <td>
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={() => router.push(`/services/${svc._id}`)}
+                          onClick={() => router.push(`/routes/${svc._id}`)}
                           className="text-xs font-medium text-teal-600 hover:text-teal-800 transition"
                         >
                           {can('services', 'update') ? 'Edit' : 'View'}
                         </button>
                         <button
-                          onClick={() => router.push(`/services/${svc._id}?tab=route`)}
+                          onClick={() => router.push(`/routes/${svc._id}?tab=route`)}
                           className="text-xs font-medium text-gray-500 hover:text-gray-800 transition"
                         >
                           Route
@@ -208,7 +203,7 @@ export default function ServiceList() {
       <Modal
         open={!!modal}
         onClose={() => setModal(null)}
-        title={modal === 'create' ? 'New Service' : 'Edit Service'}
+        title={modal === 'create' ? 'New Route' : 'Edit Route'}
         size="md"
       >
         {modal && (

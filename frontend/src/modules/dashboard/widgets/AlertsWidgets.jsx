@@ -74,7 +74,7 @@ const ACTION_STYLES = {
   LOGOUT: { bg: '#F3F4F6', color: '#374151', label: 'Logout'  },
 };
 const MODULE_ROUTES = {
-  services:'/services', rounds:'/rounds', voyages:'/voyages',
+  services:'/routes', rounds:'/rounds', voyages:'/voyages',
   bookings:'/bookings', expenses:'/expenses', invoices:'/invoices',
   vessels:'/vessels', agents:'/agents', users:'/users',
 };

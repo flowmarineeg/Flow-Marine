@@ -4,16 +4,19 @@ const { body, validationResult } = require('express-validator');
 const { badRequest } = require('../../utils/responseHelper');
 const { AGENT_STATUS } = require('../../config/constants');
 const { isCurrencyCode } = require('../../utils/masterValidators');
+const { bankAccountRules } = require('../../utils/bankAccounts');
 
 const nn = { nullable: true, checkFalsy: true };
 const masterFields = [
+  ...bankAccountRules,
+  body('registrationNumber').optional(nn).trim().isLength({ max: 60 }),
+  body('taxId').optional(nn).trim().isLength({ max: 60 }),
+  body('receivableAccountId').optional(nn).isMongoId().withMessage('Invalid AR account'),
   body('nameAr').optional(nn).trim().isLength({ max: 100 }),
   body('defaultCurrency').optional(nn).custom(isCurrencyCode).withMessage('Default currency must be a 3-letter code'),
   body('portId').optional(nn).isMongoId().withMessage('Invalid port'),
   body('countryId').optional(nn).isMongoId().withMessage('Invalid country'),
   body('cityId').optional(nn).isMongoId().withMessage('Invalid city'),
-  body('roles').optional().isArray().withMessage('roles must be an array'),
-  body('roles.*').optional().isIn(['Commercial', 'Port']).withMessage('Role must be Commercial or Port'),
 ];
 
 const handle = (req, res, next) => {

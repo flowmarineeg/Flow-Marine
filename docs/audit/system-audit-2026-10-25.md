@@ -100,7 +100,7 @@ Unit tests (`npm test`, 35) passed after the changes; the touched modules were l
 Idempotency keys on money endpoints other than netting; partial money-audit (`recordMoneyEvent`) coverage; read-permission exposure of SOA / JV data to anyone with `agents:read` (previously M5); invoice number consumed at draft (M10). See `docs/archive/2026-10-24/audit/` and `sprints/archive/v2-code-audit-2026-10-21.md` for the original wording.
 
 ## Things checked and found sound
-Ledger write path is single-sourced (`LedgerService.post/reverse`) and models reject update/delete; partial unique indexes (`one_live_line_per_item`, `reversesEntryId`, `pdaExpenseId`, `one_lead_per_vessel`) are present; `assertRoundOpenTx` runs inside `post`; auth checks `tokenVersion`; CSRF is stateless HMAC with timing-safe compare; regex inputs go through `escapeRegex`; audit logging is fire-and-forget; booking POL/POD are server-derived; uploads verify magic bytes.
+Ledger write path is single-sourced (`LedgerService.post/reverse`) and models reject update/delete; partial unique indexes (`one_live_line_per_item`, `reversesEntryId`, `pdaExpenseId`) are present; `assertRoundOpenTx` runs inside `post`; auth checks `tokenVersion`; CSRF is stateless HMAC with timing-safe compare; regex inputs go through `escapeRegex`; audit logging is fire-and-forget; booking POL/POD are server-derived; uploads verify magic bytes.
 
 ## Suggested order of work
 1. Run `npm run test:int` on a local replica set; fix anything the 2026-10-25 changes broke.

@@ -76,6 +76,27 @@ const DEPENDENTS = {
     { model: 'AgentSettlementStatement', field: 'agentId', label: 'settlement statements' },
     { model: 'JournalEntryLine', field: 'agentId', label: 'ledger lines' },
     { model: 'ManualBooking',    field: 'agentId', label: 'estimated bookings' },
+    { model: 'Booking',          field: 'agentId', label: 'bookings' },
+    { model: 'RouteLeg',         field: 'agentId', label: 'route legs' },
+    { model: 'Round',            field: 'routeSnapshot.legs.agentId', label: 'rounds (route snapshot)' },
+  ],
+  // RV-28: a service is referenced by rounds of ANY status, their voyages and tracking. Its own
+  // Route/RouteLeg belong to the service and are removed with it, so they are not blockers.
+  service: [
+    { model: 'Round',            field: 'serviceId', label: 'rounds' },
+    { model: 'Voyage',           field: 'serviceId', label: 'voyages' },
+    { model: 'TrackingHistory',  field: 'serviceId', label: 'tracking records' },
+  ],
+  // RV-31: a port used by any voyage (generated or manual), booking or round snapshot must stay. Terminals and
+  // current route legs are still checked by location.service.deletePort with their own messages.
+  port: [
+    { model: 'Voyage',           field: 'polId', label: 'voyages (loading port)' },
+    { model: 'Voyage',           field: 'podId', label: 'voyages (discharge port)' },
+    { model: 'Booking',          field: 'polId', label: 'bookings (loading port)' },
+    { model: 'Booking',          field: 'podId', label: 'bookings (discharge port)' },
+    { model: 'ManualBooking',    field: 'polId', label: 'estimated bookings (loading port)' },
+    { model: 'ManualBooking',    field: 'podId', label: 'estimated bookings (discharge port)' },
+    { model: 'Round',            field: 'routeSnapshot.legs.portId', label: 'rounds (route snapshot)' },
   ],
 };
 

@@ -66,7 +66,7 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   const countries = list(await admin.get('/locations/countries?limit=100'));
   const cities = list(await admin.get('/locations/cities?limit=100'));
   check('seeded countries exist', countries.length > 0);
-  const country = countries[0]; const city = cities.find((c) => String(c.countryId?._id || c.countryId) === String(country._id)) || cities[0];
+  const city = cities[0]; const country = countries.find((c) => String(c._id) === String(city.countryId?._id || city.countryId)) || countries[0]; // pick a city first: the library seed adds thousands of cities
   const cr = await admin.put(`/locations/countries/${country._id}`, { localCurrency: 'usd' });
   check('country localCurrency saved upper-cased', cr.status === 200 && cr.data?.localCurrency === 'USD', brief(cr));
   expectStatus('country localCurrency "US" rejected', await admin.put(`/locations/countries/${country._id}`, { localCurrency: 'US' }), 400);
@@ -94,36 +94,39 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   const partnerBody = {
     code: `E2P${RUN}`, name: `E2E Partner ${RUN}`, nameAr: 'شريك', country: 'Egypt', baseCurrency: 'usd', taxId: 'T-1',
     contacts: [{ name: 'A', title: 'CFO', email: 'a@x.com', phone: '1' }, { name: 'B', email: 'b@x.com' }],
-    bank: { bankName: 'Test Bank', usdAccountNumber: '123', usdIban: 'GB82WEST12345698765432', swiftCode: 'DEUTDEFF' },
+    bankAccounts: [{ bankName: 'Test Bank', usdAccountNumber: '123', usdIban: 'GB82WEST12345698765432', swiftCode: 'DEUTDEFF' }, { bankName: 'Second Bank' }],
   };
   const p = await admin.post('/partners', partnerBody);
   expectStatus('partner created', p, 201);
   check('two contacts stored', p.data?.contacts?.length === 2);
   check('baseCurrency upper-cased', p.data?.baseCurrency === 'USD');
-  expectStatus('IBAN with bad checksum rejected', await admin.post('/partners', { ...partnerBody, code: `E2Q${RUN}`, bank: { usdIban: 'GB82WEST12345698765433' } }), 400);
+  expectStatus('IBAN with bad checksum rejected', await admin.post('/partners', { ...partnerBody, code: `E2Q${RUN}`, bankAccounts: [{ bankName: 'X', usdIban: 'GB82WEST12345698765433' }] }), 400);
   expectStatus('invalid contact email rejected', await admin.post('/partners', { ...partnerBody, code: `E2R${RUN}`, contacts: [{ name: 'X', email: 'nope' }] }), 400);
   const asAdmin = await admin.get(`/partners/${p.data?._id}`);
-  check('admin (partners:manage) sees bank details', !!asAdmin.data?.bank?.usdIban, JSON.stringify(asAdmin.data?.bank));
+  check('admin (partners:manage) sees many bank rows', asAdmin.data?.bankAccounts?.length === 2 && !!asAdmin.data?.bankAccounts?.[0]?.usdIban, JSON.stringify(asAdmin.data?.bankAccounts));
   const roles = list(await admin.get('/roles?limit=50')); const viewerRole = roles.find((r) => r.name === 'Viewer');
   const grantRead = (on) => admin.put(`/permissions/${viewerRole._id}`, { permissions: [{ module: 'partners', actions: { read: on } }] });
   check('temporarily grant Viewer partners:read', (await grantRead(true)).status === 200);
   await new Promise((r) => setTimeout(r, 200));
   const asViewer = await viewer.get(`/partners/${p.data?._id}`);
-  check('viewer does NOT see bank details', asViewer.status === 200 && !asViewer.data?.bank?.usdIban, `${asViewer.status} ${JSON.stringify(asViewer.data?.bank)}`);
+  check('viewer does NOT see bank details', asViewer.status === 200 && !asViewer.data?.bankAccounts && !asViewer.data?.bank?.usdIban, `${asViewer.status} ${JSON.stringify(asViewer.data?.bankAccounts)}`);
   check('Viewer partners:read revoked again', (await grantRead(false)).status === 200);
   expectStatus('viewer cannot create a partner', await viewer.post('/partners', { ...partnerBody, code: `E2S${RUN}` }), 403);
 
   // ── services ──────────────────────────────────────────────────────────────────
-  section('Services: applicability / isTaxable / revenue account');
-  expectStatus('service with expense account as revenue rejected', await admin.post('/services', { serviceCode: `E2X${RUN}`, serviceName: 'x', revenueAccountId: expId, isTaxable: false }), 400, 'ACCOUNT_WRONG_GROUP');
-  const svc = await admin.post('/services', { serviceCode: `E2S${RUN}`, serviceName: `E2E Service ${RUN}`, revenueAccountId: revId, isTaxable: true });
+  section('Invoice services: applicability / isTaxable / revenue account');
+  expectStatus('service with expense account as revenue rejected', await admin.post('/invoice-services', { serviceName: `E2X ${RUN}`, applicability: 'SOC_ONLY', revenueAccountId: expId, isTaxable: false }), 400, 'ACCOUNT_WRONG_GROUP');
+  const svc = await admin.post('/invoice-services', { serviceName: `E2E Service ${RUN}`, applicability: 'SOC_ONLY', revenueAccountId: revId, isTaxable: true });
   expectStatus('service with revenue account created', svc, 201);
-  check('applicability defaults to SOC_ONLY', svc.data?.applicability === 'SOC_ONLY', `got ${svc.data?.applicability}`);
-  expectStatus('invalid applicability rejected', await admin.put(`/services/${svc.data?._id}`, { applicability: 'ALL' }), 400);
-  const svcUp = await admin.put(`/services/${svc.data?._id}`, { applicability: 'BOTH' });
+  expectStatus('invoice service without applicability rejected', await admin.post('/invoice-services', { serviceName: `E2Y ${RUN}`, revenueAccountId: revId, isTaxable: true }), 400);
+  expectStatus('invalid applicability rejected', await admin.put(`/invoice-services/${svc.data?._id}`, { applicability: 'ALL' }), 400);
+  const svcUp = await admin.put(`/invoice-services/${svc.data?._id}`, { applicability: 'BOTH' });
   check('applicability updated to BOTH', svcUp.status === 200 && svcUp.data?.applicability === 'BOTH', brief(svcUp));
-  const seededSvc = list(await admin.get('/services?limit=50')).find((s) => !String(s.serviceCode).startsWith('E2S'));
-  check('seeded services carry a revenue account', !!(seededSvc?.revenueAccountId), JSON.stringify(seededSvc?.revenueAccountId));
+  const seededSvc = list(await admin.get('/invoice-services?limit=50')).find((s) => !String(s.serviceName).startsWith('E2'));
+  check('migrated invoice services carry a revenue account', !!(seededSvc?.revenueAccountId), JSON.stringify(seededSvc?.revenueAccountId));
+  const linerSvc = await admin.post('/services', { serviceCode: `E2L${RUN}`, serviceName: `E2E Route ${RUN}` });
+  expectStatus('liner service (Routes) needs no revenue account', linerSvc, 201);
+  await admin.del(`/services/${linerSvc.data?._id}`);
 
   // ── expense types ─────────────────────────────────────────────────────────────
   section('Expense types: level, PDA, accounts');
@@ -158,17 +161,25 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   check('requiresPda type starts as a PDA', pdaExp.data?.kind === 'PDA', `kind=${pdaExp.data?.kind}`);
 
   // ── agents ────────────────────────────────────────────────────────────────────
-  section('Port agents: roles, booking-source rule');
-  const portAgent = await admin.post('/agents', { agentCode: `E2A${RUN}`, agentName: `E2E Port Agent ${RUN}`, nameAr: 'وكيل', defaultCurrency: 'usd', portId: okPort.data?._id, roles: ['Port'] });
-  expectStatus('port-only agent created', portAgent, 201);
+  section('Agents: roles removed, any agent can take bookings; bank rows, registration, AR account');
+  const portAgent = await admin.post('/agents', { agentCode: `E2A${RUN}`, agentName: `E2E Port Agent ${RUN}`, nameAr: 'وكيل', defaultCurrency: 'usd', portId: okPort.data?._id, roles: ['Port'], registrationNumber: 'REG-1', taxId: 'TAX-1' });
+  expectStatus('agent created', portAgent, 201);
   check('defaultCurrency upper-cased, portId stored', portAgent.data?.defaultCurrency === 'USD' && !!portAgent.data?.portId, JSON.stringify({ c: portAgent.data?.defaultCurrency, p: portAgent.data?.portId }));
-  expectStatus('invalid role rejected', await admin.post('/agents', { agentName: 'x', roles: ['Boss'] }), 400);
+  check('roles are ignored (profile removed)', !(portAgent.data?.roles || []).includes('Port'), JSON.stringify(portAgent.data?.roles));
+  check('registration and tax number stored', portAgent.data?.registrationNumber === 'REG-1' && portAgent.data?.taxId === 'TAX-1');
   const cargoRow = { containerTypeId: ct.data?._id, quantity: 1, rate: 100 };
-  expectStatus('Layer-1 booking against a Port-only agent -> AGENT_NOT_BOOKING_SOURCE', await admin.post('/bookings/manual', { voyageId: voyC?._id, agentId: portAgent.data?._id, cargoRows: [cargoRow] }), 400, 'AGENT_NOT_BOOKING_SOURCE');
-  const both = await admin.put(`/agents/${portAgent.data?._id}`, { roles: ['Commercial', 'Port'] });
-  check('agent switched to Commercial+Port', both.status === 200, brief(both));
   const okBk = await admin.post('/bookings/manual', { voyageId: voyC?._id, agentId: portAgent.data?._id, cargoRows: [cargoRow] });
-  check('same booking accepted once the booking-agent box is ticked', okBk.status === 201, brief(okBk));
+  check('any agent can take a booking (no roles needed)', okBk.status === 201, brief(okBk));
+  const bankBody = { bankAccounts: [{ bankName: 'NBE', swiftCode: 'NBEGEGCX', usdAccountNumber: '123', usdIban: 'GB82WEST12345698765432', bankAddress: 'Cairo' }, { bankName: 'CIB' }] };
+  const bankOk = await admin.put(`/agents/${portAgent.data?._id}`, bankBody);
+  check('agent keeps many bank rows', bankOk.status === 200 && bankOk.data?.bankAccounts?.length === 2, brief(bankOk));
+  expectStatus('bad IBAN rejected', await admin.put(`/agents/${portAgent.data?._id}`, { bankAccounts: [{ bankName: 'X', usdIban: 'GB00BAD' }] }), 400);
+  expectStatus('bank row without name rejected', await admin.put(`/agents/${portAgent.data?._id}`, { bankAccounts: [{ swiftCode: 'NBEGEGCX' }] }), 400);
+  const arAcc = list(await admin.get('/ledger/account-lookup?rule=receivable'));
+  check('receivable lookup offers 6-digit posting accounts only', arAcc.some((a) => a.code === '112101') && !arAcc.some((a) => a.code.endsWith('000')));
+  const arSet = await admin.put(`/agents/${portAgent.data?._id}`, { receivableAccountId: arAcc.find((a) => a.code === '112101')?._id });
+  check('AR account saved on the agent', arSet.status === 200 && !!arSet.data?.receivableAccountId, brief(arSet));
+  expectStatus('revenue account refused as AR account', await admin.put(`/agents/${portAgent.data?._id}`, { receivableAccountId: revId }), 400, 'ACCOUNT_WRONG_GROUP');
 
   // ── customers ─────────────────────────────────────────────────────────────────
   section('Customers: required type, filters applied before pagination, RBAC');
@@ -202,11 +213,11 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   expectStatus('vessel without hire rate rejected', await admin.post('/vessels', { ...vBase, defaultDailyHireRate: undefined }), 400);
   expectStatus('Time Charter without charter dates rejected', await admin.post('/vessels', { ...vBase, ownershipType: 'Time Charter' }), 400);
   expectStatus('legacy ownership value "Chartered" rejected on create', await admin.post('/vessels', { ...vBase, ownershipType: 'Chartered' }), 400);
-  const badShares = await admin.post('/vessels', { ...vBase, shares: [{ partnerId: pa._id, shareBp: 6000, isLead: true }, { partnerId: pb._id, shareBp: 3000 }] });
+  const badShares = await admin.post('/vessels', { ...vBase, shares: [{ partnerId: pa._id, shareBp: 6000 }, { partnerId: pb._id, shareBp: 3000 }] });
   expectStatus('shares totalling 90% rejected -> SHARES_NOT_100', badShares, 400, 'SHARES_NOT_100');
   const afterBad = list(await admin.get(`/vessels?search=${vBase.vesselCode}`));
   check('failed shares left NO half-created vessel (transaction rolled back)', afterBad.length === 0, `${afterBad.length} vessel(s) found`);
-  const v = await admin.post('/vessels', { ...vBase, shares: [{ partnerId: pa._id, shareBp: 6000, isLead: true }, { partnerId: pb._id, shareBp: 4000 }] });
+  const v = await admin.post('/vessels', { ...vBase, shares: [{ partnerId: pa._id, shareBp: 6000 }, { partnerId: pb._id, shareBp: 4000 }] });
   expectStatus('vessel + 60/40 shares created in one call', v, 201);
   check('hire rate stored as minor units (1250050)', v.data?.defaultDailyHireRateMinor === 1250050, `got ${v.data?.defaultDailyHireRateMinor}`);
   const vShares = await admin.get(`/vessels/${v.data?._id}/partners`);
@@ -216,17 +227,17 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   expectStatus('Time Charter vessel with dates created', tc, 201);
   check('redelivery within 30 days raises the alert', !!(tc.data?.redeliveryAlert), JSON.stringify(tc.data?.redeliveryAlert));
   // shares lock: a seeded vessel already has ledger lines (rounds A/B posted)
-  const seededVessels = list(await admin.get('/vessels?limit=20')).filter((x) => !String(x.vesselCode).startsWith('E2'));
+  const seededVessels = list(await admin.get('/vessels?limit=200')).filter((x) => !/^(E2|ZV|ZR)/.test(String(x.vesselCode)));   // skip e2e/probe leftovers
   let locked = 0; let lockCode = '';
   for (const sv of seededVessels) {
     const cur = list(await admin.get(`/vessels/${sv._id}/partners`));
-    const body = (cur.length ? cur : (await admin.get(`/vessels/${sv._id}/partners`)).data?.shares || []).map((s) => ({ partnerId: s.partnerId?._id || s.partnerId, shareBp: s.shareBp, isLead: s.isLead }));
+    const body = (cur.length ? cur : (await admin.get(`/vessels/${sv._id}/partners`)).data?.shares || []).map((s) => ({ partnerId: s.partnerId?._id || s.partnerId, shareBp: s.shareBp }));
     if (!body.length) continue;
     const r = await admin.put(`/vessels/${sv._id}/partners`, { shares: body });
     if (r.code === 'VESSEL_SHARES_LOCKED') { locked++; lockCode = r.code; }
   }
   check('at least one seeded vessel with accounting entries is share-locked', locked > 0, `locked=${locked}/${seededVessels.length}`);
-  const fresh = await admin.put(`/vessels/${v.data?._id}/partners`, { shares: [{ partnerId: pa._id, shareBp: 5000, isLead: true }, { partnerId: pb._id, shareBp: 5000 }] });
+  const fresh = await admin.put(`/vessels/${v.data?._id}/partners`, { shares: [{ partnerId: pa._id, shareBp: 5000 }, { partnerId: pb._id, shareBp: 5000 }] });
   check('a new vessel with no accounting entries can still change shares (50/50)', fresh.status === 200, brief(fresh));
 
   // ── dependents / deletes ──────────────────────────────────────────────────────
@@ -234,14 +245,57 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   const accDel = await admin.get('/ledger/accounts');
   check('accounts listable', accDel.status === 200);
   expectStatus('customer delete (unused) allowed', await admin.del(`/customers/${made[0]?._id}`), 200);
-  const delSvc = await admin.del(`/services/${svc.data?._id}`);
-  check('unused service delete allowed', delSvc.status === 200, brief(delSvc));
+  const delSvc = await admin.del(`/invoice-services/${svc.data?._id}`);
+  check('unused invoice service delete allowed', delSvc.status === 200, brief(delSvc));
   expectStatus('port-agent delete blocked while it has a booking', await admin.del(`/agents/${portAgent.data?._id}`), 409, 'HAS_DEPENDENTS');
+
+  // ── master data update 2 (2026-10-27) ─────────────────────────────────────────
+  section('Vessels: owner contacts, charter-party history with prices');
+  const cp1 = { charterPartyDate: '2025-01-01', deliveryDate: '2025-01-10', deliveryPrice: 12000.5, redeliveryDate: '2025-12-31' };
+  const hv = await admin.put(`/vessels/${tc.data?._id}`, { ownerContacts: [{ name: 'Capt A', title: 'Owner rep', phone: '+20100', email: 'a@owner.co' }], charterHistory: [cp1] });
+  check('owner contacts + first charter entry saved', hv.status === 200 && hv.data?.ownerContacts?.length === 1 && hv.data?.charterHistory?.length === 1, brief(hv));
+  check('prices stored as minor units, returned as decimals', hv.data?.charterHistory?.[0]?.deliveryPriceMinor === 1200050 && hv.data?.charterHistory?.[0]?.deliveryPrice === '12000.50', JSON.stringify(hv.data?.charterHistory?.[0]));
+  check('latest entry drives charterStartDate/charterEndDate', String(hv.data?.charterStartDate).startsWith('2025-01-10') && String(hv.data?.charterEndDate).startsWith('2025-12-31'));
+  const cp2 = { charterPartyDate: '2026-01-01', deliveryDate: '2026-01-05', deliveryPrice: 13000, redeliveryDate: soon };
+  const hv2 = await admin.put(`/vessels/${tc.data?._id}`, { charterHistory: [...(hv.data?.charterHistory || []), cp2] });
+  check('second entry appended, history keeps both', hv2.status === 200 && hv2.data?.charterHistory?.length === 2, brief(hv2));
+  check('newest entry now drives the dates and the redelivery alert', String(hv2.data?.charterEndDate).startsWith(soon) && !!hv2.data?.redeliveryAlert, JSON.stringify(hv2.data?.redeliveryAlert));
+  check('older entry keeps who/when added', !!hv2.data?.charterHistory?.[0]?.addedBy, JSON.stringify(hv2.data?.charterHistory?.[0]));
+  expectStatus('redelivery before delivery rejected', await admin.put(`/vessels/${tc.data?._id}`, { charterHistory: [{ deliveryDate: '2026-02-01', redeliveryDate: '2026-01-01' }] }), 400);
+  expectStatus('negative price rejected', await admin.put(`/vessels/${tc.data?._id}`, { charterHistory: [{ deliveryDate: '2026-01-01', redeliveryDate: '2026-02-01', deliveryPrice: -5 }] }), 400);
+  expectStatus('owner contact without name rejected', await admin.put(`/vessels/${tc.data?._id}`, { ownerContacts: [{ title: 'x' }] }), 400);
+
+  section('Customers: bank rows');
+  const cb = await admin.post('/customers', { customerCode: `E2B${RUN}`, customerName: `E2E Bank ${RUN}`, customerType: 'NVOCC', bankAccounts: [{ bankName: 'HSBC', swiftCode: 'HSBCGB2L', usdAccountNumber: '999', usdIban: 'GB82WEST12345698765432' }, { bankName: 'ADCB' }] });
+  check('customer keeps many bank rows', cb.status === 201 && cb.data?.bankAccounts?.length === 2, brief(cb));
+  expectStatus('bad SWIFT rejected on customer', await admin.put(`/customers/${cb.data?._id}`, { bankAccounts: [{ bankName: 'X', swiftCode: 'BAD' }] }), 400);
+  await admin.del(`/customers/${cb.data?._id}`);
+
+  section('Container types: 45ft = 2.25 TEU (master data only)');
+  const isoUsed2 = new Set(list(await admin.get('/container-types?limit=200')).map((c) => c.isoCode));
+  const iso45 = ['45G0', '45P3', '45U1'].find((c) => !isoUsed2.has(c));
+  const ct45 = await admin.post('/container-types', { code: `E4${RUN}`, size: '45ft', type: 'Dry', isoCode: iso45 });
+  check('45ft -> teuFactor 2.25', ct45.status === 201 && ct45.data?.teuFactor === 2.25, `${brief(ct45)} got ${ct45.data?.teuFactor}`);
+  await admin.del(`/container-types/${ct45.data?._id}`);
+
+  section('Accounting: 6-digit chart, header lock, RBAC');
+  const chart = list(await admin.get('/accounting/accounts'));
+  check('chart has the 158 imported accounts (plus any created by earlier e2e runs)', chart.filter((a) => /^\d{6}$/.test(a.code)).length >= 158, `${chart.filter((a) => /^\d{6}$/.test(a.code)).length}`);
+  const hdr = chart.find((a) => a.code === '410000');
+  check('410000 is a header, not posting', hdr?.isGroup === true && hdr?.isPosting === false);
+  expectStatus('header cannot be edited', await admin.put(`/accounting/accounts/${hdr?._id}`, { name: 'x' }), 409, 'ACCOUNT_LOCKED');
+  const newAcc = await admin.post('/accounting/accounts', { code: `4115${String(Date.now()).slice(-2)}`, name: `E2E account ${RUN}`, parentId: chart.find((a) => a.code === '411000')?._id });
+  check('new posting account under a header created', newAcc.status === 201 || newAcc.code === 'CODE_PARENT_MISMATCH', brief(newAcc));
+  expectStatus('account under a non-header refused', await admin.post('/accounting/accounts', { code: '411199', name: 'x', parentId: chart.find((a) => a.code === '411101')?._id }), 400, 'PARENT_NOT_GROUP');
+  expectStatus('viewer cannot read the chart (accounting module)', await viewer.get('/accounting/accounts'), 403);
+  expectStatus('viewer cannot create an account', await viewer.post('/accounting/accounts', { code: '411198', name: 'x', parentId: hdr?._id }), 403);
+  const revLookup = list(await admin.get('/ledger/account-lookup?rule=revenue'));
+  check('revenue lookup includes 411101 and hides headers', revLookup.some((a) => a.code === '411101') && !revLookup.some((a) => a.code === '410000'));
 
   // ── RBAC sanity ───────────────────────────────────────────────────────────────
   section('RBAC');
   expectStatus('unauthenticated /customers -> 401', await fetch(`${BASE}/customers`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) })), 401);
-  expectStatus('viewer cannot create a service', await viewer.post('/services', { serviceCode: 'VVV', serviceName: 'v', revenueAccountId: revId }), 403);
+  expectStatus('viewer cannot create an invoice service', await viewer.post('/invoice-services', { serviceName: 'v', applicability: 'BOTH', isTaxable: false, revenueAccountId: revId }), 403);
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed${failed.length ? `, ${failed.length} FAILED:` : ''}`);

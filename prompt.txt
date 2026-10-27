@@ -1,0 +1,26 @@
+in the master data will andle new udapted , in the vessles tap , the first 3 card mkae it to gither as  A. Identity & Specifications 
+and the Bunker Capacities (MT) make it with B. C/P Bunker Consumption Profile 
+and in the C. Ownership & Charter Contract add contanct rows , name title phone and email 
+and add Charter party data in the C. Ownership & Charter Contract
+and move the Default Daily Hire Rate (USD)  into the C. Ownership & Charter Contract
+
+and for agent tap , rename it as vessles/agents
+add registration and tax number , and add bacnkdetails , name swift code address usd number usd iban usd account number  , make the bank details as rows able to add manuy bacnk details
+for the vessles/agents remove the Accounting profile , any agent or custerm able t be booking its fine no need for it now
+and add arc acount seleting 
+
+
+and for the customers tap rename it as agents/customers 
+and add bacnk details , name swift code address usd number usd iban usd account number  , make the bank details as rows able to add manuy bacnk details
+
+for the locations, and cities , set the full contries and cities using lib ofr th countries nad cities
+
+and for the container types the 45 size is = 2.25 teu factor
+
+now for thee service of the master data with make it as invoces service and make and another service tap name it as routs in the opreations taps for seting the routs and roundes
+for the service of invocies , Service Name	Required	Name displayed on invoices, e.g. SOC Slot Booking, THC, or Reefer Monitoring
+Applicability	Required	SOC_ONLY, COC_ONLY, or BOTH
+Is Taxable	Required	Indicates whether the service is taxable
+Revenue Account	Required	Select from the Chart of Accounts, account group 400000
+
+and adding an accounting tap in the master data , for its info using the files in the /docs/accounting dir to get it full info

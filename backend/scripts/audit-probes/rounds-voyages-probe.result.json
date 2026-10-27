@@ -1,0 +1,331 @@
+[
+  {
+    "key": "RV-00",
+    "title": "Vessel created without reeferPlugs (fixture) / with 1.5 plugs",
+    "expected": "201 / 400",
+    "observed": "created yes; 1.5 -> 400",
+    "ok": true
+  },
+  {
+    "key": "RV-01",
+    "title": "Round created with a vessel id that does not exist",
+    "expected": "400 vessel not found",
+    "observed": "400 Vessel not found []",
+    "ok": true
+  },
+  {
+    "key": "RV-01b",
+    "title": "Round update on an unknown round / vessel",
+    "expected": "never 200",
+    "observed": "404 Round not found []",
+    "ok": true
+  },
+  {
+    "key": "RV-02",
+    "title": "Round created on an Inactive service",
+    "expected": "400 service inactive",
+    "observed": "400 Service is not Active []",
+    "ok": true
+  },
+  {
+    "key": "RV-03",
+    "title": "Round created on an Inactive vessel",
+    "expected": "400 vessel inactive",
+    "observed": "400 Vessel is not Active (Inactive) []",
+    "ok": true
+  },
+  {
+    "key": "RV-04",
+    "title": "Round created directly as Completed (skips Planned->Active->Completed)",
+    "expected": "400 / forced to Planned",
+    "observed": "400 A new round can only start as Planned or Active, not \"Completed\" [] status=undefined",
+    "ok": true
+  },
+  {
+    "key": "RV-05",
+    "title": "Round created directly as Cancelled",
+    "expected": "400 / forced to Planned",
+    "observed": "status=undefined",
+    "ok": true
+  },
+  {
+    "key": "RV-04b",
+    "title": "Round created Active: first voyage cascades to Departed with an ATD",
+    "expected": "Departed + atd set",
+    "observed": "201 Round created and voyages generated first=Departed atd=2026-10-27T12:09:15.072Z",
+    "ok": true
+  },
+  {
+    "key": "RV-06",
+    "title": "Two Planned rounds on the same vessel with overlapping dates",
+    "expected": "allowed (planning) or warned",
+    "observed": "201 Round created and voyages generated / 201 Round created and voyages generated",
+    "ok": true
+  },
+  {
+    "key": "RV-07",
+    "title": "Activating BOTH Planned rounds of one vessel",
+    "expected": "second activation refused (409 vessel already Active)",
+    "observed": "first=200 second=409",
+    "ok": true
+  },
+  {
+    "key": "RV-34",
+    "title": "Two concurrent activations of Planned rounds of one vessel",
+    "expected": "exactly one 200, the other 409",
+    "observed": "200 Round updated | 409 VESSEL_HAS_ACTIVE_ROUND This vessel already has an Active round []",
+    "ok": true
+  },
+  {
+    "key": "RV-08",
+    "title": "Route with the same port on two consecutive legs (P1,P1,P2)",
+    "expected": "400 consecutive legs must differ",
+    "observed": "route fixture: 400 Legs 1 and 2 use the same port; consecutive legs must be different ports []",
+    "ok": true
+  },
+  {
+    "key": "RV-10",
+    "title": "Leg whose city does not contain its port (city of P3 with port P2)",
+    "expected": "400 port not in that city/country",
+    "observed": "400 Leg 2: city does not belong to the selected country []",
+    "ok": true
+  },
+  {
+    "key": "RV-11",
+    "title": "Leg with a terminal that does not exist / is not in the port",
+    "expected": "400",
+    "observed": "400 Leg 2: terminal does not exist []",
+    "ok": true
+  },
+  {
+    "key": "RV-12",
+    "title": "Leg pointing at a port id that does not exist",
+    "expected": "400",
+    "observed": "400 Leg 2: port does not exist []",
+    "ok": true
+  },
+  {
+    "key": "RV-13",
+    "title": "Route replaced under a Planned round: the round keeps its own route snapshot, voyages untouched",
+    "expected": "route save 200, snapshot = old route, voyages unchanged",
+    "observed": "route save 200; snapshot Jebel Ali>Jeddah Islamic Port>Port Said East; voyages unchanged=true",
+    "ok": true
+  },
+  {
+    "key": "RV-14",
+    "title": "Manual-voyage port list for that round after the route change",
+    "expected": "ports of the ORIGINAL route",
+    "observed": "shows Jebel Ali, Jeddah Islamic Port, Port Said East",
+    "ok": true
+  },
+  {
+    "key": "RV-15",
+    "title": "Route edit while a round of the service is Active",
+    "expected": "400 refused",
+    "observed": "400 Cannot edit route — round R000095 is active []",
+    "ok": true
+  },
+  {
+    "key": "RV-16",
+    "title": "Generated voyages count and chain (N legs -> N-1 voyages, POD(n)=POL(n+1))",
+    "expected": "3 voyages, chained",
+    "observed": "3: Jebel Ali>Jeddah Islamic Port | Jeddah Islamic Port>Port Said East | Port Said East>Shanghai",
+    "ok": true
+  },
+  {
+    "key": "RV-17",
+    "title": "Generated voyages carry ETD/ETA derived from the round window",
+    "expected": "DEFERRED (design gap): generated voyages stay bare, no invented dates",
+    "observed": "etd=null eta=null name=null",
+    "ok": true
+  },
+  {
+    "key": "RV-18",
+    "title": "ETA earlier than ETD (and both outside the round window 2030-01..03)",
+    "expected": "400",
+    "observed": "400 ETA cannot be earlier than ETD []",
+    "ok": true
+  },
+  {
+    "key": "RV-19",
+    "title": "Status Departed with no ATD (actual departure) recorded",
+    "expected": "400",
+    "observed": "400 Actual departure (ATD) is required to mark a voyage as Departed []",
+    "ok": true
+  },
+  {
+    "key": "RV-19b",
+    "title": "Departed with ATD is accepted; Arrived without ATA is refused",
+    "expected": "200 / 400",
+    "observed": "200 / 400",
+    "ok": true
+  },
+  {
+    "key": "RV-19c",
+    "title": "ATA earlier than the STORED ATD (complete state validated, not just the patch)",
+    "expected": "400",
+    "observed": "400 ATA cannot be earlier than ATD []",
+    "ok": true
+  },
+  {
+    "key": "RV-20",
+    "title": "Leg 2 sails (01-10) before leg 1 arrives (01-25)",
+    "expected": "saved with a warning (not blocked)",
+    "observed": "leg2 save 200 warnings=[\"ETD is earlier than the previous voyage ETA\"]",
+    "ok": true
+  },
+  {
+    "key": "RV-20b",
+    "title": "Dates outside the round window",
+    "expected": "saved with a warning",
+    "observed": "200 warnings=[\"ETD is outside the round window\",\"ETA is outside the round window\"]",
+    "ok": true
+  },
+  {
+    "key": "RV-21",
+    "title": "Capacity result right after adding a manual voyage",
+    "expected": "4 rows (cache invalidated)",
+    "observed": "manual voyage 201; rows 3 -> 4",
+    "ok": true
+  },
+  {
+    "key": "RV-22",
+    "title": "Deleting a MIDDLE generated voyage (would break the POL/POD chain)",
+    "expected": "400 cancel it instead",
+    "observed": "400 Cannot delete — this voyage is in the middle of the route chain. Cancel it instead (status → Cancelled). []",
+    "ok": true
+  },
+  {
+    "key": "RV-23",
+    "title": "Deleting a MANUAL voyage is allowed and capacity reflects it immediately (no TTL wait)",
+    "expected": "200; 3 rows",
+    "observed": "200; rows 4 -> 3",
+    "ok": true
+  },
+  {
+    "key": "RV-35",
+    "title": "Voyage number of a deleted manual voyage is not handed out again",
+    "expected": "new number != ZSN76GD12-R000096-04",
+    "observed": "ZSN76GD12-R000096-05",
+    "ok": true
+  },
+  {
+    "key": "RV-22b",
+    "title": "Deleting the LAST generated voyage is allowed (capacity fresh)",
+    "expected": "200; 3 rows",
+    "observed": "200; rows 4 -> 3",
+    "ok": true
+  },
+  {
+    "key": "RV-24",
+    "title": "Manual voyage repeating a leg that already exists in the round (P1>P2)",
+    "expected": "allowed (round trips) - informational",
+    "observed": "201 Voyage created",
+    "ok": true
+  },
+  {
+    "key": "RV-25",
+    "title": "Round cancelled: state of its voyages",
+    "expected": "voyages Cancelled too",
+    "observed": "round Cancelled; voyages: Cancelled, Cancelled",
+    "ok": true
+  },
+  {
+    "key": "RV-26",
+    "title": "Booking (Layer 1) accepted on a voyage of a CANCELLED round",
+    "expected": "400 round cancelled",
+    "observed": "400 Cannot book on a voyage with status \"Cancelled\" []",
+    "ok": true
+  },
+  {
+    "key": "RV-26b",
+    "title": "Voyage left Scheduled under a Cancelled round: Layer 1 and Layer 2 bookings refused by the round guard",
+    "expected": "400 / 400 mentioning the round",
+    "observed": "400 ROUND_NOT_BOOKABLE Cannot book on a voyage of a Cancelled round (R000097) [] | 400 ROUND_NOT_BOOKABLE Cannot book on a voyage of a Cancelled round (R000097) []",
+    "ok": true
+  },
+  {
+    "key": "RV-27",
+    "title": "Booking accepted on a Planned round (advance booking)",
+    "expected": "allowed - informational",
+    "observed": "201 Manual booking created",
+    "ok": true
+  },
+  {
+    "key": "RV-25b",
+    "title": "Cancelling a round that has a live booking",
+    "expected": "409, round stays Planned, voyages untouched",
+    "observed": "409 ROUND_HAS_BOOKINGS Cannot cancel round R000098 — 0 booking(s) and 1 estimated booking(s) are still live on its voyages. Cancel or move them first, then cancel the round. []; round=Planned; voyages=Scheduled,Scheduled",
+    "ok": true
+  },
+  {
+    "key": "RV-25c",
+    "title": "Same round once the booking is Cancelled: cancel succeeds and voyages follow",
+    "expected": "200, voyages Cancelled",
+    "observed": "200; Cancelled,Cancelled",
+    "ok": true
+  },
+  {
+    "key": "RV-28",
+    "title": "Service deleted while a COMPLETED round still references it",
+    "expected": "409 has rounds",
+    "observed": "409 HAS_DEPENDENTS Cannot delete this service — still has: 1 rounds, 1 voyages []",
+    "ok": true
+  },
+  {
+    "key": "RV-30",
+    "title": "Agent deleted while it is the agent of a route leg",
+    "expected": "409 has route legs",
+    "observed": "409 HAS_DEPENDENTS Cannot delete this agent — still has: 1 route legs []",
+    "ok": true
+  },
+  {
+    "key": "RV-30b",
+    "title": "DEPENDENTS.agent covers Booking.agentId and RouteLeg.agentId",
+    "expected": "both listed",
+    "observed": "AgentAgreement.agentId, AgentCommission.agentId, HandlingCharge.agentId, AgentSettlementStatement.agentId, JournalEntryLine.agentId, ManualBooking.agentId, Booking.agentId, RouteLeg.agentId, Round.routeSnapshot.legs.agentId",
+    "ok": true
+  },
+  {
+    "key": "RV-31",
+    "title": "Port deleted while generated voyages still use it as POL/POD",
+    "expected": "409 used by voyages",
+    "observed": "409 HAS_DEPENDENTS Cannot delete this port — still has: 1 voyages (loading port), 1 rounds (route snapshot) []",
+    "ok": true
+  },
+  {
+    "key": "RV-28c",
+    "title": "Unused service deletes together with its Route and legs",
+    "expected": "200, route lookup 404",
+    "observed": "200; route 404",
+    "ok": true
+  },
+  {
+    "key": "RV-07c",
+    "title": "Partial unique index one_active_round_per_vessel exists",
+    "expected": "present (npm run migrate:rounds-voyages)",
+    "observed": "{\"status\":\"Active\"}",
+    "ok": true
+  },
+  {
+    "key": "RV-32",
+    "title": "Round creation fails while inserting voyages",
+    "expected": "error surfaced; NO round left behind",
+    "observed": "error=forced voyage insert failure; rounds 0 -> 0",
+    "ok": true
+  },
+  {
+    "key": "RV-33",
+    "title": "Route replacement fails after the old legs were deleted",
+    "expected": "error surfaced; OLD legs still present",
+    "observed": "error=forced leg insert failure; legs unchanged=true",
+    "ok": true
+  },
+  {
+    "key": "RV-37",
+    "title": "Round delete whose cleanup fails",
+    "expected": "error surfaced; round AND voyages still present",
+    "observed": "error=forced cleanup failure; round=true voyages=1",
+    "ok": true
+  }
+]

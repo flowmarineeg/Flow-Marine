@@ -53,7 +53,12 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
 
   const mutation = useMutation({
     mutationFn: (data) => voyagesService.update(voyage._id, data),
-    onSuccess:  () => { toast.success('Voyage updated'); onSuccess?.(); },
+    onSuccess:  (res) => {
+      toast.success('Voyage updated');
+      // Schedule conflicts are warnings, not errors (the API still saved the voyage)
+      (res?.data?.data?.warnings || []).forEach(w => toast(w, { icon: '⚠️', duration: 6000 }));
+      onSuccess?.();
+    },
     onError:    (e) => showErrorToast(e, 'update'),
   });
 

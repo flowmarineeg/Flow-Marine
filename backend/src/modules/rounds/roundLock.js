@@ -80,10 +80,22 @@ const assertRoundOpenTx = async (roundId, session) => {
   }
 };
 
+/**
+ * A booking may only attach to a voyage whose parent Round is Planned or Active (RV-26). The voyage's own
+ * status is checked separately by the booking services; this catches a voyage left Scheduled under a dead round.
+ */
+const assertRoundBookable = async (voyage) => {
+  const r = await model('Round').findById(voyage.roundId).select('status roundNumber').lean();
+  if (!r) throw new AppError(400, 'The voyage has no parent round', 'ROUND_NOT_FOUND');
+  if (['Cancelled', 'Completed'].includes(r.status)) {
+    throw new AppError(400, `Cannot book on a voyage of a ${r.status} round (${r.roundNumber})`, 'ROUND_NOT_BOOKABLE');
+  }
+};
+
 /** Ids of closed rounds - used by bulk flows (netting) to skip them instead of failing. */
 const closedRoundIds = async () => (await model('Round').find({ closeStatus: 'Closed' }).select('_id').lean()).map((r) => String(r._id));
 
 module.exports = {
   assertRoundOpen, assertRoundsOpen, assertVoyageRoundOpen, assertVoyagesRoundOpen, assertDocRoundOpen,
-  assertExpenseRoundOpen, assertInvoiceRoundOpen, assertBookingsRoundOpen, assertItemsRoundOpen, closedRoundIds, assertRoundOpenTx,
+  assertExpenseRoundOpen, assertInvoiceRoundOpen, assertBookingsRoundOpen, assertItemsRoundOpen, closedRoundIds, assertRoundOpenTx, assertRoundBookable,
 };

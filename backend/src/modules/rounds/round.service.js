@@ -1,10 +1,15 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const Round   = require('./round.model');
 const Voyage  = require('../voyages/voyage.model');
 const Route   = require('../routes/route.model');
 const RouteLeg = require('../routes/routeLeg.model');
 const Service  = require('../services/service.model');
+const Vessel   = require('../vessels/vessel.model');
+const AppError = require('../../utils/AppError');
+const { assertInitialStatus, buildRouteSnapshot, CANCELLABLE_VOYAGE_STATUSES } = require('./round.logic');
+const { assertNoConsecutivePorts } = require('../routes/routeLegs.logic');
 const { nextNumber } = require('../../utils/autoNumber');
 const { generateVoyages } = require('../../utils/voyageGenerator');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
@@ -39,12 +44,54 @@ const validateTransition = (current, next) => {
 // from 'Scheduled' per voyage.service.js's own STATUS_TRANSITIONS map, so
 // only Scheduled voyages are eligible — Cancelled/Completed/already-advanced
 // voyages are never touched.
-const cascadeFirstVoyageToDeparted = async (roundId, updatedBy) => {
-  const firstVoyage = await Voyage.findOne({ roundId, status: 'Scheduled' }).sort({ sequence: 1 });
+// Reconciled with the voyage rule "Departed needs an ATD" (RV-18..20): the cascade stamps the activation
+// time as the actual departure when none was recorded. An ATD that is already set is never overwritten.
+const cascadeFirstVoyageToDeparted = async (roundId, updatedBy, session = null) => {
+  const firstVoyage = await Voyage.findOne({ roundId, status: 'Scheduled' }).sort({ sequence: 1 }).session(session);
   if (firstVoyage) {
     firstVoyage.status    = 'Departed';
+    firstVoyage.atd       = firstVoyage.atd || new Date();
     firstVoyage.updatedBy = updatedBy;
-    await firstVoyage.save();
+    await firstVoyage.save({ session });
+  }
+};
+
+// Run `fn(session)` in a transaction and translate the Active-round unique index into a domain error.
+const runRoundTx = async (fn) => {
+  try {
+    return await mongoose.connection.transaction(fn);
+  } catch (err) {
+    if (err && err.code === 11000 && String(err.message).includes('one_active_round_per_vessel')) {
+      throw new AppError(409, 'This vessel already has an Active round', 'VESSEL_HAS_ACTIVE_ROUND');
+    }
+    throw err;
+  }
+};
+
+// A vessel can be on at most one Active round (RV-07). `exceptRoundId` skips the round being updated.
+const assertVesselFree = async (vesselId, exceptRoundId = null) => {
+  const q = { vesselId, status: 'Active' };
+  if (exceptRoundId) q._id = { $ne: exceptRoundId };
+  const conflict = await Round.findOne(q).select('roundNumber').lean();
+  if (conflict) {
+    throw new AppError(409, `Vessel is already assigned to active round ${conflict.roundNumber}`, 'VESSEL_HAS_ACTIVE_ROUND');
+  }
+};
+
+// Cancelling a round never touches bookings: refuse while any non-Cancelled booking (Layer 1 or 2) exists (RV-25).
+const assertNoLiveBookings = async (round) => {
+  const voyageIds = round.voyageIds || [];
+  if (!voyageIds.length) return;
+  const Booking = require('../bookings/booking.model');
+  const ManualBooking = require('../bookings/manualBooking.model');
+  const q = { voyageId: { $in: voyageIds }, status: { $ne: 'Cancelled' } };
+  const [layer2, layer1] = await Promise.all([Booking.countDocuments(q), ManualBooking.countDocuments(q)]);
+  if (layer2 + layer1 > 0) {
+    throw new AppError(
+      409,
+      `Cannot cancel round ${round.roundNumber} — ${layer2} booking(s) and ${layer1} estimated booking(s) are still live on its voyages. Cancel or move them first, then cancel the round.`,
+      'ROUND_HAS_BOOKINGS'
+    );
   }
 };
 
@@ -112,10 +159,21 @@ const getRoundVoyages = async (roundId) => {
 };
 
 // ─── Create (triggers voyage generation) ─────────────────────────────────────
+// Round + voyages + voyageIds + first-voyage cascade commit together or not at all (RV-32). The round
+// number comes from an atomic counter OUTSIDE the transaction: a rolled-back create burns a number
+// (a gap is acceptable, a duplicate is impossible). generateVoyages is untouched (R10); it joins the
+// transaction through mongoose's transactionAsyncLocalStorage (config/db.js).
 const create = async (data, createdBy) => {
-  // 1. Validate service exists and has a route with >= 2 legs
+  const status = assertInitialStatus(data.status);
+
+  // 1. Validate every reference before any write (RV-01/02/03)
   const service = await Service.findOne({ _id: data.serviceId });
   if (!service) throw { status: 400, message: 'Service not found' };
+  if (service.status !== 'Active') throw { status: 400, message: 'Service is not Active' };
+
+  const vessel = await Vessel.findOne({ _id: data.vesselId }).select('status vesselName').lean();
+  if (!vessel) throw { status: 400, message: 'Vessel not found' };
+  if (vessel.status !== 'Active') throw { status: 400, message: `Vessel is not Active (${vessel.status})` };
 
   const route = await Route.findOne({ serviceId: data.serviceId });
   if (!route) throw { status: 400, message: 'Service has no route defined. Add at least 2 route legs first.' };
@@ -128,62 +186,57 @@ const create = async (data, createdBy) => {
   if (routeLegs.length < 2) {
     throw { status: 400, message: `Service route has only ${routeLegs.length} leg(s). At least 2 required.` };
   }
+  // Legacy routes saved before the RV-08/09 rule would generate a voyage with POL = POD.
+  assertNoConsecutivePorts(routeLegs.map((l) => ({ portId: l.portId?._id || l.portId })));
 
   // 2. Validate vessel not in another Active round
-  const conflictRound = await Round.findOne({
-    vesselId: data.vesselId,
-    status:   'Active',
-  });
-  if (conflictRound) {
-    throw {
-      status: 400,
-      message: `Vessel is already assigned to active round ${conflictRound.roundNumber}`,
-    };
-  }
+  await assertVesselFree(data.vesselId);
 
   // 3. Validate dates
   if (new Date(data.startDate) >= new Date(data.endDate)) {
     throw { status: 400, message: 'Start date must be before end date' };
   }
 
-  // 4. Generate round number
+  // 4. Generate round number (outside the transaction, see above)
   const roundNumber = await nextNumber('round');
 
-  // 5. Save round (no voyageIds yet)
-  const round = await Round.create({
-    roundNumber,
-    roundName: data.roundName,
-    serviceId: data.serviceId,
-    vesselId:  data.vesselId,
-    startDate: data.startDate,
-    endDate:   data.endDate,
-    status:    data.status || 'Planned',
-    notes:     data.notes || null,
-    voyageIds: [],
-    v2: true,
-    createdBy,
-    updatedBy: createdBy,
+  // 5. Round + voyages + voyageIds (+ cascade) atomically
+  const result = await runRoundTx(async (session) => {
+    const [round] = await Round.create([{
+      roundNumber,
+      roundName: data.roundName,
+      serviceId: data.serviceId,
+      vesselId:  data.vesselId,
+      startDate: data.startDate,
+      endDate:   data.endDate,
+      status,
+      notes:     data.notes || null,
+      voyageIds: [],
+      routeSnapshot: buildRouteSnapshot(route._id, routeLegs),
+      v2: true,
+      createdBy,
+      updatedBy: createdBy,
+    }], { session });
+
+    const voyages = await generateVoyages(round, routeLegs, service, createdBy);
+
+    round.voyageIds     = voyages.map(v => v._id);
+    round.lastVoyageSeq = voyages.length;
+    await round.save({ session });
+
+    // Sprint 042 — Round created directly with status Active cascades its
+    // first voyage to Departed (see cascadeFirstVoyageToDeparted comment).
+    if (status === 'Active') await cascadeFirstVoyageToDeparted(round._id, createdBy, session);
+
+    return { roundId: round._id, voyages };
   });
 
-  // 6. Auto-generate voyages
-  const voyages = await generateVoyages(round, routeLegs, service, createdBy);
-
-  // 7. Update round with voyageIds
-  round.voyageIds = voyages.map(v => v._id);
-  await round.save();
-
-  // Sprint 042 — Round created directly with status Active cascades its
-  // first voyage to Departed (see cascadeFirstVoyageToDeparted comment).
-  if (round.status === 'Active') {
-    await cascadeFirstVoyageToDeparted(round._id, createdBy);
-  }
-
-  const populated = await Round.findById(round._id)
+  const populated = await Round.findById(result.roundId)
     .populate('serviceId', 'serviceCode serviceName')
     .populate('vesselId',  'vesselCode vesselName')
     .lean();
 
-  return { round: populated, voyages };
+  return { round: populated, voyages: result.voyages };
 };
 
 // ─── Update ───────────────────────────────────────────────────────────────────
@@ -198,12 +251,14 @@ const update = async (id, data, updatedBy) => {
   }
 
   // Status transition validation
-  if (data.status && data.status !== round.status) {
+  const statusChanges = data.status && data.status !== round.status;
+  if (statusChanges) {
     validateTransition(round.status, data.status);
   }
 
   // Sprint 042 — captured BEFORE round.status is overwritten below.
   const becameActive = data.status === 'Active' && round.status !== 'Active';
+  const becameCancelled = statusChanges && data.status === 'Cancelled';
 
   // Date validation
   const startDate = data.startDate ? new Date(data.startDate) : round.startDate;
@@ -212,31 +267,44 @@ const update = async (id, data, updatedBy) => {
     throw { status: 400, message: 'Start date must be before end date' };
   }
 
-  // Vessel conflict check if changing vessel
-  if (data.vesselId && String(data.vesselId) !== String(round.vesselId)) {
-    const conflict = await Round.findOne({
-      vesselId:  data.vesselId,
-      status:    'Active',
-      _id:       { $ne: id },
-    });
-    if (conflict) {
-      throw { status: 400, message: `Vessel is in active round ${conflict.roundNumber}` };
-    }
+  // Vessel: must exist and be Active when it changes (RV-01/03)
+  const vesselChanged = data.vesselId && String(data.vesselId) !== String(round.vesselId);
+  if (vesselChanged) {
+    const vessel = await Vessel.findOne({ _id: data.vesselId }).select('status').lean();
+    if (!vessel) throw { status: 400, message: 'Vessel not found' };
+    if (vessel.status !== 'Active') throw { status: 400, message: `Vessel is not Active (${vessel.status})` };
   }
+
+  // One Active round per vessel: checked on a vessel change AND whenever the round becomes Active (RV-07).
+  // The partial unique index closes the race between two concurrent requests (RV-34).
+  if (vesselChanged || becameActive) {
+    await assertVesselFree(data.vesselId || round.vesselId, id);
+  }
+
+  // Cancelling is refused while live bookings exist; bookings are never auto-cancelled (RV-25).
+  if (becameCancelled) await assertNoLiveBookings(round);
 
   const allowed = ['vesselId', 'startDate', 'endDate', 'status', 'notes', 'roundName'];
   allowed.forEach(field => { if (data[field] !== undefined) round[field] = data[field]; });
   round.updatedBy = updatedBy;
-  await round.save();
+
+  await runRoundTx(async (session) => {
+    await round.save({ session });
+    if (becameCancelled) {
+      // Voyages that can still be cancelled follow the round; Arrived/Completed stay as history.
+      await Voyage.updateMany(
+        { roundId: id, status: { $in: CANCELLABLE_VOYAGE_STATUSES } },
+        { $set: { status: 'Cancelled', updatedBy } },
+        { session }
+      );
+    }
+    // Sprint 042 — Planned→Active transition cascades the round's first
+    // voyage to Departed (see cascadeFirstVoyageToDeparted comment).
+    if (becameActive) await cascadeFirstVoyageToDeparted(id, updatedBy, session);
+  });
 
   // Invalidate capacity cache — vessel, dates, or status may have changed
   invalidateRoundCache(id);
-
-  // Sprint 042 — Planned→Active transition cascades the round's first
-  // voyage to Departed (see cascadeFirstVoyageToDeparted comment).
-  if (becameActive) {
-    await cascadeFirstVoyageToDeparted(id, updatedBy);
-  }
 
   return Round.findById(id)
     .populate('serviceId', 'serviceCode serviceName')
@@ -256,50 +324,57 @@ const update = async (id, data, updatedBy) => {
 // blocks its own delete if a non-cancelled Invoice references it, so an
 // invoiced Booking blocks this Round delete transitively) — narrow,
 // exclusive-ownership cleanup, not a generic cascade.
+// Guards and cleanup run in ONE transaction (RV-37): a failed cleanup aborts the delete instead of being
+// swallowed, so the call never reports success while records remain.
 const hardDelete = async (id) => {
   await require('./roundLock').assertRoundOpen(id);
   const round = await Round.findOne({ _id: id });
   if (!round) throw { status: 404, message: 'Round not found' };
 
   const voyageIds = round.voyageIds || [];
+  const mongoose = require('mongoose');
 
-  // Block if any voyage under this round has Layer 2 (Operational) bookings
-  let Booking;
-  try { Booking = require('../bookings/booking.model'); } catch { Booking = null; }
-  if (Booking) {
-    const hasBooking = await Booking.exists({ voyageId: { $in: voyageIds } });
-    if (hasBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have bookings' };
-  }
+  await runRoundTx(async (session) => {
+    // Block if any voyage under this round has Layer 2 (Operational) bookings
+    let Booking;
+    try { Booking = require('../bookings/booking.model'); } catch { Booking = null; }
+    if (Booking) {
+      const hasBooking = await Booking.exists({ voyageId: { $in: voyageIds } }).session(session);
+      if (hasBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have bookings' };
+    }
 
-  // Same check, Layer 1 (Estimated/ManualBooking) — the Voyage cascade below
-  // would otherwise silently orphan a live commercial reservation that has
-  // no independent existence once its voyage is gone.
-  let ManualBooking;
-  try { ManualBooking = require('../bookings/manualBooking.model'); } catch { ManualBooking = null; }
-  if (ManualBooking) {
-    const hasManualBooking = await ManualBooking.exists({ voyageId: { $in: voyageIds } });
-    if (hasManualBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have estimated bookings' };
-  }
+    // Same check, Layer 1 (Estimated/ManualBooking) — the Voyage cascade below
+    // would otherwise silently orphan a live commercial reservation that has
+    // no independent existence once its voyage is gone.
+    let ManualBooking;
+    try { ManualBooking = require('../bookings/manualBooking.model'); } catch { ManualBooking = null; }
+    if (ManualBooking) {
+      const hasManualBooking = await ManualBooking.exists({ voyageId: { $in: voyageIds } }).session(session);
+      if (hasManualBooking) throw { status: 400, message: 'Cannot delete — one or more voyages have estimated bookings' };
+    }
 
-  // Expenses can be scoped to the Round itself (roundId) or to one of its
-  // Voyages (voyageId) — either would otherwise be orphaned by the cascade.
-  let Expense;
-  try { Expense = require('../expenses/expense.model'); } catch { Expense = null; }
-  if (Expense) {
-    const hasExpense = await Expense.exists({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }] });
-    if (hasExpense) throw { status: 400, message: 'Cannot delete — expenses are recorded against this round or its voyages' };
-  }
+    // Expenses can be scoped to the Round itself (roundId) or to one of its
+    // Voyages (voyageId) — either would otherwise be orphaned by the cascade.
+    let Expense;
+    try { Expense = require('../expenses/expense.model'); } catch { Expense = null; }
+    if (Expense) {
+      const hasExpense = await Expense.exists({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }] }).session(session);
+      if (hasExpense) throw { status: 400, message: 'Cannot delete — expenses are recorded against this round or its voyages' };
+    }
 
-  // Audit H5: ledger lines / settlements / reserve / posted expenses / invoiced items block the delete
-  const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
-  await assertNoDependents('round', id, DEPENDENTS.round);
-  await assertNoDependents('voyage', { $in: voyageIds }, DEPENDENTS.voyage);
-  await require('mongoose').model('PartnerTransfer').deleteMany({ roundId: id, status: 'Suggested' }).catch(() => {});
-  await require('mongoose').model('PartnerSettlement').deleteMany({ roundId: id, status: 'Draft' }).catch(() => {});
-  await require('mongoose').model('BookingItem').deleteMany({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }], locked: false }).catch(() => {});
+    // Audit H5: ledger lines / settlements / reserve / posted expenses / invoiced items block the delete
+    const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
+    await assertNoDependents('round', id, DEPENDENTS.round, { session });
+    await assertNoDependents('voyage', { $in: voyageIds }, DEPENDENTS.voyage, { session });
+    await mongoose.model('PartnerTransfer').deleteMany({ roundId: id, status: 'Suggested' }, { session });
+    await mongoose.model('PartnerSettlement').deleteMany({ roundId: id, status: 'Draft' }, { session });
+    await mongoose.model('BookingItem').deleteMany({ $or: [{ roundId: id }, { voyageId: { $in: voyageIds } }], locked: false }, { session });
 
-  if (voyageIds.length) await Voyage.deleteMany({ _id: { $in: voyageIds } });
-  await Round.findByIdAndDelete(id);
+    if (voyageIds.length) await Voyage.deleteMany({ _id: { $in: voyageIds } }, { session });
+    await Round.findByIdAndDelete(id, { session });
+  });
+
+  invalidateRoundCache(id);
 };
 
 module.exports = { list, getById, getRoundVoyages, create, update, hardDelete };

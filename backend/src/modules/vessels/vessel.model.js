@@ -3,6 +3,23 @@
 const mongoose = require('mongoose');
 const { VESSEL_STATUS, OWNERSHIP_TYPES } = require('../../config/constants');
 
+const ownerContactSchema = new mongoose.Schema({
+  name:  { type: String, required: true, trim: true, maxlength: 100 },
+  title: { type: String, trim: true, default: null, maxlength: 100 },
+  phone: { type: String, trim: true, default: null, maxlength: 40 },
+  email: { type: String, trim: true, lowercase: true, default: null },
+}, { _id: true });
+
+// Charter-party history (owner 2026-10-27): append-only list of C/P dates with delivery/redelivery dates + prices
+// (USD minor units). The newest entry drives charterStartDate / charterEndDate below.
+const charterEntrySchema = new mongoose.Schema({
+  charterPartyDate:     { type: Date, default: null },
+  deliveryDate:         { type: Date, required: true },
+  deliveryPriceMinor:   { type: Number, min: 0, validate: (v) => v == null || Number.isSafeInteger(v), default: null },
+  redeliveryDate:       { type: Date, required: true },
+  addedBy:              { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+}, { _id: true, timestamps: { createdAt: true, updatedAt: false } });
+
 const vesselSchema = new mongoose.Schema(
   {
     vesselCode:            { type: String, required: true, unique: true, trim: true, uppercase: true, maxlength: 20 },
@@ -10,7 +27,7 @@ const vesselSchema = new mongoose.Schema(
     imoNumber:             { type: String, required: true, unique: true, trim: true },
     flag:                  { type: String, trim: true, default: null },
     callSign:              { type: String, trim: true, default: null },
-    reeferPlugs:           { type: Number, min: 0, validate: Number.isInteger, default: null },
+    reeferPlugs:           { type: Number, min: 0, validate: (v) => v == null || Number.isInteger(v), default: null },
     particularsFileUrl:    { type: String, trim: true, default: null },   // vessel particulars PDF (authenticated download)
     particularsOriginalName: { type: String, trim: true, default: null },
     ownershipType:         { type: String, enum: OWNERSHIP_TYPES, required: true },
@@ -18,6 +35,8 @@ const vesselSchema = new mongoose.Schema(
     ownershipDescription:  { type: String, trim: true, default: null, maxlength: 500 },
     charterStartDate:      { type: Date, default: null },
     charterEndDate:        { type: Date, default: null },
+    ownerContacts:         { type: [ownerContactSchema], default: [] },
+    charterHistory:        { type: [charterEntrySchema], default: [] },
     capacity:              { type: Number, min: 0, default: null },
     dwt:                   { type: Number, min: 0, default: null },
     builtYear:             { type: Number, min: 1800, max: new Date().getFullYear() + 1, default: null },

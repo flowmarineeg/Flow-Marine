@@ -50,8 +50,9 @@ export default function VoyageAddForm({ round, onSuccess, onCancel }) {
       };
       return voyagesService.create(payload);
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       toast.success('Voyage added');
+      (res?.data?.data?.warnings || []).forEach(w => toast(w, { icon: '⚠️', duration: 6000 }));
       onSuccess?.();
     },
     onError: (e) => showErrorToast(e, 'save'),

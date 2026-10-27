@@ -9,7 +9,8 @@ const handle = (req, res, next) => {
   next();
 };
 
-const { isIban, isSwift, isEmail, isCurrencyCode } = require('../../utils/masterValidators');
+const { isEmail, isCurrencyCode } = require('../../utils/masterValidators');
+const { bankAccountRules } = require('../../utils/bankAccounts');
 
 const optional = { nullable: true, checkFalsy: true };
 const extra = [
@@ -17,9 +18,7 @@ const extra = [
   body('contacts').optional().isArray({ max: 20 }).withMessage('contacts must be an array (max 20)'),
   body('contacts.*.name').isString().trim().notEmpty().withMessage('Each contact needs a name'),
   body('contacts.*.email').optional(optional).custom(isEmail).withMessage('Invalid contact email'),
-  body('bank').optional().isObject(),
-  body('bank.usdIban').optional(optional).custom(isIban).withMessage('Invalid IBAN'),
-  body('bank.swiftCode').optional(optional).custom(isSwift).withMessage('Invalid SWIFT code'),
+  ...bankAccountRules,
 ];
 
 const validateCreate = [
@@ -44,7 +43,6 @@ const validateShares = [
   body('shares').isArray({ min: 1 }).withMessage('shares must be a non-empty array'),
   body('shares.*.partnerId').isMongoId().withMessage('Invalid partnerId'),
   body('shares.*.shareBp').isInt({ min: 1, max: 10000 }).withMessage('shareBp must be an integer 1-10000').toInt(),
-  body('shares.*.isLead').optional().isBoolean().toBoolean(),
   handle,
 ];
 

@@ -15,7 +15,7 @@ router.use(auth);
 // Bank details are sensitive: only partners:manage holders get them back.
 const redactBank = async (req, data) => {
   if (await hasPermission(req, 'partners', 'manage')) return data;
-  const strip = (p) => { const { bank, ...rest } = p; return rest; }; // eslint-disable-line no-unused-vars
+  const strip = (p) => { const { bank, bankAccounts, ...rest } = p; return rest; }; // eslint-disable-line no-unused-vars
   return Array.isArray(data) ? data.map(strip) : strip(data);
 };
 

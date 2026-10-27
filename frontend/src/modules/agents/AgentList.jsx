@@ -61,7 +61,7 @@ export default function AgentList() {
   return (
     <div className="animate-fadeIn">
       <PageHeader
-        title="Agents"
+        title="Vessels/Agents"
         subtitle="Manage port agents and shipping agents"
         action={
           can('agents', 'create') && (

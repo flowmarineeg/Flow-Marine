@@ -9,15 +9,12 @@ const vesselPartnerSchema = new mongoose.Schema(
     vesselId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Vessel', required: true },
     partnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', required: true },
     shareBp:   { type: Number, required: true, min: 1, max: 10000, validate: Number.isInteger },
-    isLead:    { type: Boolean, default: false },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }
 );
 
 vesselPartnerSchema.index({ vesselId: 1, partnerId: 1 }, { unique: true });
-// DB-level: at most one lead per vessel.
-vesselPartnerSchema.index({ vesselId: 1 }, { unique: true, partialFilterExpression: { isLead: true }, name: 'one_lead_per_vessel' });
 vesselPartnerSchema.index({ partnerId: 1 });
 
 module.exports = mongoose.model('VesselPartner', vesselPartnerSchema);

@@ -30,7 +30,7 @@ const FILTERS = [
 export default function CustomersPage() {
   return (
     <PageGuard module="customers">
-      <MasterTable queryKey="customers" module="customers" title="Customers"
+      <MasterTable queryKey="customers" module="customers" title="Agents/Customers"
         subtitle="End customers and shippers (commercial agents, NVOCCs, freight forwarders)" service={customersService}
         columns={COLUMNS} filters={FILTERS} FormComponent={CustomerForm} exportFilename="customers" />
     </PageGuard>

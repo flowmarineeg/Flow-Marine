@@ -30,4 +30,5 @@ export const MODULES = [
   'rounds', 'voyages', 'bookings', 'expenses', 'invoices',
   'tracking', 'reports', 'export', 'dashboard', 'auditLogs',
   'partners', 'ledger', // Sprint050 V2
+  'accounting', 'invoiceServices', // master data 2026-10-27
 ];

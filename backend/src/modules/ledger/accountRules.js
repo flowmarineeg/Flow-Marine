@@ -15,7 +15,7 @@ const RULES = {
 /** Pure: does this account satisfy the rule? */
 const accountMatches = (account, rule) => {
   const r = RULES[rule];
-  return !!(r && account && account.isActive !== false && account.type === r.type && String(account.code || '').startsWith(r.prefix));
+  return !!(r && account && account.isActive !== false && !account.isGroup && account.isPosting !== false && account.type === r.type && String(account.code || '').startsWith(r.prefix));
 };
 
 /** Loads the account and throws 400 unless it satisfies the rule. Returns the lean account. */

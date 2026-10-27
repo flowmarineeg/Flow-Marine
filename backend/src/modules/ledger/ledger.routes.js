@@ -23,7 +23,7 @@ router.get('/account-lookup', async (req, res, next) => {
     const { RULES } = require('./accountRules');
     const Account = require('./account.model');
     const r = RULES[rule];
-    const query = { isActive: true, ...(r ? { type: r.type, code: { $regex: `^${r.prefix}` } } : {}) };
+    const query = { isActive: true, isGroup: { $ne: true }, isPosting: { $ne: false }, ...(r ? { type: r.type, code: { $regex: `^${r.prefix}` } } : {}) };
     return success(res, await Account.find(query).select('code name type').sort({ code: 1 }).lean());
   } catch (e) { next(e); }
 });
