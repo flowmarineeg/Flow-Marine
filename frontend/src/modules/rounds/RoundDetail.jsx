@@ -12,6 +12,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import RoundForm from '@/modules/rounds/RoundForm';
 import RoundVoyageList from '@/modules/rounds/RoundVoyageList';
+import RoundLegsPanel from '@/modules/rounds/RoundLegsPanel';
 import Badge from '@/components/ui/Badge';
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -156,15 +157,8 @@ export default function RoundDetailPage({ roundId }) {
           </div>
         </div>
 
-        {/* Route as it was when the round was created (later Service route edits do not change it) */}
-        {round.routeSnapshot?.legs?.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Route (at round creation)</p>
-            <p className="text-sm text-gray-600">
-              {round.routeSnapshot.legs.map(l => l.portName || l.portCode || '—').join(' → ')}
-            </p>
-          </div>
-        )}
+        {/* The round's own legs: copied from the Service route at creation, editable here */}
+        <RoundLegsPanel round={round} />
 
         {/* Notes */}
         {round.notes && (

@@ -45,17 +45,4 @@ const scheduleWarnings = (state, round, previous) => {
   return out;
 };
 
-/**
- * Deleting is allowed for a manual voyage, or for the LAST generated voyage of the round. A middle generated
- * voyage would break the POL/POD chain, so it must be cancelled instead.
- * voyage: { isManual, sequence }; siblings: other voyages of the round [{ isManual, sequence }].
- */
-const deleteBlockReason = (voyage, siblings) => {
-  if (voyage.isManual) return null;
-  const laterGenerated = siblings.some((s) => !s.isManual && s.sequence > voyage.sequence);
-  return laterGenerated
-    ? 'Cannot delete — this voyage is in the middle of the route chain. Cancel it instead (status → Cancelled).'
-    : null;
-};
-
-module.exports = { validateVoyageState, scheduleWarnings, deleteBlockReason };
+module.exports = { validateVoyageState, scheduleWarnings };

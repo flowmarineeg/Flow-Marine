@@ -8,5 +8,6 @@ export const roundsService = {
   getVoyages:      (id)          => api.get(`${BASE}/${id}/voyages`),
   create:          (data)        => api.post(BASE, data),
   update:          (id, data)    => api.put(`${BASE}/${id}`, data),
+  updateLegs:      (id, legs)    => api.put(`${BASE}/${id}/legs`, { legs }),
   remove:          (id)          => api.delete(`${BASE}/${id}`),
 };

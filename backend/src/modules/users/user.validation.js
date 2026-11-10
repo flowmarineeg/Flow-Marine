@@ -19,6 +19,7 @@ const validateCreate = [
     .matches(/[A-Z]/).withMessage('Must contain an uppercase letter')
     .matches(/[0-9]/).withMessage('Must contain a number'),
   body('roleId').isMongoId().withMessage('Valid role is required'),
+  body('partnerId').optional({ nullable: true, checkFalsy: true }).isMongoId().withMessage('Valid partner is required'),
   body('status').optional().isIn(['Active', 'Inactive']),
   handle,
 ];
@@ -27,6 +28,7 @@ const validateInvite = [
   body('name').trim().notEmpty().withMessage('Name is required').isLength({ max: 100 }),
   body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
   body('roleId').isMongoId().withMessage('Valid role is required'),
+  body('partnerId').optional({ nullable: true, checkFalsy: true }).isMongoId().withMessage('Valid partner is required'),
   handle,
 ];
 
@@ -48,6 +50,7 @@ const validateUpdate = [
   body('name').optional().trim().notEmpty().isLength({ max: 100 }),
   body('email').optional().isEmail().normalizeEmail(),
   body('roleId').optional().isMongoId(),
+  body('partnerId').optional({ nullable: true }).custom((v) => v === null || v === '' || /^[0-9a-fA-F]{24}$/.test(String(v))).withMessage('Valid partner is required'),
   body('status').optional().isIn(['Active', 'Inactive']),
   handle,
 ];

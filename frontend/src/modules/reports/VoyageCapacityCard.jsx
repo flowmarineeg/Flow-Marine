@@ -66,9 +66,9 @@ export default function VoyageCapacityCard({ voyage: v, vesselName, vesselCapaci
         <Stat label="Capacity Before Loading" value={v.capacityBeforeLoading != null ? `${fmt(v.capacityBeforeLoading)} TEU` : '—'} />
         <Stat label="Loaded TEU" value={`+${fmt(v.loadedTEU)}`} accent />
         <Stat label="Discharged TEU" value={`−${fmt(v.dischargedTEU)}`} />
-        <Stat label="Onboard After" value={`${fmt(v.onboardTEU)} TEU`} />
+        <Stat label="Peak Onboard" value={`${fmt(v.onboardTEU)} TEU`} sub="fullest leg of the run" />
         <Stat
-          label="Remaining Capacity"
+          label="Remaining at Peak"
           value={v.remainingTEU != null ? `${fmt(v.remainingTEU)} TEU` : '—'}
           danger={isOverbooked}
         />
@@ -90,6 +90,42 @@ export default function VoyageCapacityCard({ voyage: v, vesselName, vesselCapaci
           />
         )}
       </div>
+
+      {/* Per-leg detail (capacity engine rewritten 2026-11-10): TEU aboard on every segment of the run, both layers */}
+      {(v.segments || []).length > 0 && (
+        <div className="mt-4 pt-3 border-t border-gray-100 overflow-x-auto">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Per leg (POL → POD)</p>
+          <table className="w-full text-[12px] border-collapse" style={{ minWidth: 560 }}>
+            <thead>
+              <tr className="text-left text-[10px] text-gray-400 uppercase tracking-wider">
+                <th className="py-1 pr-3 font-semibold">Leg</th>
+                <th className="py-1 pr-3 font-semibold text-right">Loaded at start</th>
+                <th className="py-1 pr-3 font-semibold text-right">Discharged at end</th>
+                <th className="py-1 pr-3 font-semibold text-right">Aboard</th>
+                <th className="py-1 pr-3 font-semibold text-right">L1 / L2</th>
+                <th className="py-1 pr-3 font-semibold text-right">Remaining</th>
+                <th className="py-1 font-semibold text-right">Util</th>
+              </tr>
+            </thead>
+            <tbody>
+              {v.segments.map(sg => {
+                const over = sg.remainingTEU != null && sg.remainingTEU < 0;
+                return (
+                  <tr key={sg.index} className={`border-t border-gray-50 ${over ? 'text-red-600' : 'text-gray-700'}`}>
+                    <td className="py-1 pr-3 whitespace-nowrap">{sg.fromPort?.name || sg.fromPort?.code} <span className="text-gray-300">→</span> {sg.toPort?.name || sg.toPort?.code}</td>
+                    <td className="py-1 pr-3 text-right">+{fmt(sg.loadedTEU)}</td>
+                    <td className="py-1 pr-3 text-right">−{fmt(sg.dischargedTEU)}</td>
+                    <td className="py-1 pr-3 text-right font-semibold">{fmt(sg.onboardTEU)}</td>
+                    <td className="py-1 pr-3 text-right text-gray-400">{fmt(sg.layer1?.onboardTEU)} / {fmt(sg.layer2?.onboardTEU)}</td>
+                    <td className="py-1 pr-3 text-right">{sg.remainingTEU != null ? fmt(sg.remainingTEU) : '—'}</td>
+                    <td className="py-1 text-right font-semibold">{sg.utilisationPct != null ? `${sg.utilisationPct}%` : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {ownWarnings.length > 0 && (
         <div className="mt-4 pt-3 border-t border-red-100 flex flex-col gap-1.5">

@@ -31,4 +31,15 @@ const validateUpdate = [
   handle,
 ];
 
-module.exports = { validateCreate, validateUpdate };
+const validateLegs = [
+  body('legs').isArray({ min: 2 }).withMessage('A round needs at least 2 legs'),
+  body('legs.*.legKey').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 40 }),
+  body('legs.*.countryId').isMongoId().withMessage('Valid country is required on every leg'),
+  body('legs.*.cityId').isMongoId().withMessage('Valid city is required on every leg'),
+  body('legs.*.portId').isMongoId().withMessage('Valid port is required on every leg'),
+  body('legs.*.terminalId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  body('legs.*.agentId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  handle,
+];
+
+module.exports = { validateCreate, validateUpdate, validateLegs };

@@ -7,8 +7,8 @@ import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
 import { voyagesService }   from '@/services/voyages.service';
-import { agentsService }    from '@/services/agents.service';
 import { useRounds }        from '@/hooks/useRounds';
+import { useBookingLookups } from '@/hooks/useBookingLookups';
 import { usePermission }    from '@/context/PermissionContext';
 import { BOOKING_STATUS }   from '@/utils/constants';
 import { getVoyageLabel }   from '@/utils/voyageLabel';
@@ -40,6 +40,7 @@ export default function BookingList() {
   const [roundId,      setRoundId]      = useState('');
   const [voyageId,     setVoyageId]     = useState('');
   const [agentId,      setAgentId]      = useState('');
+  const [partnerId,    setPartnerId]    = useState(''); // staff filter: bookings given to us by a partner
   const [selected,     setSelected]     = useState([]);
   const [modal,        setModal]        = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -70,8 +71,8 @@ export default function BookingList() {
   // share this same query/table, just scoped by dischargeStatus.
   const dischargeStatusParam = activeTab === 'discharged' ? 'Discharged' : activeTab === 'remaining' ? 'Remaining' : '';
   const { data, isLoading } = useQuery({
-    queryKey: ['bookings', page, search, status, voyageId, agentId, dischargeStatusParam],
-    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, voyageId, agentId, dischargeStatus: dischargeStatusParam }).then(r => r.data),
+    queryKey: ['bookings', page, search, status, roundId, voyageId, agentId, partnerId, dischargeStatusParam],
+    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, roundId, voyageId, agentId, partnerId, dischargeStatus: dischargeStatusParam }).then(r => r.data),
     enabled:  ['detail', 'discharged', 'remaining'].includes(activeTab),
   });
 
@@ -84,36 +85,32 @@ export default function BookingList() {
   const [manualAgentId,  setManualAgentId]  = useState('');
 
   const { data: manualData, isLoading: manualLoading } = useQuery({
-    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, manualVoyageId, manualAgentId],
-    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, voyageId: manualVoyageId, agentId: manualAgentId }).then(r => r.data),
+    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, manualRoundId, manualVoyageId, manualAgentId, partnerId],
+    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, roundId: manualRoundId, voyageId: manualVoyageId, agentId: manualAgentId, partnerId }).then(r => r.data),
     enabled:  activeTab === 'manual',
   });
 
   // Sprint 030: Round → Voyage cascading filters (both tabs)
-  const { rounds } = useRounds();
+  // Bookings sprint 2026-11-10: partner users only reach /bookings, so every pick-list comes from the lookups
+  // endpoint; staff keep the full round list (any status) and the per-round voyage filter.
+  const lookups = useBookingLookups();
+  const isPartnerUser = lookups.isPartnerUser;
+  const { rounds: staffRounds } = useRounds({}, { enabled: !isPartnerUser });
+  const rounds = isPartnerUser ? lookups.rounds : staffRounds;
   const { data: voyageData } = useQuery({
     queryKey: ['voyages-dropdown', roundId],
     queryFn:  () => voyagesService.list({ roundId, limit: 200 }).then(r => r.data.data),
-    enabled:  !!roundId,
+    enabled:  !!roundId && !isPartnerUser,
   });
   const { data: manualVoyageData } = useQuery({
     queryKey: ['voyages-dropdown', manualRoundId],
     queryFn:  () => voyagesService.list({ roundId: manualRoundId, limit: 200 }).then(r => r.data.data),
-    enabled:  !!manualRoundId,
+    enabled:  !!manualRoundId && !isPartnerUser,
   });
-  const { data: agentData  } = useQuery({ queryKey: ['agents-dropdown'],  queryFn: () => agentsService.list({ limit: 200, status: 'Active' }).then(r => r.data.data) });
   const voyages       = voyageData       || [];
   const manualVoyages = manualVoyageData || [];
-  const agents         = agentData  || [];
-
-  // Discharge List export modal needs its own unfiltered voyage list —
-  // it is a standalone export tool, independent of the Round/Voyage list filters above.
-  const { data: allVoyageData } = useQuery({
-    queryKey: ['voyages-dropdown-all'],
-    queryFn:  () => voyagesService.list({ limit: 200 }).then(r => r.data.data),
-    enabled:  dischargeOpen,
-  });
-  const allVoyages = allVoyageData || [];
+  const agents        = lookups.agents;
+  const partners      = lookups.partners;
 
   const deleteMutation = useMutation({
     mutationFn: (id) => bookingsService.remove(id),
@@ -262,19 +259,27 @@ export default function BookingList() {
             <option value="">All Rounds</option>
             {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
           </select>
-          <select value={voyageId} onChange={e => { setVoyageId(e.target.value); setPage(1); }} disabled={!roundId} className={`${sc} disabled:opacity-50`}>
-            <option value="">{roundId ? 'All Voyages' : 'Select a round first'}</option>
-            {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
-          </select>
+          {!isPartnerUser && (
+            <select value={voyageId} onChange={e => { setVoyageId(e.target.value); setPage(1); }} disabled={!roundId} className={`${sc} disabled:opacity-50`}>
+              <option value="">{roundId ? 'All Voyages' : 'Select a round first'}</option>
+              {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
+            </select>
+          )}
           <select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} className={sc}>
             <option value="">All Agents</option>
             {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode}</option>)}
           </select>
+          {!isPartnerUser && (
+            <select value={partnerId} onChange={e => { setPartnerId(e.target.value); setPage(1); setManualPage(1); }} className={sc}>
+              <option value="">All Partners</option>
+              {partners.map(p => <option key={p._id} value={p._id}>{p.code}</option>)}
+            </select>
+          )}
           <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className={sc}>
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <ExportButton module="bookings" filters={{ voyageId, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />
+          {!isPartnerUser && <ExportButton module="bookings" filters={{ voyageId, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />}
           {/* Sprint 047 — bulk delete */}
           {selected.length > 0 && can('bookings', 'delete') && (
             <Button variant="danger" size="sm" onClick={() => setBulkConfirm(true)}>
@@ -282,7 +287,7 @@ export default function BookingList() {
             </Button>
           )}
           {/* Sprint 027 — Discharge List export */}
-          {(can('bookings', 'export') && can('export', 'read')) && (
+          {(!isPartnerUser && can('bookings', 'export') && can('export', 'read')) && (
             <button
               onClick={() => setDischargeOpen(true)}
               className="btn btn-secondary btn-sm flex items-center gap-1.5"
@@ -313,13 +318,13 @@ export default function BookingList() {
           ) : (
             <div className="overflow-x-auto">
               {/* minWidth ensures the table scrolls internally rather than expanding the page */}
-              <table className="w-full border-collapse" style={{ minWidth: 800 }}>
+              <table className="w-full border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
                   <tr className="table-header">
                     <th className="w-10 px-4 py-2.5">
                       <input type="checkbox" checked={selected.length === bookings.length && bookings.length > 0} onChange={toggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
                     </th>
-                    {['Booking No','Voyage','Agent','Shipper / Consignee','Container','Total Freight','Status','Discharge','Actions'].map(h => <th key={h}>{h}</th>)}
+                    {['Booking No','Voyage','POL → POD','Agent','Partner','Shipper / Consignee','Container','Total Freight','Status','Discharge','Actions'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -334,7 +339,9 @@ export default function BookingList() {
                         </button>
                       </td>
                       <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{getVoyageLabel(b.voyageId)}</span></td>
+                      <td><span className="text-xs text-gray-600 whitespace-nowrap">{b.polId?.code || b.polId?.name || '—'} → {b.podId?.code || b.podId?.name || '—'}</span></td>
                       <td><span className="text-xs text-gray-600">{b.agentId?.agentName}</span></td>
+                      <td>{b.partnerId ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 whitespace-nowrap">{b.partnerId.code || b.partnerId.name}</span> : <span className="text-[11px] text-gray-300">—</span>}</td>
                       <td>
                         <p className="text-xs font-medium text-gray-700 truncate max-w-[140px]">{b.shipper || '—'}</p>
                         <p className="text-xs text-gray-400 truncate max-w-[140px]">{b.consignee || '—'}</p>
@@ -400,10 +407,12 @@ export default function BookingList() {
             <option value="">All Rounds</option>
             {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
           </select>
-          <select value={manualVoyageId} onChange={e => { setManualVoyageId(e.target.value); setManualPage(1); }} disabled={!manualRoundId} className={`${sc} disabled:opacity-50`}>
-            <option value="">{manualRoundId ? 'All Voyages' : 'Select a round first'}</option>
-            {manualVoyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
-          </select>
+          {!isPartnerUser && (
+            <select value={manualVoyageId} onChange={e => { setManualVoyageId(e.target.value); setManualPage(1); }} disabled={!manualRoundId} className={`${sc} disabled:opacity-50`}>
+              <option value="">{manualRoundId ? 'All Voyages' : 'Select a round first'}</option>
+              {manualVoyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
+            </select>
+          )}
           <select value={manualAgentId} onChange={e => { setManualAgentId(e.target.value); setManualPage(1); }} className={sc}>
             <option value="">All Agents</option>
             {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode}</option>)}
@@ -412,7 +421,7 @@ export default function BookingList() {
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <ExportButton module="manualBookings" filters={{ voyageId: manualVoyageId, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />
+          {!isPartnerUser && <ExportButton module="manualBookings" filters={{ voyageId: manualVoyageId, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />}
           {/* Sprint 047 — bulk delete */}
           {manualSelected.length > 0 && can('bookings', 'delete') && (
             <Button variant="danger" size="sm" onClick={() => setManualBulkConfirm(true)}>
@@ -428,13 +437,13 @@ export default function BookingList() {
             <EmptyState title="No estimated bookings found" message="Create an estimated booking to record commercial cargo reservations before container numbers are available." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse" style={{ minWidth: 700 }}>
+              <table className="w-full border-collapse" style={{ minWidth: 900 }}>
                 <thead>
                   <tr className="table-header">
                     <th className="w-10 px-4 py-2.5">
                       <input type="checkbox" checked={manualSelected.length === manualBookings.length && manualBookings.length > 0} onChange={manualToggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
                     </th>
-                    {['Booking No','Voyage','Agent','POL → POD','Rows','Total TEU','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
+                    {['Booking No','Voyage','Agent','Partner','POL → POD','Rows','Total TEU','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -450,6 +459,7 @@ export default function BookingList() {
                       </td>
                       <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{getVoyageLabel(m.voyageId)}</span></td>
                       <td><span className="text-xs text-gray-600">{m.agentId?.agentName}</span></td>
+                      <td>{m.partnerId ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 whitespace-nowrap">{m.partnerId.code || m.partnerId.name}</span> : <span className="text-[11px] text-gray-300">—</span>}</td>
                       <td className="text-xs text-gray-600 whitespace-nowrap">
                         {m.polId?.code || m.polId?.name || '—'} → {m.podId?.code || m.podId?.name || '—'}
                       </td>
@@ -537,12 +547,10 @@ export default function BookingList() {
         confirmLabel="Delete Selected"
       />
 
-      {/* Sprint 027 — Discharge List export modal */}
+      {/* Discharge list by POL -> POD (screen + Excel), reworked 2026-11-10 */}
       <DischargeListExportModal
         open={dischargeOpen}
         onClose={() => setDischargeOpen(false)}
-        voyages={allVoyages}
-        agents={agents}
       />
     </div>
   );

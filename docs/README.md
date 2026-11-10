@@ -13,9 +13,9 @@ If a statement here disagrees with the code, the code wins — fix the doc.
 | # | Doc | Covers |
 |---|-----|--------|
 | 00 | [architecture.md](00-architecture.md) | Stack, request pipeline, auth/CSRF/RBAC/audit, errors, money, round lock, numbering, cache, env |
-| 01 | [master-data.md](01-master-data.md) | Locations, services + routes, agents (port/booking roles), customers, container types (TEU), expense types/categories, partners, agreements — aligned with Notion §11 |
+| 01 | [master-data.md](01-master-data.md) | Locations (+ library seed), invoice services, routes (liner services), vessels/agents (bank rows, AR account), agents/customers, container types (TEU), expense types/categories, partners (many bank rows), agreements, Accounting tab (6-digit chart) — aligned with Notion §11 |
 | 02 | [vessels.md](02-vessels.md) | Vessel schema (sections A–D), JV shares and lock, particulars PDF, redelivery alert, stats, delete guards |
-| 03 | [rounds-voyages.md](03-rounds-voyages.md) | Rounds, voyage generation, status flows, capacity engine, round close |
+| 03 | [rounds-voyages.md](03-rounds-voyages.md) | Services/routes → rounds → voyages: schema, data flow, CRUD rules, status flows, route snapshot, capacity engine, round close (mirrored in Notion proposal §12) |
 | 04 | [bookings.md](04-bookings.md) | Layer 2 bookings, Layer 1 manual bookings, Excel import (3 types), discharge list |
 | 05 | [expenses.md](05-expenses.md) | Scope rules, PDA/FDA, posting to ledger, attachments |
 | 06 | [invoices.md](06-invoices.md) | Booking items, V2 invoices, settlements, credit/debit notes, commission, PDF |
@@ -24,7 +24,8 @@ If a statement here disagrees with the code, the code wins — fix the doc.
 | 09 | [export.md](09-export.md) | Excel and ZIP export, discharge list |
 | 10 | [users-roles-rbac.md](10-users-roles-rbac.md) | Users, invites, roles, permission matrix, audit logs |
 | 11 | [accounting.md](11-accounting.md) | Ledger, agent accounts (SOA, netting, handling), partner settlement, reserve |
-| — | [audit/](audit/) | Current audit (fresh, 2026-10-25) |
+| — | [audit/](audit/) | Current audits: system audit 2026-10-25 (F-01…F-12) and rounds/voyages flow audit 2026-10-26 (RV-00…RV-41; RV-38…41 added 2026-10-31) |
+| — | [accounting/](accounting/) | Source material for the 6-digit chart (JSON import file and the coding-rules Word document) |
 
 ## Conventions used in these docs
 

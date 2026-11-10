@@ -23,6 +23,7 @@ const safeUser = (user) => ({
   email:     user.email,
   status:    user.status,
   roleId:    user.roleId,
+  partnerId: user.partnerId || null,
   lastLogin: user.lastLogin,
   createdAt: user.createdAt,
 });
@@ -33,7 +34,7 @@ const login = async (email, password) => {
   logger.debug(`[Auth] Login attempt: ${normalizedEmail}`);
 
   const user = await User.findOne({ email: normalizedEmail, isDeleted: false })
-    .populate('roleId', 'name isSystem');
+    .populate('roleId', 'name isSystem isPartnerRole');
 
   if (!user) {
     logger.debug(`[Auth] No user found for: ${normalizedEmail}`);
@@ -69,7 +70,7 @@ const login = async (email, password) => {
 // ─── Get current user ─────────────────────────────────────────────────────────
 const getMe = async (userId) => {
   const user = await User.findOne({ _id: userId, isDeleted: false })
-    .populate('roleId', 'name isSystem')
+    .populate('roleId', 'name isSystem isPartnerRole')
     .lean();
   if (!user) throw { status: 404, message: 'User not found' };
   return safeUser(user);

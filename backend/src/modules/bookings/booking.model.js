@@ -11,8 +11,15 @@ const bookingSchema = new mongoose.Schema(
     shipper:         { type: String, trim: true, default: null, maxlength: 200 },
     consignee:       { type: String, trim: true, default: null, maxlength: 200 },
     carrierName:     { type: String, trim: true, default: null, maxlength: 200 },
+    // Bookings sprint 2026-11-10: the booking's OWN ports, chosen by the user / read from the Excel row and
+    // validated against the run of the (server-assigned) voyage. legKeys pin the exact call when a port repeats.
     polId:           { type: mongoose.Schema.Types.ObjectId, ref: 'Port',          required: true },
     podId:           { type: mongoose.Schema.Types.ObjectId, ref: 'Port',          required: true },
+    polLegKey:       { type: String, trim: true, default: null },
+    podLegKey:       { type: String, trim: true, default: null },
+    // Partner that gave us this booking (reference label only, no money effect).
+    partnerId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', default: null },
+    source:          { type: String, enum: ['Staff', 'PartnerUser'], default: 'Staff' },
     containerTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainerType', required: true },
     freightRate:     { type: Number, required: true, min: 0 },
     totalFreight:    { type: Number, required: true, min: 0 },
@@ -51,5 +58,7 @@ const bookingSchema = new mongoose.Schema(
 bookingSchema.index({ createdAt: -1 });
 bookingSchema.index({ voyageId: 1, status: 1 });
 bookingSchema.index({ agentId:  1, status: 1 });
+bookingSchema.index({ partnerId: 1, status: 1 });
+bookingSchema.index({ voyageId: 1, polId: 1, podId: 1 });
 
 module.exports = mongoose.model('Booking', bookingSchema);

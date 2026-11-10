@@ -11,6 +11,8 @@ const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 const { invalidateRoundCache, computeVoyagePreview } = require('../capacity/capacity.service');
 const { capacityEnforcement } = require('../../config/env');
+const { resolveVoyage } = require('./bookingVoyage.service');
+const { assertPartner, assertOwn } = require('./partnerScope');
 
 // ─── Status transition map ────────────────────────────────────────────────────
 const STATUS_TRANSITIONS = {
@@ -60,24 +62,38 @@ const getVoyagePortIds = async (voyageId) => {
 
 // ─── Populate helper ──────────────────────────────────────────────────────────
 const populate = (q) =>
-  q.populate('voyageId', 'voyageNumber voyageName roundId polId podId etd eta status')
+  q.populate('voyageId', 'voyageNumber voyageName direction roundId polId podId etd eta status')
    .populate({ path: 'voyageId', populate: [{ path: 'polId', select: 'name code' }, { path: 'podId', select: 'name code' }] })
    .populate('agentId',         'agentCode agentName')
    .populate('polId',           'name code')
    .populate('podId',           'name code')
+   .populate('partnerId',       'code name')
    .populate('containerTypeId', 'code size type');
+
+// Fields a client may never write on a booking, whoever the caller is.
+const SERVER_FIELDS = [
+  'bookingNumber', 'voyageId', 'polId', 'podId', 'polLegKey', 'podLegKey', 'totalFreight', 'partnerId', 'source',
+  'dischargeStatus', 'dischargedAt',
+];
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 const list = async ({
   page = DEFAULT_PAGE, limit = DEFAULT_LIMIT,
-  search = '', voyageId = '', agentId = '',
+  search = '', voyageId = '', agentId = '', roundId = '', partnerId = '',
   status = '', dateFrom = '', dateTo = '',
   dischargeStatus = '', // Sprint 045 — additive: 'Discharged' | 'Remaining'
-} = {}) => {
+} = {}, scope = null) => {
   const query = {};
+  if (roundId) {
+    const ids = await Voyage.find({ roundId }).distinct('_id');
+    query.voyageId = { $in: ids };
+  }
   if (voyageId) query.voyageId = voyageId;
   if (agentId)  query.agentId  = agentId;
   if (dischargeStatus) query.dischargeStatus = dischargeStatus;
+  // A partner user is confined to their own partner; staff may filter by partner.
+  if (scope) query.partnerId = scope;
+  else if (partnerId) query.partnerId = partnerId;
   if (status) {
     // Support comma-separated statuses e.g. "Confirmed,Pending"
     query.status = status.includes(',')
@@ -95,6 +111,7 @@ const list = async ({
       { bookingNumber: { $regex: rx, $options: 'i' } },
       { shipper:       { $regex: rx, $options: 'i' } },
       { consignee:     { $regex: rx, $options: 'i' } },
+      { containerNumber: { $regex: rx, $options: 'i' } },
     ];
   }
 
@@ -108,29 +125,36 @@ const list = async ({
 };
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
-const getById = async (id) => {
+const getById = async (id, scope = null) => {
   const booking = await populate(Booking.findOne({ _id: id })).lean();
   if (!booking) throw { status: 404, message: 'Booking not found' };
+  // populated partnerId is a document: compare on its id
+  if (scope && String(booking.partnerId?._id || booking.partnerId || '') !== scope) throw { status: 404, message: 'Booking not found' };
   return booking;
 };
 
 // ─── Create ───────────────────────────────────────────────────────────────────
-const create = async (data, createdBy) => {
-  await lock.assertVoyageRoundOpen(data.voyageId);
+// Bookings sprint 2026-11-10: the caller sends roundId + the booking's own POL/POD. The voyage is never
+// chosen by the client: the server finds the run of the round that goes POL -> POD (`voyageId` is accepted
+// only as the pick among candidates after a 409 VOYAGE_AMBIGUOUS).
+const create = async (data, createdBy, scope = null) => {
   await require('../agents/agent.service').assertBookingSource(data.agentId);
-  const voyage = await Voyage.findById(data.voyageId).lean();
-  if (!voyage) throw { status: 400, message: 'Voyage not found' };
-  if (['Cancelled', 'Completed'].includes(voyage.status)) {
-    throw { status: 400, message: `Cannot book on a voyage with status "${voyage.status}"` };
-  }
-  await lock.assertRoundBookable(voyage);
+  const { voyage, polLegKey, podLegKey } = await resolveVoyage({
+    roundId: data.roundId, polId: data.polId, podId: data.podId,
+    polLegKey: data.polLegKey, podLegKey: data.podLegKey, voyageId: data.voyageId,
+  });
+  const [pol, pod] = await Promise.all([Port.exists({ _id: data.polId }), Port.exists({ _id: data.podId })]);
+  if (!pol || !pod) throw { status: 400, message: 'POL or POD port not found' };
+
+  const partnerId = scope || await assertPartner(data.partnerId);
+  const source = scope ? 'PartnerUser' : 'Staff';
+  // A partner user can only ever open a Pending booking; Cancelled is never a creation state.
+  const status = scope || !data.status || data.status === 'Cancelled' ? 'Pending' : data.status;
 
   const bookingNumber = await nextNumber('booking');
   // Sprint 024: each L2 booking = ONE container; totalFreight = freightRate (flat per container)
   const totalFreight  = Number(data.freightRate);
-  // Sprint 030: POL/POD are no longer client-submitted — they are always the
-  // selected voyage's own polId/podId. Strip any client-sent values.
-  const { totalFreight: _ig, polId: _ig2, podId: _ig3, ...safeData } = data;
+  const safeData = pickFields(Booking, data, [...SERVER_FIELDS, 'status']);
 
   // Sprint 022 — pre-flight capacity check (feature-flagged)
   const enforcementMode = capacityEnforcement();
@@ -140,9 +164,10 @@ const create = async (data, createdBy) => {
       // Sprint 025: quantity removed from L2; one booking = one container
       const preview = await computeVoyagePreview(
         voyage.roundId,
-        String(data.voyageId),
+        String(voyage._id),
         String(data.containerTypeId),
-        voyage.podId ? String(voyage.podId) : null,
+        String(data.podId),
+        String(data.polId),
       );
       if (!preview.canFit) {
         if (enforcementMode === 'strict') {
@@ -158,12 +183,14 @@ const create = async (data, createdBy) => {
 
   const booking = await Booking.create({
     ...safeData,
-    // Sprint 030: POL/POD always derived from the selected voyage's own ports
-    polId:     voyage.polId,
-    podId:     voyage.podId,
+    voyageId:  voyage._id,
+    polId:     data.polId,
+    podId:     data.podId,
+    polLegKey, podLegKey,
+    partnerId, source,
     bookingNumber,
     totalFreight,
-    status:    data.status === 'Cancelled' ? 'Pending' : (data.status || 'Pending'),
+    status,
     createdBy,
     updatedBy: createdBy,
   });
@@ -179,15 +206,20 @@ const create = async (data, createdBy) => {
 };
 
 // ─── Update ───────────────────────────────────────────────────────────────────
-const update = async (id, data, updatedBy) => {
+const update = async (id, data, updatedBy, scope = null) => {
   await lock.assertDocRoundOpen('Booking', id);
   const booking = await Booking.findOne({ _id: id });
   if (!booking) throw { status: 404, message: 'Booking not found' };
+  assertOwn(booking, scope);
 
   if (['Cancelled', 'Final Loading'].includes(booking.status)) {
     throw { status: 400, message: `${booking.status} bookings cannot be edited` };
   }
 
+  // A partner user reports bookings; staff decide their status and partner label.
+  if (scope && data.status && data.status !== booking.status) {
+    throw { status: 403, message: 'Partner users cannot change the status of a booking' };
+  }
   if (data.status && data.status !== booking.status) {
     validateTransition(booking.status, data.status);
   }
@@ -196,11 +228,10 @@ const update = async (id, data, updatedBy) => {
   // Sprint 024: each L2 booking = ONE container; totalFreight = freightRate (flat per container)
   const totalFreight = freightRate;
 
-  // Sprint 030: POL/POD are derived from the voyage and are not independently
-  // editable — voyageId itself is already immutable post-creation, so POL/POD
-  // (which follow the voyage) must stay immutable with it.
-  const { totalFreight: _ig1, bookingNumber: _ig2, voyageId: _ig3, polId: _ig4, podId: _ig5, ...safeData } = data;
-  Object.assign(booking, { ...pickFields(Booking, safeData, ['dischargeStatus', 'dischargedAt', 'bookingNumber']), totalFreight, updatedBy });
+  // POL/POD, leg keys and the voyage are fixed at creation (a different route = a new booking).
+  const blocked = scope ? [...SERVER_FIELDS, 'status', 'agentId'] : SERVER_FIELDS;
+  Object.assign(booking, { ...pickFields(Booking, data, blocked), totalFreight, updatedBy });
+  if (!scope && data.partnerId !== undefined) booking.partnerId = await assertPartner(data.partnerId);
   await booking.save();
 
   // Invalidate capacity cache — pol, pod, status or rate may have changed
@@ -212,10 +243,12 @@ const update = async (id, data, updatedBy) => {
 };
 
 // ─── Hard Delete ──────────────────────────────────────────────────────────────
-const hardDelete = async (id) => {
+const hardDelete = async (id, scope = null) => {
   await lock.assertDocRoundOpen('Booking', id);
   const booking = await Booking.findOne({ _id: id });
   if (!booking) throw { status: 404, message: 'Booking not found' };
+  assertOwn(booking, scope);
+  if (scope && booking.status !== 'Pending') throw { status: 403, message: 'Partner users can only delete Pending bookings' };
 
   // Sprint 033: ownership of the booking↔invoice relationship lives entirely
   // in Invoice.lineItems (no field on Booking) — query from the Invoice side.
@@ -240,9 +273,28 @@ const getVoyagePorts = async (voyageId) => {
   return Port.find({ _id: { $in: portIds } }).select('name code').lean();
 };
 
-// ─── Sprint 027: Export Discharge List ───────────────────────────────────────
-// Columns ordered operational-first; Rate last.
-// Reuses ExcelJS pattern identical to export.service.js buildExcelBuffer.
+// ─── Discharge list (Sprint 027, reworked 2026-11-10) ─────────────────────────
+// Scope = Round + POL + POD (+ Agent, + Voyage): the Final Loading bookings that go from that POL to that POD,
+// across every voyage of the round that serves the pair. The same sheet is what the discharge import reads back.
+const dischargeFilter = async ({ roundId, agentId, polId, podId, voyageId }) => {
+  if (!roundId) throw { status: 400, message: 'Round is required' };
+  if (!polId || !podId) throw { status: 400, message: 'POL and POD are required' };
+  const roundVoyageIds = await Voyage.find({ roundId }).distinct('_id');
+  if (!roundVoyageIds.length) throw { status: 404, message: 'No voyages found in this Round' };
+  if (voyageId && !roundVoyageIds.some((id) => String(id) === String(voyageId))) {
+    throw { status: 400, message: 'The voyage does not belong to this Round' };
+  }
+  const f = { voyageId: voyageId || { $in: roundVoyageIds }, status: 'Final Loading', polId, podId };
+  if (agentId) f.agentId = agentId;
+  return f;
+};
+
+const listDischarge = async (params) => {
+  const filter = await dischargeFilter(params);
+  return populate(Booking.find(filter)).sort({ containerNumber: 1 }).lean();
+};
+
+// Columns ordered operational-first; the first block matches the import template so the file can be re-imported.
 const DISCHARGE_COLUMNS = [
   { header: 'Container Number',  key: 'containerNumber',  width: 20 },
   { header: 'Container Size',    key: 'containerSize',    width: 14 },
@@ -257,39 +309,28 @@ const DISCHARGE_COLUMNS = [
   { header: 'VGM (kg)',          key: 'vgm',              width: 10 },
   { header: 'Hazardous',         key: 'hazardous',        width: 12 },
   { header: 'IMDG Code',         key: 'imdgCode',         width: 16 },
-  { header: 'Rate (USD)',         key: 'rate',             width: 12 },
+  { header: 'Rate (USD)',        key: 'rate',             width: 12 },
+  { header: 'Booking Number',    key: 'bookingNumber',    width: 16 },
+  { header: 'Voyage',            key: 'voyage',           width: 14 },
+  { header: 'Agent',             key: 'agent',            width: 22 },
+  { header: 'Partner',           key: 'partner',          width: 20 },
+  { header: 'Discharge Status',  key: 'dischargeStatus',  width: 16 },
 ];
 
-const exportDischargeList = async (voyageId, agentId) => {
+const exportDischargeList = async (params) => {
   const ExcelJS = require('exceljs');
-  const Agent   = require('../agents/agent.model');
-
-  // Validate that voyage and agent exist
-  const [voyage, agent] = await Promise.all([
-    Voyage.findById(voyageId).select('voyageNumber').lean(),
-    Agent.findById(agentId).select('agentCode agentName').lean(),
+  const [round, pol, pod] = await Promise.all([
+    require('../rounds/round.model').findById(params.roundId).select('roundNumber').lean(),
+    Port.findById(params.polId).select('name code').lean(),
+    Port.findById(params.podId).select('name code').lean(),
   ]);
-  if (!voyage) throw { status: 404, message: 'Voyage not found' };
-  if (!agent)  throw { status: 404, message: 'Agent not found' };
+  if (!round) throw { status: 404, message: 'Round not found' };
+  if (!pol || !pod) throw { status: 404, message: 'POL or POD not found' };
 
-  // Fetch ONLY Final Loading bookings in (Voyage + Agent) scope
-  // This always represents the CURRENT state — not a snapshot.
-  const bookings = await Booking.find({
-    voyageId,
-    agentId,
-    status:    'Final Loading',
-  })
-    .populate('polId',           'name')
-    .populate('podId',           'name')
-    .populate('containerTypeId', 'code size')
-    .sort({ containerNumber: 1 })
-    .lean();
+  // Always the CURRENT state, not a snapshot.
+  const bookings = await listDischarge(params);
+  if (!bookings.length) throw { status: 404, message: 'No Final Loading bookings found for this Round and POL → POD' };
 
-  if (!bookings.length) {
-    throw { status: 404, message: 'No Final Loading bookings found for this Voyage and Agent' };
-  }
-
-  // Map to flat rows — no ObjectIds, no internal fields
   const rows = bookings.map(b => ({
     containerNumber: b.containerNumber                     || '',
     containerSize:   b.containerTypeId?.size              || '',
@@ -305,9 +346,13 @@ const exportDischargeList = async (voyageId, agentId) => {
     hazardous:       b.dg ? 'Yes' : 'No',
     imdgCode:        b.imdgCode                           || '',
     rate:            b.freightRate != null ? b.freightRate : '',
+    bookingNumber:   b.bookingNumber                      || '',
+    voyage:          b.voyageId?.voyageNumber             || '',
+    agent:           b.agentId?.agentName                 || '',
+    partner:         b.partnerId?.name                    || '',
+    dischargeStatus: b.dischargeStatus                    || '',
   }));
 
-  // Build Excel — same ExcelJS pattern as export.service.js buildExcelBuffer
   const workbook  = new ExcelJS.Workbook();
   workbook.creator = 'Logistics SaaS';
   workbook.created = new Date();
@@ -315,37 +360,25 @@ const exportDischargeList = async (voyageId, agentId) => {
   const worksheet = workbook.addWorksheet('Discharge List');
   worksheet.columns = DISCHARGE_COLUMNS;
 
-  // Header styling (matches project standard)
   const headerRow = worksheet.getRow(1);
   headerRow.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
   headerRow.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4057' } };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   headerRow.height    = 22;
 
-  // Data rows with alternating stripe
   rows.forEach((doc, idx) => {
     const dataRow = worksheet.addRow(doc);
     dataRow.eachCell(cell => {
-      cell.fill = {
-        type: 'pattern', pattern: 'solid',
-        fgColor: { argb: idx % 2 === 0 ? 'FFFFFFFF' : 'FFF8F9FA' },
-      };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFFFFFFF' : 'FFF8F9FA' } };
       cell.border = { bottom: { style: 'thin', color: { argb: 'FFE4E7EC' } } };
     });
   });
-
-  // Freeze header
   worksheet.views = [{ state: 'frozen', ySplit: 1 }];
 
   const buffer = await workbook.xlsx.writeBuffer();
-
-  // Filename: Discharge_List_{VoyageNumber}_{AgentCode}.xlsx
-  const sanitize = (s) => String(s || '').replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, '_').trim();
-  const voyNum   = sanitize(voyage.voyageNumber);
-  const agCode   = sanitize(agent.agentCode || (agent.agentName || '').slice(0, 10) || 'AGENT');
-  const filename = `Discharge_List_${voyNum}_${agCode}.xlsx`;
-
+  const sanitize = (v) => String(v || '').replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, '_').trim();
+  const filename = `Discharge_List_${sanitize(round.roundNumber)}_${sanitize(pol.code || pol.name)}-${sanitize(pod.code || pod.name)}.xlsx`;
   return { buffer, filename, count: rows.length };
 };
 
-module.exports = { list, getById, create, update, hardDelete, getVoyagePorts, getVoyagePortIds, exportDischargeList };
+module.exports = { list, getById, create, update, hardDelete, getVoyagePorts, getVoyagePortIds, listDischarge, exportDischargeList };

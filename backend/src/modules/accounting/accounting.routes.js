@@ -20,6 +20,9 @@ const handle = (req, res, next) => {
 const shared = [
   body('name').optional().isString().trim().notEmpty().isLength({ max: 120 }),
   body('nameAr').optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 120 }),
+  body('code').optional().isString().trim().matches(/^[0-9]{6}$/),
+  body('parentId').optional({ nullable: true, checkFalsy: true }).isMongoId(),
+  body('isGroup').optional().isBoolean().toBoolean(),
   body('isActive').optional().isBoolean().toBoolean(),
   body('subledgerType').optional().isIn(SUBLEDGER_TYPES),
   body('allocationLevel').optional().isIn(ALLOCATION_LEVELS),
@@ -34,9 +37,11 @@ router.get('/accounts', rbac('accounting'), async (req, res, next) => {
 });
 router.get('/meta', rbac('accounting'), (req, res) => success(res, { types: ACCOUNT_TYPES, subledgerTypes: SUBLEDGER_TYPES, allocationLevels: ALLOCATION_LEVELS, dimensions: DIMENSIONS }));
 router.post('/accounts', rbac('accounting'), audit('accounting'),
-  body('code').isString().trim().notEmpty(), body('name').isString().trim().notEmpty(), body('parentId').isMongoId(), ...shared, handle,
+  body('name').isString().trim().notEmpty(), body('code').exists(), body('parentId').exists(), ...shared, handle,
   async (req, res, next) => { try { return created(res, await svc.create(req.body), 'Account created'); } catch (e) { next(e); } });
 router.put('/accounts/:id', rbac('accounting'), audit('accounting'), ...shared, handle,
   async (req, res, next) => { try { return success(res, await svc.update(req.params.id, req.body), 'Account updated'); } catch (e) { next(e); } });
+router.delete('/accounts/:id', rbac('accounting'), audit('accounting'),
+  async (req, res, next) => { try { return success(res, await svc.remove(req.params.id), 'Account deleted'); } catch (e) { next(e); } });
 
 module.exports = router;

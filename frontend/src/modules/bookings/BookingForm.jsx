@@ -6,11 +6,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService }       from '@/services/bookings.service';
-import { voyagesService }        from '@/services/voyages.service';
-import { agentsService }         from '@/services/agents.service';
 import { customersService } from '@/services/customers.service';
-import { containerTypesService } from '@/services/containerTypes.service';
-import { useRounds }             from '@/hooks/useRounds';
+import { useBookingLookups }     from '@/hooks/useBookingLookups';
+import RoundRoutePicker, { validateRoute } from './RoundRoutePicker';
 import { BOOKING_STATUS }        from '@/utils/constants';
 import { getVoyageLabel }        from '@/utils/voyageLabel';
 
@@ -48,13 +46,13 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
   const isEditing = !!item;
   const isLocked  = ['Cancelled', 'Final Loading'].includes(item?.status);
   const [capacityWarning, setCapacityWarning] = useState(null);
+  // Bookings sprint 2026-11-10: round + the booking's own POL/POD; the voyage is assigned by the server
+  const [route, setRoute] = useState({ roundId: '', polId: '', podId: '', voyageId: '' });
+  const [routeErrors, setRouteErrors] = useState({});
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
-      // Sprint 030: Round is a UI-only selector (not stored on the booking) — it
-      // narrows the Voyage dropdown. Preselect it from the existing voyage's roundId on edit.
-      roundId:         item?.voyageId?.roundId?._id || item?.voyageId?.roundId || '',
-      voyageId:        item?.voyageId?._id       || item?.voyageId       || '',
+      partnerId:       item?.partnerId?._id      || item?.partnerId      || '',
       agentId:         item?.agentId?._id        || item?.agentId        || '',
       customerId:      item?.customerId?._id     || item?.customerId     || '',
       shipper:         item?.shipper             || '',
@@ -74,8 +72,6 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
     },
   });
 
-  const watchedRoundId  = watch('roundId');
-  const watchedVoyageId = watch('voyageId');
   const watchedFreight  = watch('freightRate');
   const watchedDg       = watch('dg');
   // Sprint 024: totalFreight = freightRate (flat per container, no quantity multiplier)
@@ -84,46 +80,16 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
     [watchedFreight]
   );
 
-  // Rounds dropdown
-  const { rounds } = useRounds();
-
-  // Voyages dropdown — Sprint 030: filtered by selected Round (non-cancelled, non-completed)
-  const { data: voyageData } = useQuery({
-    queryKey: ['voyages-dropdown', watchedRoundId],
-    queryFn:  () => voyagesService.list({ roundId: watchedRoundId, limit: 200 }).then(r => r.data.data),
-    enabled:  !!watchedRoundId,
-  });
-  const voyages = (voyageData || []).filter(v => !['Cancelled', 'Completed'].includes(v.status));
-  const selectedVoyage = voyages.find(v => v._id === watchedVoyageId);
-
-  // Sprint 030: POL/POD are no longer independently selected — they are always
-  // the selected Voyage's own polId/podId, displayed read-only.
-  useEffect(() => {
-    if (!isEditing && watchedRoundId) {
-      setValue('voyageId', '');
-    }
-  }, [watchedRoundId, isEditing, setValue]);
-
-  // Agents
-  const { data: agentData } = useQuery({
-    queryKey: ['agents-dropdown'],
-    queryFn:  () => agentsService.list({ limit: 200, status: 'Active', bookingSource: true }).then(r => r.data.data),
-  });
-  const agents = agentData || [];
+  // Pick-lists (also work for partner users): agents, open rounds, container types, the round's ports, partners
+  const { agents, rounds, containerTypes, ports, partners, isPartnerUser } = useBookingLookups(route.roundId);
 
   // Customers (optional end customer / shipper)
   const { data: customerData } = useQuery({
     queryKey: ['customers-dropdown'],
     queryFn:  () => customersService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
+    enabled:  !isPartnerUser, // partner users cannot reach the customers module
   });
   const customers = customerData || [];
-
-  // Container types
-  const { data: ctData } = useQuery({
-    queryKey: ['container-types-dropdown'],
-    queryFn:  () => containerTypesService.list({ limit: 200 }).then(r => r.data.data),
-  });
-  const containerTypes = ctData || [];
 
   const mutation = useMutation({
     mutationFn: (data) =>
@@ -147,10 +113,20 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
 
   const onSubmit = (data) => {
     setCapacityWarning(null);
-    // roundId is a UI-only filter (not stored on the booking) — POL/POD are
-    // derived server-side from voyageId, so they are never sent from the form.
-    const { totalFreight: _ignored, roundId: _roundId, ...payload } = data;
-    mutation.mutate({ ...payload, customerId: payload.customerId || null });
+    const { totalFreight: _ignored, partnerId, ...payload } = data;
+    if (isEditing) {
+      // POL/POD, voyage and round are fixed at creation
+      mutation.mutate({ ...payload, customerId: payload.customerId || null, ...(isPartnerUser ? {} : { partnerId: partnerId || null }) });
+      return;
+    }
+    const errs = validateRoute(route);
+    setRouteErrors(errs);
+    if (Object.keys(errs).length) return;
+    mutation.mutate({
+      ...payload, ...route, voyageId: route.voyageId || undefined,
+      customerId: payload.customerId || null,
+      ...(isPartnerUser ? {} : { partnerId: partnerId || undefined }),
+    });
   };
 
   return (
@@ -199,73 +175,25 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
         </div>
       )}
 
-      {/* ── Voyage ─────────────────────────────────────────────────── */}
-      <SectionCard title="Round / Voyage">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <FieldLabel required>Round</FieldLabel>
-            <select
-              {...register('roundId', { required: 'Round is required' })}
-              disabled={isEditing || isLocked}
-              className={`${ic(errors.roundId)} ${isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-              <option value="">Select round…</option>
-              {rounds.map(r => (
-                <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>
-              ))}
-            </select>
-            {errors.roundId && <p className={ec}>{errors.roundId.message}</p>}
-            {isEditing && <p className="mt-1 text-[11px] text-amber-500">Round cannot be changed on an existing booking</p>}
-          </div>
-          <div>
-            <FieldLabel required>Voyage</FieldLabel>
-            <select
-              {...register('voyageId', { required: 'Voyage is required' })}
-              disabled={isEditing || isLocked || !watchedRoundId}
-              className={`${ic(errors.voyageId)} ${isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} disabled:opacity-50`}
-            >
-              <option value="">{watchedRoundId ? 'Select voyage…' : 'Select a round first…'}</option>
-              {voyages.map(v => (
-                <option key={v._id} value={v._id}>
-                  {getVoyageLabel(v)} — {v.polId?.name ?? '?'} → {v.podId?.name ?? '?'}
-                </option>
-              ))}
-            </select>
-            {errors.voyageId && <p className={ec}>{errors.voyageId.message}</p>}
-            {isEditing && <p className="mt-1 text-[11px] text-amber-500">Voyage cannot be changed on an existing booking</p>}
-          </div>
-        </div>
-
-        {/* Sprint 030: POL/POD are read-only — always the selected voyage's own ports */}
-        {selectedVoyage && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {/* ── Round / route ──────────────────────────────────────────── */}
+      <SectionCard title="Round / Route">
+        {isEditing ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Voyage No', val: <span className="mono font-bold text-teal-600">{getVoyageLabel(selectedVoyage)}</span> },
-              { label: 'Status',    val: selectedVoyage.status },
-              { label: 'ETD',       val: fmt(selectedVoyage.etd) },
-              { label: 'ETA',       val: fmt(selectedVoyage.eta) },
-              { label: 'POL',       val: selectedVoyage.polId?.name ? `${selectedVoyage.polId.name}${selectedVoyage.polId.code ? ` (${selectedVoyage.polId.code})` : ''}` : '—' },
-              { label: 'POD',       val: selectedVoyage.podId?.name ? `${selectedVoyage.podId.name}${selectedVoyage.podId.code ? ` (${selectedVoyage.podId.code})` : ''}` : '—' },
+              { label: 'Voyage', val: <span className="mono font-bold text-teal-600">{getVoyageLabel(item?.voyageId) || '—'}</span> },
+              { label: 'Direction', val: item?.voyageId?.direction ? `${item.voyageId.direction}bound` : '—' },
+              { label: 'POL', val: item?.polId?.name ? `${item.polId.name}${item.polId.code ? ` (${item.polId.code})` : ''}` : '—' },
+              { label: 'POD', val: item?.podId?.name ? `${item.podId.name}${item.podId.code ? ` (${item.podId.code})` : ''}` : '—' },
             ].map(({ label, val }) => (
               <div key={label} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
                 <p className="text-[13px] font-medium text-gray-700">{val}</p>
               </div>
             ))}
+            <p className="col-span-full text-[11px] text-amber-500">Round, ports and voyage cannot be changed on an existing booking — create a new one for a different route</p>
           </div>
-        )}
-        {isEditing && !selectedVoyage && (item?.polId || item?.podId) && (
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: 'POL', val: item?.polId?.name || '—' },
-              { label: 'POD', val: item?.podId?.name || '—' },
-            ].map(({ label, val }) => (
-              <div key={label} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
-                <p className="text-[13px] font-medium text-gray-700">{val}</p>
-              </div>
-            ))}
-          </div>
+        ) : (
+          <RoundRoutePicker value={route} onChange={setRoute} rounds={rounds} ports={ports} errors={routeErrors} />
         )}
       </SectionCard>
 
@@ -288,15 +216,27 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
           {errors.agentId && <p className={ec}>{errors.agentId.message}</p>}
         </div>
 
-        <div className="mt-4">
-          <FieldLabel>Customer (optional)</FieldLabel>
-          <select {...register('customerId')} disabled={isLocked} className={`${ic(false)} cursor-pointer`}>
-            <option value="">No customer selected</option>
-            {customers.map(c => (
-              <option key={c._id} value={c._id}>{c.customerCode} — {c.customerName} ({c.customerType})</option>
-            ))}
-          </select>
-        </div>
+        {!isPartnerUser && (
+          <div className="mt-4">
+            <FieldLabel>Partner (booking given to us by)</FieldLabel>
+            <select {...register('partnerId')} disabled={isLocked} className={`${ic(false)} cursor-pointer`}>
+              <option value="">No partner</option>
+              {partners.map(p => <option key={p._id} value={p._id}>{p.code} — {p.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        {!isPartnerUser && (
+          <div className="mt-4">
+            <FieldLabel>Customer (optional)</FieldLabel>
+            <select {...register('customerId')} disabled={isLocked} className={`${ic(false)} cursor-pointer`}>
+              <option value="">No customer selected</option>
+              {customers.map(c => (
+                <option key={c._id} value={c._id}>{c.customerCode} — {c.customerName} ({c.customerType})</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Carrier Name — new Sprint 017 */}
         <div>
@@ -481,7 +421,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
       </SectionCard>
 
       {/* ── Status (edit only) ─────────────────────────────────────── */}
-      {isEditing && (
+      {isEditing && !isPartnerUser && (
         <div>
           <FieldLabel>Status</FieldLabel>
           <select

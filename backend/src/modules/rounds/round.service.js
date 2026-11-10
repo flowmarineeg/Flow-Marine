@@ -8,10 +8,11 @@ const RouteLeg = require('../routes/routeLeg.model');
 const Service  = require('../services/service.model');
 const Vessel   = require('../vessels/vessel.model');
 const AppError = require('../../utils/AppError');
-const { assertInitialStatus, buildRouteSnapshot, CANCELLABLE_VOYAGE_STATUSES } = require('./round.logic');
+const { assertInitialStatus, buildRouteSnapshot, buildEditedLegs, CANCELLABLE_VOYAGE_STATUSES } = require('./round.logic');
+const { validateLegs } = require('../routes/route.service');
+const { legsChangeWarnings } = require('../voyages/voyageRun.logic');
 const { assertNoConsecutivePorts } = require('../routes/routeLegs.logic');
 const { nextNumber } = require('../../utils/autoNumber');
-const { generateVoyages } = require('../../utils/voyageGenerator');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const { DEFAULT_PAGE, DEFAULT_LIMIT, ROUND_STATUS } = require('../../config/constants');
@@ -31,28 +32,6 @@ const validateTransition = (current, next) => {
       status: 400,
       message: `Cannot transition from "${current}" to "${next}". Allowed: ${allowed.join(', ') || 'none'}`,
     };
-  }
-};
-
-// ── Sprint 042 — Round becomes Active cascades its FIRST voyage (lowest
-// sequence, only if currently Scheduled) to Departed. Deliberately scoped to
-// just the first voyage, not every voyage in the round — later legs haven't
-// physically started and stay Scheduled until an admin advances them
-// individually. Deliberately NOT reversible (no revert on later
-// Active→Cancelled) and does NOT write a TrackingHistory entry — pure
-// status-field change only. 'Departed' is the only valid forward transition
-// from 'Scheduled' per voyage.service.js's own STATUS_TRANSITIONS map, so
-// only Scheduled voyages are eligible — Cancelled/Completed/already-advanced
-// voyages are never touched.
-// Reconciled with the voyage rule "Departed needs an ATD" (RV-18..20): the cascade stamps the activation
-// time as the actual departure when none was recorded. An ATD that is already set is never overwritten.
-const cascadeFirstVoyageToDeparted = async (roundId, updatedBy, session = null) => {
-  const firstVoyage = await Voyage.findOne({ roundId, status: 'Scheduled' }).sort({ sequence: 1 }).session(session);
-  if (firstVoyage) {
-    firstVoyage.status    = 'Departed';
-    firstVoyage.atd       = firstVoyage.atd || new Date();
-    firstVoyage.updatedBy = updatedBy;
-    await firstVoyage.save({ session });
   }
 };
 
@@ -158,11 +137,11 @@ const getRoundVoyages = async (roundId) => {
     .lean();
 };
 
-// ─── Create (triggers voyage generation) ─────────────────────────────────────
-// Round + voyages + voyageIds + first-voyage cascade commit together or not at all (RV-32). The round
-// number comes from an atomic counter OUTSIDE the transaction: a rolled-back create burns a number
-// (a gap is acceptable, a duplicate is impossible). generateVoyages is untouched (R10); it joins the
-// transaction through mongoose's transactionAsyncLocalStorage (config/db.js).
+// ─── Create ──────────────────────────────────────────────────────────────────
+// A round takes a Service route and a vessel. The route's legs are copied into the round (routeSnapshot,
+// editable later with updateLegs). NO voyages are generated: the user creates each voyage afterwards as a
+// run over a range of the round's legs (voyage.service.createVoyage). The round number comes from an atomic
+// counter outside the transaction (a rolled-back create burns a number, a duplicate is impossible).
 const create = async (data, createdBy) => {
   const status = assertInitialStatus(data.status);
 
@@ -186,7 +165,6 @@ const create = async (data, createdBy) => {
   if (routeLegs.length < 2) {
     throw { status: 400, message: `Service route has only ${routeLegs.length} leg(s). At least 2 required.` };
   }
-  // Legacy routes saved before the RV-08/09 rule would generate a voyage with POL = POD.
   assertNoConsecutivePorts(routeLegs.map((l) => ({ portId: l.portId?._id || l.portId })));
 
   // 2. Validate vessel not in another Active round
@@ -197,10 +175,9 @@ const create = async (data, createdBy) => {
     throw { status: 400, message: 'Start date must be before end date' };
   }
 
-  // 4. Generate round number (outside the transaction, see above)
+  // 4. Round number (outside the transaction, see above)
   const roundNumber = await nextNumber('round');
 
-  // 5. Round + voyages + voyageIds (+ cascade) atomically
   const result = await runRoundTx(async (session) => {
     const [round] = await Round.create([{
       roundNumber,
@@ -212,23 +189,13 @@ const create = async (data, createdBy) => {
       status,
       notes:     data.notes || null,
       voyageIds: [],
+      lastVoyageSeq: 0,
       routeSnapshot: buildRouteSnapshot(route._id, routeLegs),
       v2: true,
       createdBy,
       updatedBy: createdBy,
     }], { session });
-
-    const voyages = await generateVoyages(round, routeLegs, service, createdBy);
-
-    round.voyageIds     = voyages.map(v => v._id);
-    round.lastVoyageSeq = voyages.length;
-    await round.save({ session });
-
-    // Sprint 042 — Round created directly with status Active cascades its
-    // first voyage to Departed (see cascadeFirstVoyageToDeparted comment).
-    if (status === 'Active') await cascadeFirstVoyageToDeparted(round._id, createdBy, session);
-
-    return { roundId: round._id, voyages };
+    return { roundId: round._id };
   });
 
   const populated = await Round.findById(result.roundId)
@@ -236,7 +203,41 @@ const create = async (data, createdBy) => {
     .populate('vesselId',  'vesselCode vesselName')
     .lean();
 
-  return { round: populated, voyages: result.voyages };
+  return { round: populated, voyages: [] };
+};
+
+// ─── Edit the round's own legs ───────────────────────────────────────────────
+// legs: full ordered list [{ legKey?, countryId, cityId, portId, terminalId?, agentId? }]. Same validation as
+// the Service route. Legs used by voyages stay editable: the change is saved and the response carries
+// warnings[] naming the voyages that no longer match. Voyages keep their own port-call snapshot, so nothing
+// is rewritten silently (voyage.service.refreshPortCalls does that on request).
+const updateLegs = async (id, legs, updatedBy) => {
+  await require('./roundLock').assertRoundOpen(id);
+  const round = await Round.findOne({ _id: id });
+  if (!round) throw { status: 404, message: 'Round not found' };
+  if (['Completed', 'Cancelled'].includes(round.status)) {
+    throw { status: 400, message: `Cannot edit the legs of a ${round.status} round` };
+  }
+
+  const ports = await validateLegs(legs);
+  const existingKeys = (round.routeSnapshot?.legs || []).map((l) => l.legKey).filter(Boolean);
+  const newLegs = buildEditedLegs(legs, existingKeys, ports);
+
+  const voyages = await Voyage.find({ roundId: id }).select('voyageNumber status portCalls').lean();
+
+  const base = round.routeSnapshot ? round.routeSnapshot.toObject() : { routeId: null, capturedAt: new Date() };
+  round.routeSnapshot = { ...base, legs: newLegs };
+  round.updatedBy = updatedBy;
+  await round.save();
+
+  invalidateRoundCache(id);
+
+  const out = await Round.findById(id)
+    .populate('serviceId', 'serviceCode serviceName')
+    .populate('vesselId',  'vesselCode vesselName')
+    .lean();
+  out.warnings = legsChangeWarnings(newLegs, voyages);
+  return out;
 };
 
 // ─── Update ───────────────────────────────────────────────────────────────────
@@ -298,9 +299,6 @@ const update = async (id, data, updatedBy) => {
         { session }
       );
     }
-    // Sprint 042 — Planned→Active transition cascades the round's first
-    // voyage to Departed (see cascadeFirstVoyageToDeparted comment).
-    if (becameActive) await cascadeFirstVoyageToDeparted(id, updatedBy, session);
   });
 
   // Invalidate capacity cache — vessel, dates, or status may have changed
@@ -377,4 +375,4 @@ const hardDelete = async (id) => {
   invalidateRoundCache(id);
 };
 
-module.exports = { list, getById, getRoundVoyages, create, update, hardDelete };
+module.exports = { list, getById, getRoundVoyages, create, updateLegs, update, hardDelete };

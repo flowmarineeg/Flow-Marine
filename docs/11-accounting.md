@@ -115,3 +115,7 @@ Reason required. Refused if any partner transfer is `Paid` (`ROUND_HAS_PAID_TRAN
 
 ## 4. Tests
 `backend/test/{ledger,billing,agentAccounts,partnerSettlement,shares,money}.test.js` cover the pure logic (balance validation, allocation, grouping, statement rows, profit sharing, transfers). `backend/test/int/*` cover transactions and routes against a **local replica set** — they have **not been run since the V2-only conversion**.
+
+
+## 6-digit master chart (2026-10-27)
+`Account` also holds the 158-account 6-digit chart from `docs/accounting/` (imported by `npm run seed:chart`; UI = Masters → Accounting, see [01](01-master-data.md)). It is **master data only**: `LedgerService` and every posting map still use the 20 four-digit accounts, `account-lookup` offers only posting (non-header) accounts to the master-data pickers, and the header lock, mandatory dimensions (`requiredDimensions`), PDA→FDA accrual switch (213101) and class 4 − class 5 JV settlement described in the docx are **not enforced yet** — they need a dedicated money sprint (map 4-digit → 6-digit, tests, `test:int` on a replica set).

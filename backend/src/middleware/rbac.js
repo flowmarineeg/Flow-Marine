@@ -26,6 +26,9 @@ const methodToAction = {
 const rbac = (module, actionOverride) => async (req, res, next) => {
   try {
     if (req.user?.roleId?.isSystem) return next(); // SuperAdmin bypasses all checks
+    // Bookings sprint 2026-11-10: users of a partner role are external. Whatever the permission rows say,
+    // they never reach any module except bookings (their lookups are served from /bookings/lookups).
+    if (req.user?.roleId?.isPartnerRole && module !== 'bookings') return forbidden(res, 'Partner users can only access bookings');
 
     const action = actionOverride || methodToAction[req.method] || 'read';
     const roleId = String(req.user?.roleId?._id || req.user?.roleId);
@@ -56,6 +59,7 @@ const rbac = (module, actionOverride) => async (req, res, next) => {
 // calling next()/forbidden().
 const hasPermission = async (req, module, action) => {
   if (req.user?.roleId?.isSystem) return true; // SuperAdmin bypasses all checks
+  if (req.user?.roleId?.isPartnerRole && module !== 'bookings') return false;
 
   const roleId = String(req.user?.roleId?._id || req.user?.roleId);
   const cacheKey = `perm:${roleId}:${module}`;

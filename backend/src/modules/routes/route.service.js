@@ -30,22 +30,29 @@ const getByServiceId = async (serviceId) => {
   return { route, legs };
 };
 
-const saveLegs = async (serviceId, legs, userId) => {
-  // 1. Everything is validated before the first write (RV-08/09/10/11/12).
+// Full leg validation (shape, consecutive ports, every reference). Shared by the Service route and by a
+// round's own editable legs. Returns the loaded ports Map (id -> { name, code, ... }).
+const validateLegs = async (legs) => {
   assertLegShape(legs);
   assertNoConsecutivePorts(legs);
 
-  const service = await Service.findOne({ _id: serviceId }).select('_id').lean();
-  if (!service) throw { status: 404, message: 'Service not found' };
-
   const ids = collectRefIds(legs);
   const load = async (Model, list) => new Map(
-    (list.length ? await Model.find({ _id: { $in: list } }).select('countryId cityId portId').lean() : []).map((d) => [String(d._id), d])
+    (list.length ? await Model.find({ _id: { $in: list } }).select('countryId cityId portId name code').lean() : []).map((d) => [String(d._id), d])
   );
   const [countries, cities, ports, terminals, agents] = await Promise.all([
     load(Country, ids.countries), load(City, ids.cities), load(Port, ids.ports), load(Terminal, ids.terminals), load(Agent, ids.agents),
   ]);
   checkLegReferences(legs, { countries, cities, ports, terminals, agents });
+  return ports;
+};
+
+const saveLegs = async (serviceId, legs, userId) => {
+  // 1. Everything is validated before the first write (RV-08/09/10/11/12).
+  await validateLegs(legs);
+
+  const service = await Service.findOne({ _id: serviceId }).select('_id').lean();
+  if (!service) throw { status: 404, message: 'Service not found' };
 
   // Active/Completed rounds keep the route frozen. Planned rounds are safe: they hold their own
   // routeSnapshot (RV-13/14), so editing the service route no longer changes their history.
@@ -98,4 +105,4 @@ const saveLegs = async (serviceId, legs, userId) => {
   return { route, legs: populated };
 };
 
-module.exports = { getByServiceId, saveLegs };
+module.exports = { getByServiceId, saveLegs, validateLegs };

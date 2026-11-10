@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema(
     password:  { type: String, default: null },          // null until set (invited users)
     roleId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Role', required: true },
     status:    { type: String, enum: USER_STATUS, default: 'Active' },
+    partnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', default: null }, // set only for users of a partner role (bookings sprint 2026-11-10)
     lastLogin: { type: Date, default: null },
     tokenVersion: { type: Number, default: 0 },      // Sprint049: bumped on password change/reset to revoke old JWTs
 
@@ -35,6 +36,7 @@ const userSchema = new mongoose.Schema(
 // email uniqueness enforced inline via unique:true on the field
 userSchema.index({ roleId: 1 });
 userSchema.index({ status: 1 });
+userSchema.index({ partnerId: 1 }, { sparse: true });
 userSchema.index({ isDeleted: 1 });
 userSchema.index({ inviteToken: 1 }, { sparse: true });
 userSchema.index({ resetToken: 1 }, { sparse: true });

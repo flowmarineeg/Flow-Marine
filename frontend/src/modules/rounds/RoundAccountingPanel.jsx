@@ -64,8 +64,6 @@ export default function RoundAccountingPanel({ round }) {
   const canOverride = can('rounds', 'closeOverride');
   const carryMinor = f.carry ? toMinor(f.carry, CUR) : 0;
 
-  if (!enabled) return null;
-
   return (
     <div className="flex flex-col gap-4 mt-4">
       {/* ── Close ─────────────────────────────────────────────────────── */}

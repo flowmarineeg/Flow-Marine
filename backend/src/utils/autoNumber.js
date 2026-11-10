@@ -10,6 +10,7 @@ const formats = {
   creditNote:    (seq) => `CN-${String(seq).padStart(6, '0')}`, // Sprint051 V2
   debitNote:     (seq) => `DN-${String(seq).padStart(6, '0')}`, // Sprint051 V2
   handling:      (seq) => `HC-${String(seq).padStart(6, '0')}`, // Sprint052 V2
+  voyage:        (seq) => `V${String(seq).padStart(4, '0')}`,   // direction letter is appended by voyageRun.logic
   journal:       (seq) => `JE-${String(seq).padStart(6, '0')}`, // Sprint050 V2
 };
 

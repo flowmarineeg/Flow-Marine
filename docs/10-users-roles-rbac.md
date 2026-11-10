@@ -22,8 +22,10 @@ Password policy (validators): ≥ 8 chars, at least one uppercase and one number
 ## Users (`/users`, perm `users`)
 `GET /`, `GET /:id` (secrets stripped), `POST /` (create with password), `POST /invite` (no password; 24 h invite token emailed to `FRONTEND_URL/accept-invite?token=`), `POST /:id/resend-invite`, `PUT /:id`, `DELETE /:id` (soft delete; cannot delete yourself), **`POST /users/accept-invite`** (public, CSRF-exempt). Email must be unique. Every change invalidates the `user:<id>` cache so role/status changes apply within seconds.
 
+Partner users (2026-11-10): a user whose role is a **partner role** carries `User.partnerId` (required for such a role, rejected for any other; the partner must be Active). `POST /users`, `POST /users/invite` and `PUT /users/:id` take `partnerId`; changing the role resets it unless a new one is sent. `GET` populates `partnerId {code,name}` and `roleId.isPartnerRole`; `/auth/me` returns `partnerId`.
+
 ## Roles (`/roles`, perm `roles`)
-`GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`. System roles → 400 on edit/delete. Delete refused while non-deleted users hold the role.
+`GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`. System roles → 400 on edit/delete. Delete refused while non-deleted users hold the role. **`isPartnerRole`** (Boolean, default false, create/update): marks an external partner role; it cannot be changed while users hold the role (`400`). UI: checkbox in the role form, "Partner" badge in the list.
 
 ## Permissions (`/permissions/:roleId`)
 - `GET` — returns one row per entry of `MODULES` (synthesised all-false rows for missing ones). Allowed for **your own role** with no extra permission (avoids the "can't load my own menu" deadlock); other roles need `roles:read`.
@@ -45,6 +47,9 @@ Password policy (validators): ≥ 8 chars, at least one uppercase and one number
 | `commission` | agents: cancel commission |
 | `close`, `closeOverride`, `reopen`, `carryForward`, `useReserve` | rounds: ready/close, close with open PDAs, reopen, carry profit forward, use JV reserve |
 | `manage` | partners / ledger administration (partner CRUD, vessel shares, exchange rates, partner settlement, transfers) |
+
+### Partner roles (bookings sprint 2026-11-10)
+`rbac()` and `hasPermission()` refuse (403 "Partner users can only access bookings") every module except `bookings` for a user whose role has `isPartnerRole`, **whatever the permission rows say** — so the export, reports, invoices, agents, users … routes are closed to them even if a permission row grants them. Their pick-lists come from `GET /bookings/lookups`. Within `bookings` the services confine them to their own partner's bookings (`docs/04`). The frontend `PermissionContext` mirrors this (only Bookings in the nav). Seed: role "Partner Portal", user `partner@logistics.com` / `Demo@123456` (partner ALFA) in `seed:test-data`.
 
 ### How a request is authorised
 `auth` (JWT, user cache, tokenVersion) → `rbac(module, action?)`: SuperAdmin (`roleId.isSystem`) passes; else cached `Permission{roleId,module}`; missing → 403 "No permissions configured"; `hidden` → 403; action false → 403 "Permission denied: cannot <action> <module>". Some routes add an extra check inside the handler (booking import for finalLoading/discharge needs `update` + `delete`; export needs `export` per module).

@@ -20,18 +20,22 @@ const fmtDT = (d) =>
   d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const dash  = <span className="text-gray-300">—</span>;
 
-// ─── Type chip ────────────────────────────────────────────────────────────────
-function TypeChip({ isManual }) {
-  return isManual ? (
-    <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
-      Manual
-    </span>
-  ) : (
-    <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-      Auto
+// ─── Direction chip ───────────────────────────────────────────────────────────
+const DIR_STYLE = { East: 'bg-blue-100 text-blue-700', West: 'bg-amber-100 text-amber-700', North: 'bg-emerald-100 text-emerald-700', South: 'bg-rose-100 text-rose-700' };
+function DirectionChip({ direction }) {
+  if (!direction) return <span className="text-gray-300">—</span>;
+  return (
+    <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${DIR_STYLE[direction] || 'bg-gray-100 text-gray-500'}`}>
+      {direction}
     </span>
   );
 }
+
+// A voyage whose stored ports no longer match the round's (edited) legs
+const outOfSync = (v, legs) => (v.portCalls || []).some(c => {
+  const leg = legs.find(l => l.legKey === c.legKey);
+  return !leg || String(leg.portId) !== String(c.portId?._id ?? c.portId);
+});
 
 // ─── Date cell ────────────────────────────────────────────────────────────────
 function DateCell({ value, actual }) {
@@ -70,6 +74,16 @@ export default function RoundVoyageList({ roundId, round }) {
     () => sortVoyagesForDisplay(voyages, routeLegs),
     [voyages, routeLegs]
   );
+
+  const refreshMutation = useMutation({
+    mutationFn: (id) => voyagesService.refreshPortCalls(id),
+    onSuccess: () => {
+      toast.success('Port calls refreshed from the round legs');
+      qc.invalidateQueries(['round-voyages', roundId]);
+      qc.invalidateQueries(['voyages']);
+    },
+    onError: (e) => showErrorToast(e, 'update'),
+  });
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -111,7 +125,7 @@ export default function RoundVoyageList({ roundId, round }) {
         <div>
           <h2 className="text-sm font-semibold text-gray-700">Voyages</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {voyages.length} voyage{voyages.length !== 1 ? 's' : ''} — auto-generated + manually added
+            {voyages.length} voyage{voyages.length !== 1 ? 's' : ''} — each one is a run over the round's legs
           </p>
         </div>
         {can('voyages', 'create') && (
@@ -149,11 +163,12 @@ export default function RoundVoyageList({ roundId, round }) {
             <thead>
               <tr className="table-header text-[11px]">
                 <th className="!py-2 w-8">#</th>
-                <th className="!py-2">Type</th>
+                <th className="!py-2">Direction</th>
                 <th className="!py-2">Voyage No</th>
                 {hasAnyCodes && <th className="!py-2">Code</th>}
-                <th className="!py-2 min-w-[130px]">POL</th>
-                <th className="!py-2 min-w-[130px]">POD</th>
+                <th className="!py-2 min-w-[130px]">From (POL)</th>
+                <th className="!py-2 min-w-[130px]">To (POD)</th>
+                <th className="!py-2">Legs</th>
                 <th className="!py-2 min-w-[120px]">ETD</th>
                 <th className="!py-2 min-w-[120px]">ETA</th>
                 {hasAnyEtp && <th className="!py-2 min-w-[120px]">ETP</th>}
@@ -176,7 +191,7 @@ export default function RoundVoyageList({ roundId, round }) {
 
                   {/* Type */}
                   <td className="px-3 py-2">
-                    <TypeChip isManual={v.isManual} />
+                    <DirectionChip direction={v.direction} />
                   </td>
 
                   {/* Voyage number */}
@@ -213,6 +228,19 @@ export default function RoundVoyageList({ roundId, round }) {
                     </div>
                   </td>
 
+                  {/* Leg range */}
+                  <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
+                    {v.fromLegKey && v.toLegKey ? (
+                      <>
+                        {routeLegs.find(l => l.legKey === v.fromLegKey)?.sequence ?? '?'} → {routeLegs.find(l => l.legKey === v.toLegKey)?.sequence ?? '?'}
+                        <span className="text-gray-300"> · {(v.portCalls || []).length} ports</span>
+                        {outOfSync(v, routeLegs) && (
+                          <span className="ml-1.5 text-amber-600 font-semibold" title="The round legs were edited; this voyage still has its original ports">⚠ legs changed</span>
+                        )}
+                      </>
+                    ) : dash}
+                  </td>
+
                   {/* ETD / ETA */}
                   <DateCell value={v.etd} />
                   <DateCell value={v.eta} />
@@ -236,6 +264,15 @@ export default function RoundVoyageList({ roundId, round }) {
                           className="text-xs font-medium text-teal-600 hover:text-teal-800 transition"
                         >
                           Edit
+                        </button>
+                      )}
+                      {can('voyages', 'update') && v.fromLegKey && outOfSync(v, routeLegs) && (
+                        <button
+                          onClick={() => refreshMutation.mutate(v._id)}
+                          disabled={refreshMutation.isPending}
+                          className="text-xs font-medium text-amber-600 hover:text-amber-800 transition"
+                        >
+                          Refresh ports
                         </button>
                       )}
                       {can('voyages', 'delete') && (

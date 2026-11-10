@@ -19,6 +19,8 @@ router.get('/:id',    rbac('voyages'), ctrl.getById);
 // Manual voyage creation (Sprint 016)
 router.post('/',      rbac('voyages'), audit('voyages'), validateCreate, ctrl.create);
 
+router.post('/:id/refresh-port-calls', rbac('voyages'), audit('voyages'), ctrl.refreshPortCalls);
+
 router.put('/:id',    rbac('voyages'), audit('voyages'), validateUpdate, ctrl.update);
 
 // Voyage deletion (Sprint 016)

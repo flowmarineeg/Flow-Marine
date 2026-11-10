@@ -8,7 +8,7 @@ const audit   = require('../../middleware/auditLogger');
 const ledger  = require('./ledger.service');
 const fx      = require('./fx.service');
 const Account = require('./account.model');
-const { success, created } = require('../../utils/responseHelper');
+const { success, created, forbidden } = require('../../utils/responseHelper');
 
 router.use(auth);
 
@@ -19,6 +19,8 @@ router.get('/accounts', rbac('ledger'), async (req, res, next) => {
 // Minimal read for master-data dropdowns (services, expense types): any signed-in user, no balances.
 router.get('/account-lookup', async (req, res, next) => {
   try {
+    // BK-01: open to every staff user (master-data forms), never to partner users
+    if (req.user?.roleId?.isPartnerRole) return forbidden(res, 'Partner users can only access bookings');
     const { rule } = req.query;
     const { RULES } = require('./accountRules');
     const Account = require('./account.model');

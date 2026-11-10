@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { usersService } from '@/services/users.service';
 import { rolesService } from '@/services/roles.service';
+import { partnersService } from '@/services/partners.service';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Button from '@/components/ui/Button';
@@ -20,28 +21,40 @@ export default function UserForm({ user = null, mode = 'create', onSuccess, onCa
     queryFn:  () => rolesService.list().then(r => r.data.data),
   });
 
-  const roleOptions = (rolesData || []).map(r => ({ value: r._id, label: r.name }));
+  const roleOptions = (rolesData || []).map(r => ({ value: r._id, label: r.isPartnerRole ? `${r.name} (partner)` : r.name }));
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm({
     defaultValues: isEdit && user ? {
       name:   user.name,
       email:  user.email,
       roleId: user.roleId?._id || user.roleId,
+      partnerId: user.partnerId?._id || user.partnerId || '',
       status: user.status,
     } : {},
   });
 
   useEffect(() => {
     if (isEdit && user) {
-      reset({ name: user.name, email: user.email, roleId: user.roleId?._id || user.roleId, status: user.status });
+      reset({ name: user.name, email: user.email, roleId: user.roleId?._id || user.roleId, partnerId: user.partnerId?._id || user.partnerId || '', status: user.status });
     }
   }, [user]);
 
+  // A user of a partner role belongs to a partner and only reaches that partner's bookings
+  const watchedRoleId = useWatch({ control, name: 'roleId' });
+  const isPartnerRole = (rolesData || []).find(r => r._id === watchedRoleId)?.isPartnerRole === true;
+  const { data: partnersData } = useQuery({
+    queryKey: ['partners-user-form'],
+    queryFn:  () => partnersService.list({ limit: 200, status: 'Active' }).then(r => r.data.data),
+    enabled:  isPartnerRole,
+  });
+  const partnerOptions = (partnersData || []).map(p => ({ value: p._id, label: `${p.code} — ${p.name}` }));
+
   const mutation = useMutation({
     mutationFn: (data) => {
-      if (isEdit)   return usersService.update(user._id, data);
-      if (isInvite) return usersService.invite(data);
-      return usersService.create(data);
+      const payload = { ...data, partnerId: isPartnerRole ? (data.partnerId || undefined) : (isEdit ? null : undefined) };
+      if (isEdit)   return usersService.update(user._id, payload);
+      if (isInvite) return usersService.invite(payload);
+      return usersService.create(payload);
     },
     onSuccess: () => {
       toast.success(isEdit ? 'User updated' : isInvite ? 'Invitation sent!' : 'User created');
@@ -79,6 +92,13 @@ export default function UserForm({ user = null, mode = 'create', onSuccess, onCa
         options={roleOptions} placeholder="Select a role…"
         error={errors.roleId?.message}
         {...register('roleId', { required: 'Role is required' })} />
+
+      {isPartnerRole && (
+        <Select id="partnerId" label="Partner" required
+          options={partnerOptions} placeholder="Select the partner this user belongs to…"
+          error={errors.partnerId?.message}
+          {...register('partnerId', { required: 'A partner is required for a partner role' })} />
+      )}
 
       {isEdit && (
         <Select id="status" label="Status"

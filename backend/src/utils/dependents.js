@@ -45,6 +45,9 @@ const DEPENDENTS = {
     { model: 'PartnerTransfer',  field: 'fromPartnerId', label: 'transfers paid' },
     { model: 'PartnerTransfer',  field: 'toPartnerId', label: 'transfers received' },
     { model: 'InvoiceSettlement', field: 'bankAccount.partnerId', label: 'receipts into their bank' },
+    { model: 'Booking',          field: 'partnerId', label: 'bookings labelled with them' },        // bookings sprint 2026-11-10
+    { model: 'ManualBooking',    field: 'partnerId', label: 'estimated bookings labelled with them' },
+    { model: 'User',             field: 'partnerId', label: 'partner users', filter: { isDeleted: false } },
   ],
   vessel: [
     { model: 'VesselPartner', field: 'vesselId', label: 'partner share rows' },
@@ -64,6 +67,21 @@ const DEPENDENTS = {
     { model: 'JournalEntryLine', field: 'voyageId', label: 'ledger lines' },
     { model: 'Expense',          field: 'voyageId', label: 'posted expenses', filter: { ledgerEntryId: { $ne: null } } },
     { model: 'BookingItem',      field: 'voyageId', label: 'items on invoices', filter: { locked: true } },
+    { model: 'ManualBooking',    field: 'voyageId', label: 'estimated bookings' },   // RV-38
+    { model: 'TrackingHistory',  field: 'voyageId', label: 'tracking entries' },     // RV-38
+    { model: 'Expense',          field: 'voyageId', label: 'expenses' },              // RV-38 (unposted too)
+  ],
+  // chart of accounts (Masters -> Accounting): anything pointing at an account blocks its delete
+  account: [
+    { model: 'Account',          field: 'parentId', label: 'child accounts' },
+    { model: 'JournalEntryLine', field: 'accountId', label: 'ledger lines' },
+    { model: 'Agent',            field: 'receivableAccountId', label: 'vessels/agents (receivable account)' },
+    { model: 'Agent',            field: 'payableAccountId', label: 'vessels/agents (payable account)' },
+    { model: 'Customer',         field: 'arAccountId', label: 'agents/customers (AR account)' },
+    { model: 'ExpenseType',      field: 'expenseAccountId', label: 'expense types (expense account)' },
+    { model: 'ExpenseType',      field: 'accrualAccountId', label: 'expense types (accrual account)' },
+    { model: 'InvoiceService',   field: 'revenueAccountId', label: 'invoice services' },
+    { model: 'Service',          field: 'revenueAccountId', label: 'liner services' },
   ],
   customer: [
     { model: 'Booking',          field: 'customerId', label: 'bookings' },

@@ -146,7 +146,7 @@ export default function VoyageList() {
     <div className="animate-fadeIn">
       <PageHeader
         title="Voyages"
-        subtitle="System-generated voyages from round route legs, grouped by Round"
+        subtitle="Voyages (runs over a round's legs, with direction), grouped by Round"
       />
 
       {/* Toolbar */}
@@ -178,7 +178,7 @@ export default function VoyageList() {
         <div className="card overflow-hidden"><LoadingSpinner fullPage /></div>
       ) : groups.length === 0 ? (
         <div className="card overflow-hidden">
-          <EmptyState title="No voyages found" message="Voyages are auto-generated when a round is created." />
+          <EmptyState title="No voyages found" message="Add voyages from the round page." />
         </div>
       ) : (
         <div className="flex flex-col gap-6">
@@ -224,6 +224,7 @@ export default function VoyageList() {
                           </td>
                           <td>
                             <span className="mono text-xs font-bold text-gray-700">{getVoyageLabel(v)}</span>
+                            {v.direction && <span className="ml-1.5 text-[10px] text-gray-400">{v.direction}</span>}
                           </td>
                           <td><span className="mono text-xs font-semibold text-teal-600">{v.serviceId?.serviceCode}</span></td>
                           <td>

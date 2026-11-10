@@ -19,7 +19,7 @@ const getById = async (id) => {
 const create = async (data, createdBy) => {
   const exists = await Role.findOne({ name: data.name });
   if (exists) throw { status: 400, message: 'Role name already exists' };
-  return Role.create({ name: data.name, description: data.description || '', createdBy });
+  return Role.create({ name: data.name, description: data.description || '', isPartnerRole: data.isPartnerRole === true, createdBy });
 };
 
 const update = async (id, data, updatedBy) => {
@@ -33,6 +33,13 @@ const update = async (id, data, updatedBy) => {
     role.name = data.name;
   }
   if (data.description !== undefined) role.description = data.description;
+  if (data.isPartnerRole !== undefined && Boolean(data.isPartnerRole) !== Boolean(role.isPartnerRole)) {
+    // Flipping the flag under existing users would leave partner users without a partner (or the reverse).
+    const User = require('../users/user.model');
+    const inUse = await User.countDocuments({ roleId: id, isDeleted: false });
+    if (inUse > 0) throw { status: 400, message: `Cannot change the partner flag — ${inUse} user(s) are assigned to this role` };
+    role.isPartnerRole = Boolean(data.isPartnerRole);
+  }
   role.updatedBy = updatedBy;
   await role.save();
   return role;

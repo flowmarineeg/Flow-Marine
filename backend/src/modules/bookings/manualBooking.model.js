@@ -28,6 +28,10 @@ const manualBookingSchema = new mongoose.Schema(
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null }, // optional end customer / shipper
     polId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Port',   required: true },
     podId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Port',   required: true },
+    polLegKey: { type: String, trim: true, default: null },
+    podLegKey: { type: String, trim: true, default: null },
+    partnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', default: null },  // reference label only
+    source:    { type: String, enum: ['Staff', 'PartnerUser'], default: 'Staff' },
 
     // ── Cargo rows ────────────────────────────────────────────────────────────
     // Each row = one commercial cargo line (one container type block)
@@ -51,5 +55,6 @@ const manualBookingSchema = new mongoose.Schema(
 // ── Indexes ───────────────────────────────────────────────────────────────────
 manualBookingSchema.index({ voyageId: 1, status: 1 });
 manualBookingSchema.index({ agentId:  1, status: 1 });
+manualBookingSchema.index({ partnerId: 1, status: 1 });
 
 module.exports = mongoose.model('ManualBooking', manualBookingSchema);

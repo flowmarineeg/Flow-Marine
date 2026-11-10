@@ -29,7 +29,9 @@ Order when adding a feature — backend: model → service → controller → ro
 | `/container-types` | containerTypes | `/agent-accounts` | agentAccounts |
 | `/expense-types` | expenseTypes (+categories) | `/round-accounting` | partnerSettlement / round close |
 | `/export` | export | `/locations` | countries, cities, ports, terminals |
-| `/services` | services (+ `/:id/route`) | `/rounds`, `/voyages` | rounds, voyages |
+| `/services` | services (+ `/:id/route`, liner services) | `/rounds`, `/voyages` | rounds, voyages |
+| `/customers` | customers | `/invoice-services` | invoiceServices (invoice service master) |
+| `/accounting` | accounting (6-digit chart master; GET/POST/PUT/DELETE `/accounts`) | | |
 | `/bookings` | bookings, manual, import | `/expenses` | expenses |
 | `/invoices` | billing (V2 invoices) | `/health` | liveness |
 

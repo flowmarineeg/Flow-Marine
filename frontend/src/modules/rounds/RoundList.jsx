@@ -96,7 +96,7 @@ export default function RoundList() {
         {isLoading ? (
           <LoadingSpinner fullPage />
         ) : rounds.length === 0 ? (
-          <EmptyState title="No rounds found" message="Create a round to start generating voyages." />
+          <EmptyState title="No rounds found" message="Create a round, then add its voyages." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -226,7 +226,7 @@ export default function RoundList() {
         onConfirm={() => deleteMutation.mutate(deleteTarget._id)}
         loading={deleteMutation.isPending}
         title="Delete Round"
-        message={`Delete round "${deleteTarget?.roundNumber}" (${deleteTarget?.roundName || 'unnamed'})? All generated voyages will be unreachable. This cannot be undone.`}
+        message={`Delete round "${deleteTarget?.roundNumber}" (${deleteTarget?.roundName || 'unnamed'})? Its voyages are deleted with it. This cannot be undone.`}
       />
     </div>
   );

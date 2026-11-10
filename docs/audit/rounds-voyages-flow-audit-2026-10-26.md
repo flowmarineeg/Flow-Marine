@@ -39,6 +39,10 @@ Severity: **High** = breaks an invariant the docs promise or lets money-bearing 
 | RV-35 | Low | code | Manual voyage | `-M` suffix branch is effectively dead; deleting the last voyage lets its number be reused |
 | RV-36 | Info | code | Route | Leg `agentId` is stored but nothing downstream reads it |
 | RV-37 | Info | code | Round delete | Cascade delete is multi-step, not transactional; two cleanup deletes swallow errors |
+| RV-38 | Medium | code | Voyage delete | **Fixed 2026-11-08** (`DEPENDENTS.voyage` now lists ManualBooking, TrackingHistory, all Expense; probe RV-38/RV-38b) — was: voyage delete checks only live Layer 2 bookings; Layer 1 estimated bookings, tracking and unposted voyage expenses are not checked (round delete checks them) |
+| RV-39 | Low | code | Voyage create/update | **Mostly fixed 2026-11-08** (a voyage is always created Scheduled; Departed/In Transit/Arrived/Completed need an Active round unless `voyages:override`; probe RV-39/39b). **Still open:** voyage edits on Cancelled rounds other than status, and Round → Completed ignoring its voyages (FL-06). Was: a manual voyage can be created directly in any status; voyages of a Cancelled/Completed round can still be edited; Round → Completed does not look at its voyages |
+| RV-40 | Low | code | Service update | **Open (2026-10-31)** — `serviceCode` / status edits have no guard once rounds exist; later manual voyages get a different number prefix than the generated ones |
+| RV-41 | Info | code | Manual voyage / ports | **Open (2026-10-31)** — `round-ports` returns a repeated port twice; a manual voyage may use any two route ports in any order |
 
 ## Findings
 
@@ -160,3 +164,23 @@ Evidence: `backend/scripts/audit-probes/rounds-voyages-probe.js` against a fresh
 | RV-36 | Deferred | `RouteLeg.agentId` kept and protected by `DEPENDENTS.agent`; no expense/handling flow has a port-call context to prefill without touching accounting | docs |
 
 Residual risks: `test:int` has no cases for the new rules; rounds created before this change have no snapshot (fallback to the live route); the `-M` suffix removal assumes no legacy manual voyage already used it (the unique index still guards).
+
+## Addendum 2026-10-31 — re-read of the working tree (code only, nothing probed)
+Done while writing section 12 (Routes, Rounds & Voyages) of the Notion proposal. Every claim below was checked in the named file; **no code was changed and no probe was run**, so these are "what the code does". The 2026-10-26 remediation table above still holds.
+
+### RV-38 (Medium) — Voyage delete does not look at Layer 1 bookings, tracking or unposted expenses
+`voyage.service.js#deleteVoyage` blocks on `Booking.exists({ voyageId, status: {$ne:'Cancelled'} })` and `assertNoDependents('voyage', …)`. `DEPENDENTS.voyage` (`utils/dependents.js`) counts only ledger lines, **posted** expenses and locked `BookingItem`s. Not checked: `ManualBooking` (Layer 1) rows, Cancelled `Booking` rows, `TrackingHistory.voyageId`, and expenses scoped to the voyage that are not yet posted. `round.service.js#hardDelete` does check Booking, ManualBooking and any Expense, so the two deletes disagree.
+**Effect:** a manual voyage (or the last generated one) that only carries estimated bookings can be deleted and leaves those bookings pointing at a missing voyage (capacity and reports then skip them).
+**Fix option:** add `ManualBooking`, `Booking` (any status), `TrackingHistory` and all `Expense` rows to the voyage delete guard (same list the round delete uses).
+
+### RV-39 (Low) — Voyage and round status are loosely coupled
+- `createManualVoyage` accepts any `status` from the body (only the ATD/ATA rules apply), so a manual voyage can be created as `Completed` or `Cancelled` without passing the transition table.
+- `voyage.service#update` checks only the round-close lock, not `Round.status`; voyages of a Cancelled or Completed round can still be edited (dates, Arrived → Completed).
+- `round.service#update` moves a round to `Completed` without checking its voyages (the check exists only at financial close, `roundClose.checklist`).
+**Fix option:** restrict manual-voyage creation to `Scheduled`; refuse voyage edits on Cancelled rounds; decide whether Completed requires all voyages Completed/Cancelled.
+
+### RV-40 (Low) — Service code / status edits are unguarded once rounds exist
+`service.service#update` copies any whitelisted field. `serviceCode` is baked into `voyageNumber` at generation, but `createManualVoyage` reads the **current** code, so after a rename one round carries two prefixes. Setting a service `Inactive` is allowed with Active rounds (intended: only new rounds require Active). **Fix option:** block `serviceCode` changes while the service has rounds.
+
+### RV-41 (Info) — Route ports for manual voyages
+`getRoundRoutePorts` returns one row per leg, so a round-trip route (A-B-C-A) lists port A twice. Manual voyage creation requires both ports to be on the route and different, but does not require POL to come before POD. Cosmetic / design choice; noted for completeness.

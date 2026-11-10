@@ -1,6 +1,7 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
@@ -38,7 +39,7 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
     ? VOYAGE_STATUS
     : [voyage.status, ...(TRANSITIONS[voyage.status] || [])];
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, control, formState: { errors } } = useForm({
     defaultValues: {
       etd:        toInputDate(voyage.etd),
       eta:        toInputDate(voyage.eta),
@@ -51,10 +52,22 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
     },
   });
 
+  const watchedStatus = useWatch({ control, name: 'status' });
+
+  // Per-port dates (arrival / departure at each port of the run)
+  const [callDates, setCallDates] = useState(() => Object.fromEntries(
+    (voyage.portCalls || []).map(c => [c.legKey, { eta: toInputDate(c.eta), etd: toInputDate(c.etd) }])
+  ));
+  const setDate = (legKey, field, value) => setCallDates(prev => ({ ...prev, [legKey]: { ...prev[legKey], [field]: value } }));
+
   const mutation = useMutation({
-    mutationFn: (data) => voyagesService.update(voyage._id, data),
+    mutationFn: (data) => voyagesService.update(voyage._id, {
+      ...data,
+      portCalls: (voyage.portCalls || []).map(c => ({ legKey: c.legKey, eta: callDates[c.legKey]?.eta || null, etd: callDates[c.legKey]?.etd || null })),
+    }),
     onSuccess:  (res) => {
-      toast.success('Voyage updated');
+      const c = res?.data?.data?.cancelled;
+      toast.success(c ? `Voyage cancelled — ${c.bookings} booking(s) and ${c.estimates} estimate(s) cancelled with it` : 'Voyage updated');
       // Schedule conflicts are warnings, not errors (the API still saved the voyage)
       (res?.data?.data?.warnings || []).forEach(w => toast(w, { icon: '⚠️', duration: 6000 }));
       onSuccess?.();
@@ -91,15 +104,11 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
             </p>
           </div>
         </div>
-        {/* Type badge */}
+        {/* Direction + sequence */}
         <div className="pt-2 border-t border-gray-100 flex items-center gap-2">
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-            voyage.isManual
-              ? 'bg-purple-100 text-purple-700'
-              : 'bg-gray-100 text-gray-500'
-          }`}>
-            {voyage.isManual ? 'Manual Voyage' : 'Auto-generated'}
-          </span>
+          {voyage.direction && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">{voyage.direction}bound</span>
+          )}
           <span className="text-[11px] text-gray-400">Sequence #{voyage.sequence}</span>
         </div>
       </div>
@@ -112,6 +121,11 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
             <option key={s} value={s}>{s}{s === voyage.status ? ' (current)' : ''}</option>
           ))}
         </select>
+        {watchedStatus === 'Cancelled' && voyage.status !== 'Cancelled' && (
+          <p className="mt-1 text-[11px] text-red-500">
+            Cancelling this voyage also cancels <strong>all of its bookings and estimates</strong>. It is refused if one of them is on a live invoice.
+          </p>
+        )}
         {!canOverride && allowedStatuses.length <= 1 && (
           <p className="mt-1 text-[11px] text-amber-500">No further status transitions available</p>
         )}
@@ -177,6 +191,22 @@ export default function VoyageEditForm({ voyage, onSuccess, onCancel }) {
           <input type="datetime-local" {...register('ata')} className={ic(false)} />
         </div>
       </div>
+
+      {/* Port calls */}
+      {(voyage.portCalls || []).length > 0 && (
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2 bg-gray-50 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Port calls (ETA / ETD per port)</div>
+          <div className="divide-y divide-gray-100">
+            {voyage.portCalls.map((c, i) => (
+              <div key={c.legKey} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center px-4 py-2">
+                <div className="text-sm text-gray-700">{c.portName || '—'}</div>
+                <input type="datetime-local" aria-label={`ETA ${c.portName}`} disabled={i === 0} value={callDates[c.legKey]?.eta || ''} onChange={e => setDate(c.legKey, 'eta', e.target.value)} className={`${ic(false)} disabled:bg-gray-50 disabled:text-gray-300`} />
+                <input type="datetime-local" aria-label={`ETD ${c.portName}`} disabled={i === voyage.portCalls.length - 1} value={callDates[c.legKey]?.etd || ''} onChange={e => setDate(c.legKey, 'etd', e.target.value)} className={`${ic(false)} disabled:bg-gray-50 disabled:text-gray-300`} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex justify-end gap-2 pt-1">

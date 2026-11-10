@@ -5,6 +5,7 @@ export const accountingService = {
   meta:          ()         => api.get('/accounting/meta'),
   createAccount: (data)     => api.post('/accounting/accounts', data),
   updateAccount: (id, data) => api.put(`/accounting/accounts/${id}`, data),
+  deleteAccount: (id)       => api.delete(`/accounting/accounts/${id}`),
   // exchange rates live on the ledger module (perm `ledger`)
   listRates:     (params)   => api.get('/ledger/exchange-rates', { params }),
   setRate:       (data)     => api.put('/ledger/exchange-rates', data),

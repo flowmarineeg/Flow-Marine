@@ -7,6 +7,7 @@ const { ROUND_STATUS } = require('../../config/constants');
 const snapshotLegSchema = new mongoose.Schema(
   {
     sequence:   { type: Number, required: true },
+    legKey:     { type: String, default: null },   // stable id of the leg inside this round; voyages point at it
     countryId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Country' },
     cityId:     { type: mongoose.Schema.Types.ObjectId, ref: 'City' },
     portId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Port' },

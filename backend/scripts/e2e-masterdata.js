@@ -168,7 +168,7 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   check('roles are ignored (profile removed)', !(portAgent.data?.roles || []).includes('Port'), JSON.stringify(portAgent.data?.roles));
   check('registration and tax number stored', portAgent.data?.registrationNumber === 'REG-1' && portAgent.data?.taxId === 'TAX-1');
   const cargoRow = { containerTypeId: ct.data?._id, quantity: 1, rate: 100 };
-  const okBk = await admin.post('/bookings/manual', { voyageId: voyC?._id, agentId: portAgent.data?._id, cargoRows: [cargoRow] });
+  const okBk = await admin.post('/bookings/manual', { roundId: roundC?._id, polId: voyC?.polId?._id || voyC?.polId, podId: voyC?.podId?._id || voyC?.podId, agentId: portAgent.data?._id, cargoRows: [cargoRow] });
   check('any agent can take a booking (no roles needed)', okBk.status === 201, brief(okBk));
   const bankBody = { bankAccounts: [{ bankName: 'NBE', swiftCode: 'NBEGEGCX', usdAccountNumber: '123', usdIban: 'GB82WEST12345698765432', bankAddress: 'Cairo' }, { bankName: 'CIB' }] };
   const bankOk = await admin.put(`/agents/${portAgent.data?._id}`, bankBody);

@@ -29,6 +29,8 @@ const ROUND_STATUS = ['Planned', 'Active', 'Completed', 'Cancelled'];
 
 // ─── Voyage ───────────────────────────────────────────────────────────────────
 const VOYAGE_STATUS = ['Scheduled', 'Departed', 'In Transit', 'Arrived', 'Completed', 'Cancelled'];
+// A voyage is one run over a range of the round's legs, in one direction (number suffix E/W/N/S).
+const VOYAGE_DIRECTION = ['East', 'West', 'North', 'South'];
 
 // ─── Booking ──────────────────────────────────────────────────────────────────
 const BOOKING_STATUS = ['Pending', 'Confirmed', 'Final Loading', 'Cancelled'];
@@ -96,6 +98,7 @@ module.exports = {
   SERVICE_STATUS,
   ROUND_STATUS,
   VOYAGE_STATUS,
+  VOYAGE_DIRECTION,
   BOOKING_STATUS,
   INVOICE_STATUS,
   INVOICE_TYPES,

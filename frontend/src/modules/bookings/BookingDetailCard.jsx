@@ -127,7 +127,9 @@ export default function BookingDetailCard({ booking, onMutated }) {
         {/* ── Info grid ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
           <InfoRow label="Voyage"         value={getVoyageLabel(booking.voyageId)} mono />
+          <InfoRow label="Direction"      value={booking.voyageId?.direction ? `${booking.voyageId.direction}bound` : null} />
           <InfoRow label="Agent"          value={[booking.agentId?.agentCode, booking.agentId?.agentName].filter(Boolean).join(' — ')} />
+          <InfoRow label="Partner"        value={booking.partnerId ? `${booking.partnerId.code} — ${booking.partnerId.name}${booking.source === 'PartnerUser' ? ' (entered by the partner)' : ''}` : null} />
           <InfoRow label="Container Type" value={booking.containerTypeId ? `${booking.containerTypeId.code} (${booking.containerTypeId.size} ${booking.containerTypeId.type})` : null} />
           <InfoRow label="Container No"   value={booking.containerNumber} mono />
           <InfoRow label="Container Status" value={booking.containerStatus} />

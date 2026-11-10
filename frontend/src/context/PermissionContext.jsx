@@ -39,13 +39,19 @@ export const PermissionProvider = ({ children }) => {
   // SuperAdmin bypasses all checks
   const isSuperAdmin = user?.roleId?.isSystem === true;
 
+  // Users of a partner role are external: whatever the permission rows say, only bookings is open to them
+  // (the API enforces the same in rbac). Keeps the sidebar and buttons honest.
+  const isPartnerUser = user?.roleId?.isPartnerRole === true;
+
   const can = (module, action) => {
     if (isSuperAdmin) return true;
+    if (isPartnerUser && module !== 'bookings') return false;
     return permMap[module]?.[action] === true;
   };
 
   const isHidden = (module) => {
     if (isSuperAdmin) return false;
+    if (isPartnerUser && module !== 'bookings') return true;
     return permMap[module]?.hidden === true;
   };
 

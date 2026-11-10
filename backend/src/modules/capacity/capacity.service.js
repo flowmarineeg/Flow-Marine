@@ -7,6 +7,7 @@ const ManualBooking = require('../bookings/manualBooking.model');
 const Vessel        = require('../vessels/vessel.model');
 const cache         = require('../../utils/cache');
 const { resolveTEU } = require('../../utils/teuResolver');
+const { spanOf, voyageSegments, previewSpan } = require('./capacityLegs.logic');
 
 const CACHE_TTL = 60_000; // 60 seconds
 
@@ -24,30 +25,22 @@ const cacheKey = (roundId) => `capacity:round:${String(roundId)}`;
 
 // ─── computeRoundCapacity ─────────────────────────────────────────────────────
 /**
- * Calculate per-voyage TEU capacity for a given round.
+ * Per-LEG capacity of a round (rewritten 2026-11-10, replaces the one-row-per-voyage chain, audit FL-01 / BK-02).
  *
- * Cargo flow model (NEW — Sprint 023 revision):
- *   Each voyage row tracks:
- *     loadedTEU      — TEU of cargo LOADED at this voyage's fromPort (POL)
- *     dischargedTEU  — TEU of cargo DISCHARGED at this voyage's toPort (POD)
- *     onboardStart   — TEU onboard before loading/discharging at this voyage
- *                      (inherited from previous voyage's onboardEnd)
- *     onboardTEU     — TEU onboard while transiting this voyage
- *                      = onboardStart + loadedTEU - dischargedTEU
- *     remainingTEU   — vessel.capacity - onboardTEU
+ * A voyage is one run over the round's legs; its portCalls give the ports in order, so it has (ports - 1)
+ * SEGMENTS. A booking (Layer 1 and Layer 2 alike) from POL to POD sits aboard on every segment between its two
+ * calls on the voyage the server assigned to it, so the figure that matters is TEU aboard per segment against the
+ * vessel capacity. The pure maths is in capacityLegs.logic.js.
  *
- *   The chain: onboardStart[n] = onboardTEU[n-1]
- *   First voyage: onboardStart = 0
- *
- * Matching logic:
- *   A booking is LOADED on the voyage whose fromPort.portId == booking.polId
- *   A booking is DISCHARGED on the voyage whose toPort.portId == booking.podId
- *
- *   For ManualBookings (multi-row, no per-row polId/podId):
- *     The booking-level polId/podId is used the same way.
+ * Per voyage row (shape kept for the existing screens):
+ *   loadedTEU / dischargedTEU - totals over the run;  onboardTEU - the PEAK over its segments;
+ *   remainingTEU / utilisationPct - from that peak;  segments[] / ports[] - the per-leg detail (new).
+ * A discharge import marking a booking Remaining keeps its TEU aboard on every later segment of its run
+ * (warning REMAINING_ONBOARD_PAST_DISCHARGE). Voyages are separate sailings: cargo never carries from one run
+ * into the next. Cancelled voyages are excluded (their bookings are cancelled with them).
  *
  * @param {string|ObjectId} roundId
- * @param {{ statuses?: string[] }} opts  — overrides L2 statuses only
+ * @param {{ statuses?: string[] }} opts  - overrides L2 statuses only
  */
 const ALLOWED_CAPACITY_STATUSES = new Set(['Pending', 'Confirmed', 'Final Loading']);
 
@@ -68,7 +61,6 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     if (cached) return cached;
   }
 
-  // ── Step A: load round + voyages + bookings (parallel) ───────────────────
   const round = await Round.findById(roundId)
     .populate('vesselId',  'vesselCode vesselName capacity')
     .populate('serviceId', 'serviceCode serviceName')
@@ -80,42 +72,23 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
   const voyageIds = round.voyageIds || [];
 
   const [voyages, l2Bookings, l1Bookings] = await Promise.all([
-    // BUG-010: Cancelled voyages are not physical sailings and must never
-    // participate in the cargo-flow chain, capacity, onboard, or remaining
-    // capacity calculations — excluded here at the source.
     Voyage.find({ _id: { $in: voyageIds }, status: { $ne: 'Cancelled' } })
       .populate('polId', 'name code')
       .populate('podId', 'name code')
       .sort({ sequence: 1 })
       .lean(),
-
-    // Layer 2 — operational bookings (Sprint 025: quantity removed; TEU from container size only)
-    Booking.find({
-      voyageId:  { $in: voyageIds },
-      status:    { $in: l2Statuses },
-    })
-      // Sprint 045 — dischargeStatus read-only here, only to decide whether
-      // this booking's TEU actually left the vessel at its planned discharge
-      // voyage (see Step C/E below) — never written by this function.
-      .select('voyageId polId podId containerTypeId containerNumber status dischargeStatus')
+    Booking.find({ voyageId: { $in: voyageIds }, status: { $in: l2Statuses } })
+      .select('voyageId polId podId polLegKey podLegKey containerTypeId containerNumber status dischargeStatus')
       .populate('containerTypeId', 'code size')
       .lean(),
-
-    // Layer 1 — manual bookings (including Pending — planning indicator)
-    ManualBooking.find({
-      voyageId:  { $in: voyageIds },
-      status:    { $in: L1_STATUSES },
-    })
-      .select('totalTEU totalFreight totalUnits voyageId polId podId status bookingNumber')
+    ManualBooking.find({ voyageId: { $in: voyageIds }, status: { $in: L1_STATUSES } })
+      .select('totalTEU totalFreight totalUnits voyageId polId podId polLegKey podLegKey status bookingNumber')
       .lean(),
   ]);
 
   const cap      = vessel.capacity ?? null;
   const warnings = [];
 
-  // BUG-010: warn if any of the round's voyageIds were excluded because they
-  // are cancelled. Bookings still attached to those voyages will naturally
-  // fail voyage-anchored resolution below and be warned/excluded.
   if (voyages.length < voyageIds.length) {
     warnings.push({
       code:    'CANCELLED_VOYAGES_EXCLUDED',
@@ -124,26 +97,10 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     });
   }
 
-  // ── Step B (REVISION 3): discharge-voyage resolution is voyage-based, NOT a
-  // global port map. Repeated ports within the same round make a global
-  // portAsTo/portAsFrom map ambiguous. Instead, each booking is anchored on
-  // its own voyageId (the voyage it is attached to / loads on) and we walk
-  // forward through the sorted voyage sequence from there to find the first
-  // voyage whose toPort matches the booking's POD.
-  const voyageIndexById = {}; // voyageId → index in the sorted `voyages` array
-  voyages.forEach((v, i) => { voyageIndexById[String(v._id)] = i; });
+  const byVoyage = new Map(); // voyageId -> { voyage, events[] }
+  voyages.forEach(v => byVoyage.set(String(v._id), { voyage: v, events: [] }));
 
-  const resolveDischargeIdx = (loadIdx, podId) => {
-    for (let i = loadIdx; i < voyages.length; i++) {
-      const toId = String(voyages[i].podId?._id || voyages[i].podId);
-      if (toId === String(podId)) return i;
-    }
-    return null;
-  };
-
-  // ── Step C: Resolve TEU and validate each Layer 2 booking ────────────────
-  const l2Events = []; // { loadVoyageIdx, dischargeVoyageIdx, teu }
-
+  // ── Layer 2: one booking = one container, TEU from its size ────────────────
   for (const b of l2Bookings) {
     if (!b.containerTypeId) {
       warnings.push({ code: 'MISSING_CONTAINER_TYPE', message: `Booking ${b._id} has no container type — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
@@ -153,262 +110,114 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
     if (!matched) {
       warnings.push({ code: 'MISSING_TEU_MAPPING', message: `Unrecognised container size "${b.containerTypeId.size}" for booking ${b._id} — defaulting to 1 TEU`, bookingId: b._id, containerNumber: b.containerNumber, size: b.containerTypeId.size });
     }
-    // Sprint 025: one booking = one container; TEU derived from size only (no quantity)
-    const effectiveTEU = teu;
-
-    // Anchor on the booking's actual attached voyage (REVISION 3) — never a global port map.
-    const loadIdx = voyageIndexById[String(b.voyageId)];
-    if (loadIdx == null) {
+    const slot = byVoyage.get(String(b.voyageId));
+    if (!slot) {
       warnings.push({ code: 'BOOKING_PORT_NOT_IN_ROUND', message: `Booking ${b._id} voyage not found in this round (cancelled or missing) — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
       continue;
     }
-
-    const dischargeIdx = resolveDischargeIdx(loadIdx, b.podId);
-    if (dischargeIdx == null) {
-      warnings.push({ code: 'BOOKING_PORT_NOT_IN_ROUND', message: `Booking ${b._id} POD not found ahead of its load voyage in this round — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
+    const span = spanOf(slot.voyage.portCalls, b);
+    if (!span) {
+      warnings.push({ code: 'BOOKING_PORT_NOT_IN_ROUND', message: `Booking ${b._id} POL/POD not found on the run of its voyage — excluded`, bookingId: b._id, containerNumber: b.containerNumber });
       continue;
     }
-
-    // Sprint 029: exact-segment flag for "Loaded" column presentation —
-    // compared against the booking's own polId/podId, NOT loadIdx===dischargeIdx.
-    const anchorVoyage = voyages[loadIdx];
-    const exactSegment =
-      String(b.polId) === String(anchorVoyage.polId?._id || anchorVoyage.polId) &&
-      String(b.podId) === String(anchorVoyage.podId?._id || anchorVoyage.podId);
-
-    // Sprint 045 — `dischargeIdx` is still always the resolved/PLANNED
-    // discharge voyage, computed exactly as before (resolveDischargeIdx is
-    // completely unchanged). Whether Step E is allowed to actually decrement
-    // dischargedTEU there now depends on the booking's real-world outcome:
-    //   - dischargeStatus === 'Remaining' → did NOT actually leave the vessel
-    //     there; its TEU must keep counting as onboard through every later
-    //     voyage in the round (business rule, Sprint 045).
-    //   - 'Discharged', or null (not yet assessed — no discharge import has
-    //     run for this voyage yet) → behaves exactly as before this sprint,
-    //     the planned/on-schedule assumption stands.
-    const stuckRemaining = b.dischargeStatus === 'Remaining';
-    l2Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu: effectiveTEU, source: 'l2', exactSegment, stuckRemaining });
+    slot.events.push({ ...span, teu, layer: 'l2', stuckRemaining: b.dischargeStatus === 'Remaining' });
   }
 
-  // ── Step D: Layer 1 manual bookings (REVISION 2 + REVISION 3) ────────────
-  // Voyage-anchored resolution, same as Step C. If POL/POD cannot be
-  // resolved, warn and EXCLUDE the booking entirely — no synthetic
-  // load-only or load+discharge event is created.
-  const l1Events = [];
+  // ── Layer 1: whole estimate, TEU = totalTEU ───────────────────────────────
   for (const m of l1Bookings) {
-    const teu = m.totalTEU || 0;
-
-    const loadIdx = voyageIndexById[String(m.voyageId)];
-    if (loadIdx == null) {
-      warnings.push({
-        code:    'L1_BOOKING_PORT_NOT_IN_ROUND',
-        message: `Manual booking ${m.bookingNumber} voyage not found in this round (cancelled or missing) — excluded from capacity calculation`,
-        bookingNumber: m.bookingNumber,
-      });
+    const slot = byVoyage.get(String(m.voyageId));
+    if (!slot) {
+      warnings.push({ code: 'L1_BOOKING_PORT_NOT_IN_ROUND', message: `Manual booking ${m.bookingNumber} voyage not found in this round (cancelled or missing) — excluded from capacity calculation`, bookingNumber: m.bookingNumber });
       continue;
     }
-
-    const dischargeIdx = resolveDischargeIdx(loadIdx, m.podId);
-    if (dischargeIdx == null) {
-      warnings.push({
-        code:    'L1_BOOKING_PORT_NOT_IN_ROUND',
-        message: `Manual booking ${m.bookingNumber} POL/POD could not be resolved in round — excluded from capacity calculation`,
-        bookingNumber: m.bookingNumber,
-      });
+    const span = spanOf(slot.voyage.portCalls, m);
+    if (!span) {
+      warnings.push({ code: 'L1_BOOKING_PORT_NOT_IN_ROUND', message: `Manual booking ${m.bookingNumber} POL/POD not found on the run of its voyage — excluded from capacity calculation`, bookingNumber: m.bookingNumber });
       continue;
     }
-
-    // Sprint 029: exact-segment flag for "Loaded" column presentation —
-    // compared against the booking's own polId/podId, NOT loadIdx===dischargeIdx.
-    const anchorVoyage = voyages[loadIdx];
-    const exactSegment =
-      String(m.polId) === String(anchorVoyage.polId?._id || anchorVoyage.polId) &&
-      String(m.podId) === String(anchorVoyage.podId?._id || anchorVoyage.podId);
-
-    l1Events.push({ loadVoyageIdx: loadIdx, dischargeVoyageIdx: dischargeIdx, teu, source: 'l1', exactSegment });
-  }
-
-  const allEvents = [...l2Events, ...l1Events];
-
-  // ── Step E: Per-voyage aggregation with cumulative onboard carry ──────────
-  //
-  // For each voyage[i]:
-  //   loadedTEU[i]     = sum of teu for events where loadVoyageIdx == i
-  //   dischargedTEU[i] = sum of teu for events where dischargeVoyageIdx == i
-  //   onboardStart[i]  = onboardTEU[i-1]  (0 for first voyage)
-  //   onboardTEU[i]    = onboardStart[i] + loadedTEU[i] - dischargedTEU[i]
-  //
-  // L1/L2 breakdown:
-  //   loadedL1[i]      = l1 events loaded at i
-  //   loadedL2[i]      = l2 events loaded at i
-  //   (same for discharged)
-
-  const loadedTEU     = new Array(voyages.length).fill(0);
-  const dischargedTEU = new Array(voyages.length).fill(0);
-  const loadedL1      = new Array(voyages.length).fill(0);
-  const loadedL2      = new Array(voyages.length).fill(0);
-  const dischargedL1  = new Array(voyages.length).fill(0);
-  const dischargedL2  = new Array(voyages.length).fill(0);
-
-  // Sprint 029: exact-segment "Loaded" figures for presentation only.
-  // Populated only when booking.polId==voyage.fromPort AND booking.podId==voyage.toPort.
-  // Does NOT feed the onboard chain — loadedTEU/dischargedTEU above remain the
-  // source of truth for onboardStart/onboardTEU/remainingTEU/utilisationPct.
-  const loadedExactTEU = new Array(voyages.length).fill(0);
-  const loadedExactL1  = new Array(voyages.length).fill(0);
-  const loadedExactL2  = new Array(voyages.length).fill(0);
-
-  // Sprint 045 — presentation-adjacent only, same category as Sprint 038's
-  // capacityBeforeLoading / Sprint 029's loadedExact*: computed alongside the
-  // real chain, exposed per voyage, NEVER fed back into onboardTEU/
-  // remainingTEU/utilisationPct. TEU that was expected to discharge at this
-  // voyage (dischargeStatus:'Remaining') but is still physically onboard.
-  const remainingOnboardTEU = new Array(voyages.length).fill(0);
-
-  for (const ev of allEvents) {
-    loadedTEU[ev.loadVoyageIdx] += ev.teu;
-
-    if (ev.stuckRemaining) {
-      // Sprint 045 — confirmed NOT actually discharged here: suppress the
-      // dischargedTEU decrement entirely (the ONLY behavioral change this
-      // sprint makes to the cargo-flow chain) so the TEU keeps counting as
-      // onboard through every later voyage. Tracked separately, at its
-      // ORIGINAL planned discharge voyage, purely for the red-highlight
-      // warning below — never subtracted from onboardTEU anywhere.
-      remainingOnboardTEU[ev.dischargeVoyageIdx] += ev.teu;
-    } else {
-      // Discharged, or not yet assessed — byte-for-byte the same behavior
-      // as every round before this sprint.
-      dischargedTEU[ev.dischargeVoyageIdx] += ev.teu;
-      if (ev.source === 'l1') dischargedL1[ev.dischargeVoyageIdx] += ev.teu;
-      else                    dischargedL2[ev.dischargeVoyageIdx] += ev.teu;
-    }
-
-    if (ev.source === 'l1') {
-      loadedL1[ev.loadVoyageIdx] += ev.teu;
-    } else {
-      loadedL2[ev.loadVoyageIdx] += ev.teu;
-    }
-
-    if (ev.exactSegment) {
-      loadedExactTEU[ev.loadVoyageIdx] += ev.teu;
-      if (ev.source === 'l1') loadedExactL1[ev.loadVoyageIdx] += ev.teu;
-      else                    loadedExactL2[ev.loadVoyageIdx] += ev.teu;
-    }
+    slot.events.push({ ...span, teu: m.totalTEU || 0, layer: 'l1' });
   }
 
   const voyageRows = [];
-  let runningOnboard = 0;
+  let totalLoaded = 0;
 
-  for (let i = 0; i < voyages.length; i++) {
-    const v = voyages[i];
-    const onboardStart   = runningOnboard;
-    const loaded         = loadedTEU[i];
-    const discharged     = dischargedTEU[i];
-    const onboardTEU     = onboardStart + loaded - discharged;
-    const remainingTEU   = cap != null ? cap - onboardTEU : null;
-    const utilisationPct = cap != null ? Math.round((onboardTEU / cap) * 100) : null;
+  for (const v of voyages) {
+    const { events } = byVoyage.get(String(v._id));
+    const calls = v.portCalls || [];
+    const r = voyageSegments(calls, events, cap);
+    totalLoaded += r.loaded;
 
-    if (remainingTEU != null && remainingTEU < 0) {
-      warnings.push({
-        code:         'VOYAGE_OVERBOOKED',
-        message:      `Voyage ${v.voyageNumber} overbooked by ${Math.abs(remainingTEU)} TEU`,
-        voyageId:     v._id,
-        voyageNumber: v.voyageNumber,
-        voyageName:   v.voyageName || null,
-        over:         Math.abs(remainingTEU),
-      });
+    const peak = r.peakOnboard;
+    const remainingTEU   = cap != null ? cap - peak : null;
+    const utilisationPct = cap != null && cap > 0 ? Math.round((peak / cap) * 100) : null;
+
+    for (const sg of r.segments) {
+      if (sg.remainingTEU != null && sg.remainingTEU < 0) {
+        warnings.push({
+          code:         'VOYAGE_OVERBOOKED',
+          message:      `Voyage ${v.voyageNumber} overbooked by ${Math.abs(sg.remainingTEU)} TEU between ${sg.fromPort.name || sg.fromPort.code} and ${sg.toPort.name || sg.toPort.code}`,
+          voyageId:     v._id,
+          voyageNumber: v.voyageNumber,
+          voyageName:   v.voyageName || null,
+          segmentIndex: sg.index,
+          over:         Math.abs(sg.remainingTEU),
+        });
+      }
     }
-
-    // Sprint 045 — operational warning: containers confirmed still onboard
-    // past the voyage where they were expected to discharge.
-    if (remainingOnboardTEU[i] > 0) {
+    let remainingOnboardTEU = 0;
+    for (const [idx, teu] of Object.entries(r.remainingOnboardAt)) {
+      remainingOnboardTEU += teu;
       warnings.push({
         code:         'REMAINING_ONBOARD_PAST_DISCHARGE',
-        message:      `${remainingOnboardTEU[i]} TEU still onboard past expected discharge at voyage ${v.voyageNumber}`,
+        message:      `${teu} TEU still onboard past expected discharge at ${calls[idx]?.portName || 'port ' + idx} on voyage ${v.voyageNumber}`,
         voyageId:     v._id,
         voyageNumber: v.voyageNumber,
         voyageName:   v.voyageName || null,
-        teu:          remainingOnboardTEU[i],
+        teu,
       });
     }
+
+    // exact run = booking from the run's first to its last port (kept for the "Loaded" column of the old screens)
+    const last = calls.length - 1;
+    const exact = events.filter(e => e.polIdx === 0 && e.podIdx === last);
+    const sum = (arr, layer) => arr.filter(e => !layer || e.layer === layer).reduce((a, e) => a + e.teu, 0);
 
     voyageRows.push({
       voyageId:      v._id,
       voyageNumber:  v.voyageNumber,
       voyageName:    v.voyageName || null,
+      direction:     v.direction || null,
       sequence:      v.sequence,
       isManual:      v.isManual || false,
-      fromPort: {
-        portId: String(v.polId?._id || v.polId),
-        name:   v.polId?.name || '',
-        code:   v.polId?.code || '',
-      },
-      toPort: {
-        portId: String(v.podId?._id || v.podId),
-        name:   v.podId?.name || '',
-        code:   v.podId?.code || '',
-      },
+      fromPort: { portId: String(v.polId?._id || v.polId), name: v.polId?.name || '', code: v.polId?.code || '' },
+      toPort:   { portId: String(v.podId?._id || v.podId), name: v.podId?.name || '', code: v.podId?.code || '' },
       etd:          v.etd,
       eta:          v.eta,
       voyageStatus: v.status,
-      // Cargo flow fields
-      onboardStart,        // TEU onboard before any activity at this voyage's ports
-      loadedTEU:    loaded,
-      dischargedTEU: discharged,
-      onboardTEU,          // TEU onboard while transiting (after load, before discharge at POD)
+      onboardStart:  0,                 // runs are separate sailings: nothing carries in
+      loadedTEU:     r.loaded,
+      dischargedTEU: r.discharged,
+      onboardTEU:    peak,              // PEAK over the run's segments
       remainingTEU,
       utilisationPct,
-      // Sprint 038 — presentation-only, additive field for the Round
-      // Capacity Report's per-voyage cards (same category as Sprint 029's
-      // loadedExact: computed alongside the real onboard chain, never fed
-      // back into it). "How much TEU room existed before this voyage's
-      // own load/discharge activity" — the complement to remainingTEU,
-      // which is room left AFTER that activity.
-      capacityBeforeLoading: cap != null ? cap - onboardStart : null,
-      // Sprint 045 — presentation-only (see the comment above the array's
-      // declaration in Step E). TEU expected to discharge here but still
-      // physically onboard (dischargeStatus:'Remaining') — drives the red
-      // "operational warning" highlight in the capacity UI. Zero for every
-      // round that hasn't used the Discharge import feature.
-      remainingOnboardTEU: remainingOnboardTEU[i],
-      // L1/L2 breakdown
-      layer1: {
-        loadedTEU:     loadedL1[i],
-        dischargedTEU: dischargedL1[i],
-      },
-      layer2: {
-        loadedTEU:     loadedL2[i],
-        dischargedTEU: dischargedL2[i],
-      },
-      // Sprint 029: exact-segment "Loaded" figures for UI presentation only
-      // (booking.polId==voyage.fromPort AND booking.podId==voyage.toPort).
-      // Does not drive onboardTEU/remainingTEU/utilisationPct above.
-      loadedExact: {
-        teu:    loadedExactTEU[i],
-        layer1: loadedExactL1[i],
-        layer2: loadedExactL2[i],
-      },
+      capacityBeforeLoading: cap,
+      remainingOnboardTEU,
+      layer1: { loadedTEU: r.loadedL1, dischargedTEU: r.dischargedL1 },
+      layer2: { loadedTEU: r.loadedL2, dischargedTEU: r.dischargedL2 },
+      loadedExact: { teu: sum(exact), layer1: sum(exact, 'l1'), layer2: sum(exact, 'l2') },
+      // per-leg detail (new)
+      segments: r.segments,
+      ports:    r.ports,
     });
-
-    runningOnboard = onboardTEU;
   }
 
-  // ── Step F: totals ────────────────────────────────────────────────────────
-  const onboardValues     = voyageRows.map(v => v.onboardTEU);
-  const peakOnboardTEU    = onboardValues.length ? Math.max(...onboardValues) : 0;
-  const peakVoyageIndex   = voyageRows.findIndex(v => v.onboardTEU === peakOnboardTEU);
-  const peakVoyageId      = peakVoyageIndex >= 0 ? voyageRows[peakVoyageIndex].voyageId : null;
-
-  const utilValues        = voyageRows.map(v => v.utilisationPct).filter(v => v != null);
-  const avgUtilisationPct = utilValues.length
-    ? Math.round(utilValues.reduce((a, b) => a + b, 0) / utilValues.length)
-    : null;
-
-  const totalLoadedTEU    = loadedTEU.reduce((s, v) => s + v, 0);
-  // Sprint 025: L2 = one container per booking (no quantity); L2 units = booking count
-  const totalL2Units      = l2Bookings.length;
-  const totalL1Units      = l1Bookings.reduce((s, m) => s + (m.totalUnits || 0), 0);
+  const peakOnboardTEU  = voyageRows.length ? Math.max(...voyageRows.map(v => v.onboardTEU)) : 0;
+  const peakVoyage      = voyageRows.find(v => v.onboardTEU === peakOnboardTEU);
+  const peakVoyageId    = peakVoyage ? peakVoyage.voyageId : null;
+  const utilValues      = voyageRows.map(v => v.utilisationPct).filter(v => v != null);
+  const avgUtilisationPct = utilValues.length ? Math.round(utilValues.reduce((a, b) => a + b, 0) / utilValues.length) : null;
+  const totalL2Units    = l2Bookings.length;
+  const totalL1Units    = l1Bookings.reduce((sum, m) => sum + (m.totalUnits || 0), 0);
 
   const result = {
     round: {
@@ -436,7 +245,7 @@ const computeRoundCapacity = async (roundId, opts = {}) => {
       peakOnboardTEU,
       peakVoyageId,
       avgUtilisationPct,
-      totalLoadedTEU,
+      totalLoadedTEU:     totalLoaded,
       totalBookedUnits:   totalL1Units + totalL2Units,
     },
     warnings,
@@ -464,95 +273,44 @@ const computeVesselActiveCapacity = async (vesselId) => {
   return { vessel, activeRound: data };
 };
 
-// ─── computeVoyagePreview ─────────────────────────────────────────────────────
-// Sprint 025: quantity param removed — one booking = one container; TEU from size only
-// Sprint 028 (BUG-004, REVISION 3): optional podId checks ALL voyages the
-// container transits, resolved by walking forward from the load voyage
-// through the round's voyage sequence — never a global port map.
-const computeVoyagePreview = async (roundId, voyageId, containerTypeId, podId = null) => {
+// ─── previews (pre-flight checks) ─────────────────────────────────────────────
+/**
+ * Would addedTEU more fit on EVERY segment between POL and POD of this voyage? (per-leg, both layers counted)
+ * polId/podId missing = the whole run. Same result shape as before, plus the worst segment.
+ */
+const computeRoutePreview = async (roundId, { voyageId, polId = null, podId = null, polLegKey = null, podLegKey = null, addedTEU }) => {
+  const current = await computeRoundCapacity(roundId);
+  const cap     = current.vessel.capacity;
+  const row     = current.voyages.find(v => String(v.voyageId) === String(voyageId));
+  if (!row) throw { status: 400, message: 'Voyage not found in round capacity data' };
+
+  const r = previewSpan(row, { polId, podId, polLegKey, podLegKey }, addedTEU, cap);
+  if (!r) throw { status: 400, message: 'POL/POD not found on the run of this voyage' };
+
+  return {
+    canFit: r.canFit,
+    addedTEU,
+    voyage: {
+      voyageId:         row.voyageId,
+      voyageNumber:     row.voyageNumber,
+      voyageName:       row.voyageName || null,
+      onboardBefore:    r.onboardBefore,
+      onboardAfter:     r.onboardAfter,
+      remainingAfter:   r.remainingAfter,
+      utilisationAfter: r.utilisationAfter,
+      isBottleneck:     true,
+      segment:          { from: r.worst.fromPort, to: r.worst.toPort },
+    },
+  };
+};
+
+// One container of the given type from POL to POD (POL optional: from the run's start).
+const computeVoyagePreview = async (roundId, voyageId, containerTypeId, podId = null, polId = null) => {
   const ContainerType = require('../containerTypes/containerType.model');
   const ct = await ContainerType.findById(containerTypeId).select('size').lean();
   if (!ct) throw { status: 400, message: 'Container type not found' };
-
-  const { teu }  = resolveTEU(ct.size);
-  const addedTEU = teu; // one container contributes exactly its size TEU
-
-  const current   = await computeRoundCapacity(roundId);
-  const cap       = current.vessel.capacity;
-  const loadIdx   = current.voyages.findIndex(v => String(v.voyageId) === String(voyageId));
-  if (loadIdx === -1) throw { status: 400, message: 'Voyage not found in round capacity data' };
-
-  if (podId) {
-    // Voyage-based discharge resolution (REVISION 3): start at the load
-    // voyage's index and walk forward to the first voyage whose toPort
-    // matches podId. No global portAsTo map — repeated ports in the same
-    // round would make such a map ambiguous.
-    let dischargeIdx = null;
-    for (let i = loadIdx; i < current.voyages.length; i++) {
-      if (String(current.voyages[i].toPort.portId) === String(podId)) {
-        dischargeIdx = i;
-        break;
-      }
-    }
-
-    if (dischargeIdx != null) {
-      // The container transits every voyage from loadIdx to dischargeIdx inclusive.
-      const transitVoyages = current.voyages.slice(loadIdx, dischargeIdx + 1);
-      let bottleneckVoyage = null;
-      let minRemaining = Infinity;
-
-      for (const tv of transitVoyages) {
-        const onboardAfterOnThisVoyage = tv.onboardTEU + addedTEU;
-        const remainingOnThisVoyage = cap != null ? cap - onboardAfterOnThisVoyage : null;
-        if (remainingOnThisVoyage != null && remainingOnThisVoyage < minRemaining) {
-          minRemaining = remainingOnThisVoyage;
-          bottleneckVoyage = tv;
-        }
-      }
-
-      if (bottleneckVoyage) {
-        const onboardAfter   = bottleneckVoyage.onboardTEU + addedTEU;
-        const remainingAfter = cap != null ? cap - onboardAfter : null;
-        const canFit         = remainingAfter == null || remainingAfter >= 0;
-        return {
-          canFit,
-          addedTEU,
-          voyage: {
-            voyageId:        bottleneckVoyage.voyageId,
-            voyageNumber:    bottleneckVoyage.voyageNumber,
-            voyageName:      bottleneckVoyage.voyageName || null,
-            onboardBefore:   bottleneckVoyage.onboardTEU,
-            onboardAfter,
-            remainingAfter,
-            utilisationAfter: cap ? Math.round((onboardAfter / cap) * 100) : null,
-            isBottleneck:    true,
-          },
-        };
-      }
-    }
-    // Fall through to load-voyage-only check if discharge could not be resolved
-    // or capacity is uncapped (bottleneckVoyage stays null).
-  }
-
-  // Fallback / default: check the load voyage only (existing behaviour).
-  const voyageRow = current.voyages[loadIdx];
-  const onboardAfter   = voyageRow.onboardTEU + addedTEU;
-  const remainingAfter = cap != null ? cap - onboardAfter : null;
-  const canFit         = remainingAfter == null || remainingAfter >= 0;
-
-  return {
-    canFit,
-    addedTEU,
-    voyage: {
-      voyageId:        voyageRow.voyageId,
-      voyageNumber:    voyageRow.voyageNumber,
-      voyageName:      voyageRow.voyageName || null,
-      onboardBefore:   voyageRow.onboardTEU,
-      onboardAfter,
-      remainingAfter,
-      utilisationAfter: cap ? Math.round((onboardAfter / cap) * 100) : null,
-    },
-  };
+  const { teu } = resolveTEU(ct.size);
+  return computeRoutePreview(roundId, { voyageId, polId: polId && podId ? polId : null, podId: polId && podId ? podId : null, addedTEU: teu });
 };
 
 // ─── cache invalidation ───────────────────────────────────────────────────────
@@ -564,5 +322,6 @@ module.exports = {
   computeRoundCapacity,
   computeVesselActiveCapacity,
   computeVoyagePreview,
+  computeRoutePreview,
   invalidateRoundCache,
 };

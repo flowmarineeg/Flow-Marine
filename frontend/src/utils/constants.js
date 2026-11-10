@@ -15,6 +15,7 @@ export const OPERATIONAL_LEVELS  = [
   { value: 'PORT_LEVEL', label: 'Port-level (Port DA, THC, stevedoring, port-agent fees)' },
 ];
 export const ROUND_STATUS        = ['Planned', 'Active', 'Completed', 'Cancelled'];
+export const VOYAGE_DIRECTION    = ['East', 'West', 'North', 'South'];
 export const VOYAGE_STATUS       = ['Scheduled', 'Departed', 'In Transit', 'Arrived', 'Completed', 'Cancelled'];
 export const BOOKING_STATUS      = ['Pending', 'Confirmed', 'Final Loading', 'Cancelled'];
 export const INVOICE_STATUS      = ['Draft', 'Issued', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled'];

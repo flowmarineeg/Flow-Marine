@@ -43,8 +43,8 @@ export default function RoleList() {
     onError:    (e) => showErrorToast(e, 'delete'),
   });
 
-  const openCreate = () => { reset({ name: '', description: '' }); setModal('create'); };
-  const openEdit   = (r) => { reset({ name: r.name, description: r.description }); setModal({ edit: r }); };
+  const openCreate = () => { reset({ name: '', description: '', isPartnerRole: false }); setModal('create'); };
+  const openEdit   = (r) => { reset({ name: r.name, description: r.description, isPartnerRole: !!r.isPartnerRole }); setModal({ edit: r }); };
 
   const roles = data || [];
 
@@ -81,6 +81,8 @@ export default function RoleList() {
                   <td>
                     {r.isSystem ? (
                       <span style={{ fontSize: 11.5, fontWeight: 500, background: 'var(--teal-light)', color: 'var(--teal)', padding: '2px 9px', borderRadius: 99 }}>System</span>
+                    ) : r.isPartnerRole ? (
+                      <span style={{ fontSize: 11.5, fontWeight: 500, background: '#eef2ff', color: '#4338ca', padding: '2px 9px', borderRadius: 99 }}>Partner</span>
                     ) : (
                       <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Custom</span>
                     )}
@@ -124,6 +126,13 @@ export default function RoleList() {
               className="input-base" style={{ resize: 'vertical', fontFamily: 'inherit' }}
               {...register('description')} />
           </div>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type="checkbox" style={{ marginTop: 3 }} {...register('isPartnerRole')} />
+            <span>
+              <strong>Partner role</strong> — for external partners. Users of this role belong to one partner and can only
+              see and enter the bookings of their own partner; every other module stays closed whatever the permissions say.
+            </span>
+          </label>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 8 }}>
             <Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancel</Button>
             <Button type="submit" loading={saveMutation.isPending}>{modal?.edit ? 'Save Changes' : 'Create Role'}</Button>

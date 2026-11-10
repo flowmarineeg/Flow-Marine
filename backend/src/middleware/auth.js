@@ -36,7 +36,7 @@ const authMiddleware = async (req, res, next) => {
 
     if (!user) {
       user = await User.findOne({ _id: userId, isDeleted: false })
-        .populate('roleId', 'name isSystem')
+        .populate('roleId', 'name isSystem isPartnerRole')
         .lean();
 
       if (user) cache.set(`user:${userId}`, user, USER_TTL);

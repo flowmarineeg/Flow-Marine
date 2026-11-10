@@ -56,10 +56,15 @@ router.post('/import/save',    rbac('bookings', 'import'), audit('bookings'), as
   next();
 }, importCtrl.save);
 
-// Voyage port lookup — used by booking form dropdown
+// Voyage port lookup (legacy, by voyage)
 router.get('/voyage-ports/:voyageId', rbac('bookings'), ctrl.getVoyagePorts);
 
-// Sprint 027: Discharge List export — BEFORE /:id to avoid route shadowing
+// Bookings sprint 2026-11-10 — form support. Read-only, for staff and partner users alike.
+router.get('/lookups',          rbac('bookings', 'read'), ctrl.getLookups);          // agents, open rounds, container types, round ports
+router.post('/resolve-voyage',  rbac('bookings', 'read'), ctrl.resolveVoyage);       // which voyage would POL -> POD get (no write)
+
+// Discharge list by POL -> POD (screen + Excel) — BEFORE /:id to avoid route shadowing
+router.get('/discharge-list',        rbac('bookings', 'read'),   ctrl.dischargeList);
 router.get('/export/discharge-list', rbac('bookings', 'export'), ctrl.exportDischargeList);
 
 router.get('/',      rbac('bookings'), ctrl.list);

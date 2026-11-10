@@ -26,7 +26,15 @@ const getRoundVoyages = async (req, res, next) => {
 const create = async (req, res, next) => {
   try {
     const result = await roundService.create(req.body, req.user._id);
-    return created(res, result, 'Round created and voyages generated');
+    return created(res, result, 'Round created — add its voyages next');
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+const updateLegs = async (req, res, next) => {
+  try {
+    req.auditOldDoc = await roundService.getById(req.params.id);
+    const out = await roundService.updateLegs(req.params.id, req.body.legs, req.user._id);
+    return success(res, out, out.warnings.length ? 'Round legs updated with warnings' : 'Round legs updated');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
@@ -44,4 +52,4 @@ const remove = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { list, getById, getRoundVoyages, create, update, remove };
+module.exports = { list, getById, getRoundVoyages, create, updateLegs, update, remove };

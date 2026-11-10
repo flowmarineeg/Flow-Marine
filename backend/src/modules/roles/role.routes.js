@@ -18,6 +18,7 @@ const handle = (req, res, next) => {
 const validateRole = [
   body('name').trim().notEmpty().withMessage('Role name is required').isLength({ max: 100 }),
   body('description').optional().trim(),
+  body('isPartnerRole').optional().isBoolean().withMessage('isPartnerRole must be true or false'),
   handle,
 ];
 

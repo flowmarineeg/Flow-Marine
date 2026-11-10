@@ -8,5 +8,6 @@ export const voyagesService = {
   getRoundRoutePorts:(roundId)  => api.get(`${BASE}/round-ports/${roundId}`),
   create:            (data)     => api.post(BASE, data),
   update:            (id, data) => api.put(`${BASE}/${id}`, data),
+  refreshPortCalls:  (id)       => api.post(`${BASE}/${id}/refresh-port-calls`),
   remove:            (id)       => api.delete(`${BASE}/${id}`),
 };

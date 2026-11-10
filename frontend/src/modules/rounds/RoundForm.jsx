@@ -64,7 +64,7 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
         ? roundsService.update(item._id, data)
         : roundsService.create(data),
     onSuccess: (res) => {
-      toast.success(isEditing ? 'Round updated' : 'Round created — voyages generated!');
+      toast.success(isEditing ? 'Round updated' : 'Round created — now add its voyages');
       qc.invalidateQueries(['rounds']);
       onSuccess?.(res.data.data);
     },
@@ -173,7 +173,7 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
             <path strokeLinecap="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
           <p className="text-[12.5px] text-teal-700 leading-relaxed">
-            Saving will automatically generate voyages from the service's route legs — one voyage per consecutive port pair.
+            The service's route legs are copied into the round (you can edit them on the round afterwards). Voyages are not created automatically — add each voyage from the round page, e.g. East from leg 1 to leg 4, then West from leg 4 to leg 1.
           </p>
         </div>
       )}
@@ -194,7 +194,7 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
               </svg>
-              {isEditing ? 'Saving…' : 'Creating & Generating…'}
+              {isEditing ? 'Saving…' : 'Creating…'}
             </>
           ) : isEditing ? 'Save Changes' : 'Create Round'}
         </button>

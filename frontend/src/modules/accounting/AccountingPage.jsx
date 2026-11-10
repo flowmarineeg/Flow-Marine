@@ -1,12 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { showErrorToast } from '@/utils/errorToast';
 import { accountingService } from '@/services/accounting.service';
 import { usePermission } from '@/context/PermissionContext';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AccountForm from '@/modules/accounting/AccountForm';
 import ExchangeRates from '@/modules/accounting/ExchangeRates';
@@ -25,7 +28,7 @@ function buildTree(all) {
   for (const n of nodes.values()) {
     const parent = n.parentId ? nodes.get(String(n.parentId)) : null;
     if (parent) parent.children.push(n);
-    else if (/^d{4}$/.test(n.code)) legacy.push(n);
+    else if (/^[0-9]{4}$/.test(n.code)) legacy.push(n);
     else roots.push(n);
   }
   const byCode = (a, b) => a.code.localeCompare(b.code);
@@ -40,7 +43,14 @@ function ChartTab() {
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const [kind, setKind] = useState(''); // '' | 'true' posting | 'false' header
-  const [modal, setModal] = useState(null); // null | 'create' | { edit }
+  const qc = useQueryClient();
+  const [modal, setModal] = useState(null); // null | 'create' | { edit } | { parentId }
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const del = useMutation({
+    mutationFn: (id) => accountingService.deleteAccount(id),
+    onSuccess: () => { toast.success('Account deleted'); qc.invalidateQueries({ queryKey: ['chart-of-accounts'] }); setDeleteTarget(null); },
+    onError: (e) => { showErrorToast(e, 'delete'); setDeleteTarget(null); },
+  });
 
   const { data: meta } = useQuery({ queryKey: ['chart-meta'], queryFn: () => accountingService.meta().then(r => r.data.data) });
   const { data: all = [], isLoading } = useQuery({
@@ -98,7 +108,7 @@ function ChartTab() {
         <span className="text-xs text-gray-400">{filtering ? `${rows.length} rows` : `${total} accounts`}</span>
         {!filtering && <><button type="button" onClick={expandAll} className="text-xs font-medium text-teal-600 hover:underline">Expand all</button><button type="button" onClick={collapseAll} className="text-xs font-medium text-gray-500 hover:underline">Collapse all</button></>}
         <div className="flex-1" />
-        {canManage && <Button onClick={() => setModal('create')}>+ New Posting Account</Button>}
+        {canManage && <Button onClick={() => setModal('create')}>+ New Account</Button>}
       </div>
 
       <div className="card overflow-hidden">
@@ -130,7 +140,15 @@ function ChartTab() {
                   <td className="text-xs text-gray-500">{a.subledgerType && a.subledgerType !== 'NONE' ? a.subledgerType : ''}</td>
                   <td className="text-xs text-gray-500">{a.allocationLevel && a.allocationLevel !== 'NONE' ? a.allocationLevel : ''}</td>
                   <td className="text-[11px] text-gray-500">{(a.requiredDimensions || []).join(', ')}</td>
-                  <td>{canManage && !a.isGroup && !a.isSystemLocked && !a.isSystem && <button onClick={() => setModal({ edit: a })} className="text-xs font-medium text-teal-600 hover:text-teal-800">Edit</button>}</td>
+                  <td className="whitespace-nowrap">
+                    {canManage && !a.synthetic && !a.isSystem && (
+                      <div className="flex items-center gap-3">
+                        {a.isGroup && <button onClick={() => setModal({ parentId: a._id })} className="text-xs font-medium text-teal-600 hover:text-teal-800">+ Add</button>}
+                        <button onClick={() => setModal({ edit: a })} className="text-xs font-medium text-teal-600 hover:text-teal-800">Edit</button>
+                        {can('accounting', 'delete') && <button onClick={() => setDeleteTarget(a)} className="text-xs font-medium text-red-500 hover:text-red-700">Delete</button>}
+                      </div>
+                    )}
+                  </td>
                 </tr>
                 );
               })}
@@ -139,12 +157,14 @@ function ChartTab() {
         </div>
       </div>
       <p className="mt-3 text-[11px] text-gray-400">
-        Headers never take entries. Master data only: the ledger still posts to its 4-digit accounts; this 6-digit chart is used to pick revenue, expense, accrual and AR accounts.
+        Headers never take entries. Ledger posting accounts (4-digit) are fixed. Master data only: the ledger still posts to its 4-digit accounts; this 6-digit chart is used to pick revenue, expense, accrual and AR accounts.
       </p>
 
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal === 'create' ? 'New Posting Account' : 'Edit Account'} size="lg">
-        {modal && <AccountForm item={modal?.edit || null} headers={headers} meta={meta} onSuccess={() => setModal(null)} onCancel={() => setModal(null)} />}
+      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.edit ? 'Edit Account' : 'New Account'} size="lg">
+        {modal && <AccountForm item={modal?.edit || null} defaultParentId={modal?.parentId ? String(modal.parentId) : ''} headers={headers} meta={meta} onSuccess={() => setModal(null)} onCancel={() => setModal(null)} />}
       </Modal>
+      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => del.mutate(deleteTarget._id)} loading={del.isPending}
+        title="Delete account?" message={deleteTarget ? `Delete ${deleteTarget.code} — ${deleteTarget.name}? This is refused while it has child accounts, ledger lines or is used by a master (services, expense types, agents, customers).` : ''} />
     </div>
   );
 }

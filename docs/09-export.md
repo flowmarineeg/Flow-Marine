@@ -1,6 +1,6 @@
 # 09 — Export
 
-Module `modules/export`, route `/export`, perm module `export`. UI: `/export` (`ExportPanel`). Distinct from the **discharge list** (`GET /bookings/export/discharge-list`, [04](04-bookings.md)) and the partner-settlement workbook (`GET /round-accounting/rounds/:id/partner-settlement/excel`, [11](11-accounting.md)).
+Module `modules/export`, route `/export`, perm module `export`. UI: `/export` (`ExportPanel`). Distinct from the **discharge list** (`GET /bookings/export/discharge-list?roundId&polId&podId[&agentId&voyageId]`, by POL → POD since 2026-11-10, staff only, [04](04-bookings.md)) and the partner-settlement workbook (`GET /round-accounting/rounds/:id/partner-settlement/excel`, [11](11-accounting.md)).
 
 ## Endpoints
 | Method | Path | Body |

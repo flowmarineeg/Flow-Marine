@@ -1,5 +1,6 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const lock = require('../rounds/roundLock');
 const AppError = require('../../utils/AppError');
 const ExcelJS       = require('exceljs');
@@ -9,6 +10,9 @@ const ContainerType = require('../containerTypes/containerType.model');
 const Port          = require('../locations/port.model');
 const { nextNumberBatch } = require('../../utils/autoNumber');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
+const { SAVEABLE, pickExisting, classifyExisting, markDuplicates, assertManifestComplete, sweepTargets } = require('./importRules.logic');
+const { loadBookableRound, loadRoundVoyages, match, describe } = require('./bookingVoyage.service');
+const { assertPartner } = require('./partnerScope');
 
 // ── Sprint 042 — single source of truth for the import's recognized columns.
 // Used by BOTH the downloadable blank template (buildImportTemplate) AND the
@@ -24,8 +28,8 @@ const TEMPLATE_FIELDS = [
   { header: 'Container Type',   field: 'containerType',   note: 'e.g. 40HC, 20DRY — code or size', required: true },
   { header: 'Container Size',   field: 'containerSize',   note: 'e.g. 40ft, 20ft. Also accepts: Size, Length', required: false },
   { header: 'Container Status', field: 'containerStatus', note: 'Full or Empty only', required: true },
-  { header: 'POL',              field: 'pol',             note: "Port of Loading — used to auto-resolve this row's Voyage", required: true },
-  { header: 'POD',              field: 'pod',             note: "Port of Discharge — used to auto-resolve this row's Voyage", required: true },
+  { header: 'POL',              field: 'pol',             note: "Port of Loading — with the POD it decides the voyage automatically", required: true },
+  { header: 'POD',              field: 'pod',             note: "Port of Discharge — may be an intermediate port of a run; the voyage is assigned automatically", required: true },
   { header: 'Rate',             field: 'rate',            note: 'Freight rate per container (one row = one container)', required: true },
   { header: 'Booking Number',   field: 'bookingNumber',   note: 'Optional — auto-generated if blank', required: false },
   { header: 'Shipper',          field: 'shipper',         note: 'Optional — shipper company name', required: false },
@@ -97,13 +101,9 @@ const parseNum = (val) =>
 const normCntr = (val) =>
   val ? String(val).trim().toUpperCase() : '';
 
-const portPairKey = (polId, podId) => `${polId}_${podId}`;
 
 // ── Validate a single row ─────────────────────────────────────────────────────
-// Sprint 031: POL/POD "not found in system" / "same port" checks moved out of
-// here — they are now resolved as part of Round-scoped voyage resolution
-// (see resolveRowVoyage below), since a POL/POD text mismatch is recoverable
-// via manual Voyage selection, not necessarily a hard data error.
+// Required-field checks only. Unknown ports / same port / voyage matching live in analyseRows below.
 const validateRow = (row) => {
   const errors = [];
   // containerNumber is now required — it is the primary match key
@@ -124,99 +124,87 @@ const validateRow = (row) => {
   return errors;
 };
 
-// ── Sprint 031: Round-scoped per-row Voyage resolution ────────────────────────
-// Resolves a row's target Voyage from POL/POD matched against the Round's own
-// active voyages — never a global port map, and never a single pre-selected
-// voyage. A row may instead carry a manual override (`voyageOverrideId`, set
-// by the user only for rows the system could not resolve on its own).
-const resolveRowVoyage = ({ polPort, podPort, voyageOverrideId, voyagesByPair, voyagesById }) => {
-  if (voyageOverrideId) {
-    const chosen = voyagesById[String(voyageOverrideId)];
-    if (chosen) return { voyage: chosen, candidates: [], status: 'resolved', manual: true };
-    return { voyage: null, candidates: [], status: 'unresolved', manual: true, overrideInvalid: true };
-  }
+// ── Bookings sprint 2026-11-10 ─────────────────────────────────────────────────
+// Scope = (Round + Agent). The voyage of every row is assigned by the server from the row's own POL/POD
+// (voyageMatch.logic: a run that visits POL and then POD, in the right direction). `voyageOverrideId` is only
+// the user's pick among the candidates of an ambiguous row. Save never trusts the preview echo: it analyses the
+// raw rows again, so every id comes from the server (FL-02).
 
-  if (!polPort || !podPort) return { voyage: null, candidates: [], status: 'unresolved', manual: false };
-
-  const candidates = voyagesByPair[portPairKey(polPort._id, podPort._id)] || [];
-  if (candidates.length === 1) return { voyage: candidates[0], candidates: [], status: 'resolved', manual: false };
-  if (candidates.length === 0) return { voyage: null, candidates: [], status: 'unresolved', manual: false };
-  return { voyage: null, candidates, status: 'ambiguous', manual: false };
+const inTransaction = async (fn) => {
+  const s = await mongoose.startSession();
+  try {
+    let out;
+    await s.withTransaction(async () => { out = await fn(s); });
+    return out;
+  } finally { s.endSession(); }
 };
 
-const serializeVoyage = (v) => ({
-  _id:          String(v._id),
-  voyageNumber: v.voyageNumber,
-  voyageName:   v.voyageName || null,
-  status:       v.status,
-  polId:        v.polId ? { _id: String(v.polId._id), name: v.polId.name, code: v.polId.code } : null,
-  podId:        v.podId ? { _id: String(v.podId._id), name: v.podId.name, code: v.podId.code } : null,
-});
+const voyageView = (c) => (c ? {
+  _id: c.voyageId, voyageNumber: c.voyageNumber, voyageName: c.voyageName, direction: c.direction, status: c.status,
+  polLegKey: c.polLegKey, podLegKey: c.podLegKey,
+} : null);
 
-// ── Preview ───────────────────────────────────────────────────────────────────
-const previewImport = async ({ rows, agentId, roundId, importType }) => {
+// A partner user may only import plain bookings (Final Loading and Discharge bulk-change bookings they do not own).
+const assertImportAllowed = (importType, scope) => {
+  if (scope && importType !== 'booking') throw { status: 403, message: 'Partner users can only import bookings' };
+};
+
+/** Existing live bookings of the agent in the round by container number, and which of them sit on a live invoice. */
+const loadExisting = async (containers, roundVoyageIds, agentId) => {
+  const found = containers.length
+    ? await Booking.find({ containerNumber: { $in: containers }, voyageId: { $in: roundVoyageIds }, agentId }).lean()
+    : [];
+  const byContainer = {};
+  found.forEach((b) => { (byContainer[b.containerNumber] = byContainer[b.containerNumber] || []).push(b); });
+  const existingMap = {};
+  Object.keys(byContainer).forEach((c) => { const e = pickExisting(byContainer[c]); if (e) existingMap[c] = e; });
+
+  const invoicedIds = new Set();
+  const ids = Object.values(existingMap).map((b) => b._id);
+  if (ids.length) {
+    const Invoice = require('../invoices/invoice.model');
+    const billed = await Invoice.find({
+      status: { $ne: 'Cancelled' },
+      lineItems: { $elemMatch: { bookingId: { $in: ids }, orphaned: { $ne: true } } },
+    }).select('lineItems.bookingId').lean();
+    billed.forEach((i) => i.lineItems.forEach((li) => invoicedIds.add(String(li.bookingId))));
+  }
+  return { existingMap, invoicedIds };
+};
+
+/** Every row, analysed from its raw fields. Used by preview AND save. */
+const analyseRows = async ({ rows, agentId, roundId, importType, scope = null }) => {
   if (!rows?.length) throw { status: 400, message: 'No rows provided' };
   if (!agentId)      throw { status: 400, message: 'Agent is required' };
   if (!roundId)      throw { status: 400, message: 'Round is required' };
+  assertImportAllowed(importType, scope);
   await require('../agents/agent.service').assertBookingSource(agentId);
+  await loadBookableRound(roundId);
 
-  const roundVoyages = await Voyage.find({ roundId })
-    .populate('polId', 'name code')
-    .populate('podId', 'name code')
-    .lean();
-  if (!roundVoyages.length) throw { status: 404, message: 'No voyages found in this Round' };
-
-  // Resolution candidates exclude Cancelled voyages — a row should never
-  // auto-resolve (or be manually assignable) onto a cancelled leg.
-  const activeVoyages = roundVoyages.filter(v => v.status !== 'Cancelled');
-  const voyagesById = {};
-  activeVoyages.forEach(v => { voyagesById[String(v._id)] = v; });
-  const voyagesByPair = {};
-  activeVoyages.forEach(v => {
-    if (!v.polId || !v.podId) return;
-    const key = portPairKey(v.polId._id, v.podId._id);
-    (voyagesByPair[key] = voyagesByPair[key] || []).push(v);
-  });
-
-  // All voyages in the Round (including Cancelled) — used only to scope the
-  // existing-booking lookup, since a stale booking may sit on a voyage that
-  // has since been cancelled and should still be found/reconciled.
-  const allRoundVoyageIds = roundVoyages.map(v => v._id);
+  const voyages = await loadRoundVoyages(roundId);
+  if (!voyages.length) throw { status: 404, message: 'No voyages found in this Round' };
+  const roundVoyageIds = voyages.map((v) => v._id);
 
   const [containerTypes, ports] = await Promise.all([
     ContainerType.find({}).lean(),
     Port.find({}).select('name code').lean(),
   ]);
-
   const ctMap = {};
-  containerTypes.forEach(ct => {
+  containerTypes.forEach((ct) => {
     ctMap[ct.code.toUpperCase()]                 = ct;
     ctMap[ct.size.toUpperCase()]                 = ct;
     ctMap[`${ct.code}:${ct.size}`.toUpperCase()] = ct;
   });
-
   const portMap = {};
-  ports.forEach(p => {
+  ports.forEach((p) => {
     if (p.name) portMap[p.name.trim().toUpperCase()] = p;
     if (p.code) portMap[p.code.trim().toUpperCase()] = p;
   });
 
-  // Sprint 031: matching scope broadened from (Voyage + Agent) to
-  // (Round + Agent) — a container's resolved voyage may legitimately be
-  // corrected between import runs within the same Round.
-  const incomingCntrs = rows.map(r => normCntr(r.containerNumber)).filter(Boolean);
-  const existingBookings = await Booking.find({
-    containerNumber: { $in: incomingCntrs },
-    voyageId: { $in: allRoundVoyageIds },
-    agentId,
-  }).lean();
-  const existingMap = {}; // containerNumber -> booking doc
-  existingBookings.forEach(b => {
-    if (b.containerNumber) existingMap[b.containerNumber] = b;
-  });
+  const { existingMap, invoicedIds } = await loadExisting(rows.map((r) => normCntr(r.containerNumber)).filter(Boolean), roundVoyageIds, agentId);
 
-  return rows.map((row, idx) => {
-    const validationErrors = validateRow(row);
+  const out = rows.map((row, idx) => {
+    const errors = validateRow(row);
     const cntr = normCntr(row.containerNumber);
 
     const ct =
@@ -225,417 +213,272 @@ const previewImport = async ({ rows, agentId, roundId, importType }) => {
       ctMap[(row.containerSize || '').toUpperCase()]                    ||
       null;
     if (!ct && (row.containerType || row.containerSize)) {
-      validationErrors.push(`Container type "${((row.containerType || '') + ' ' + (row.containerSize || '')).trim()}" not found in system`);
+      errors.push(`Container type "${((row.containerType || '') + ' ' + (row.containerSize || '')).trim()}" not found in system`);
     }
 
     const polPort = portMap[(row.pol || '').trim().toUpperCase()] || null;
     const podPort = portMap[(row.pod || '').trim().toUpperCase()] || null;
-    if (polPort && podPort && String(polPort._id) === String(podPort._id))
-      validationErrors.push('POL and POD cannot be the same port');
+    if (row.pol && !polPort) errors.push(`POL "${row.pol}" not found in system`);
+    if (row.pod && !podPort) errors.push(`POD "${row.pod}" not found in system`);
+    if (polPort && podPort && String(polPort._id) === String(podPort._id)) errors.push('POL and POD cannot be the same port');
 
-    const hasError = validationErrors.length > 0;
-
-    const voyageRes = resolveRowVoyage({
-      polPort, podPort,
-      voyageOverrideId: row.voyageOverrideId || null,
-      voyagesByPair, voyagesById,
-    });
-
+    let res = { status: 'unresolved', voyage: null, candidates: [] };
+    if (polPort && podPort && String(polPort._id) !== String(podPort._id)) {
+      res = describe(match({ voyages, polId: polPort._id, podId: podPort._id, voyageId: row.voyageOverrideId || undefined }));
+    }
     let voyageError = null;
-    if (voyageRes.overrideInvalid) {
-      voyageError = 'Selected voyage is not an active voyage in this Round';
-    } else if (voyageRes.status === 'unresolved') {
-      voyageError = (!polPort || !podPort)
-        ? 'POL/POD not recognized in this Round — select the voyage manually'
-        : 'No voyage in this Round matches this POL → POD — select the voyage manually';
-    } else if (voyageRes.status === 'ambiguous') {
-      voyageError = 'Multiple voyages in this Round match this POL → POD — select the intended voyage';
+    if (!errors.length) {
+      if (res.overrideInvalid) voyageError = 'The selected voyage does not run from this POL to this POD';
+      else if (res.status === 'unresolved') voyageError = 'No voyage in this Round runs from this POL to this POD';
+      else if (res.status === 'ambiguous') voyageError = 'Several voyages in this Round run from this POL to this POD — choose the intended one';
     }
 
-    const existingDoc = cntr ? existingMap[cntr] : null;
-
+    const existingDoc = cntr ? existingMap[cntr] || null : null;
     let rowStatus;
-    if (hasError) {
+    let existingError = null;
+    if (errors.length) {
       rowStatus = 'invalid';
-    } else if (voyageRes.status !== 'resolved') {
-      rowStatus = voyageRes.status; // 'unresolved' | 'ambiguous'
-    } else if (existingDoc) {
-      rowStatus = 'update';
-    } else if (importType === 'finalLoading') {
-      rowStatus = 'new';
+    } else if (res.status !== 'resolved') {
+      rowStatus = res.status; // 'unresolved' | 'ambiguous'
     } else {
-      rowStatus = 'valid';
+      const c = classifyExisting({ importType, existing: existingDoc, invoiced: existingDoc ? invoicedIds.has(String(existingDoc._id)) : false, partnerScope: scope });
+      rowStatus = c.rowStatus;
+      existingError = c.error || null;
     }
 
     return {
       _rowIndex:       idx,
-      bookingNumber:   row.bookingNumber   || '',   // kept for display — auto-generated if blank
+      bookingNumber:   row.bookingNumber   || '',
       containerNumber: cntr,
       containerType:   row.containerType   || '',
       containerSize:   row.containerSize   || '',
       pol:             row.pol             || '',
       pod:             row.pod             || '',
       rate:            row.rate      != null ? String(row.rate) : '',
-      // Sprint 026: currency removed
       shipper:         row.shipper         || '',
       consignee:       row.consignee       || '',
       carrierName:     row.carrierName     || '',
       commodity:       row.commodity       || '',
       vgm:             row.vgm      != null ? String(row.vgm)  : '',
       dg:              row.dg              || '',
-      imdgCode:        row.imdgCode        || '',   // Sprint 026: replaces dgPercent
+      imdgCode:        row.imdgCode        || '',
       containerStatus: row.containerStatus || '',
-      voyageOverrideId: row.voyageOverrideId || '', // Sprint 031: manual fallback selection, echoed back
+      voyageOverrideId: row.voyageOverrideId || '',
       _resolvedCt:  ct      ? { _id: String(ct._id), code: ct.code, size: ct.size, type: ct.type } : null,
       _resolvedPol: polPort ? { _id: String(polPort._id), name: polPort.name, code: polPort.code } : null,
       _resolvedPod: podPort ? { _id: String(podPort._id), name: podPort.name, code: podPort.code } : null,
-      // Sprint 031: per-row Voyage resolution — replaces the single file-wide voyageId
-      _resolvedVoyage: voyageRes.voyage ? serializeVoyage(voyageRes.voyage) : null,
-      _voyageManual:   voyageRes.manual,
-      _voyageCandidates: voyageRes.candidates.map(serializeVoyage),
-      _errors:     voyageError ? [...validationErrors, voyageError] : validationErrors,
+      _resolvedVoyage: res.voyage ? voyageView(res.voyage) : null,
+      _voyageManual:   !!res.manual,
+      _voyageRanked:   !!res.ranked,
+      _voyageCandidates: (res.candidates || []).map(voyageView),
+      _errors:     [...errors, ...(voyageError ? [voyageError] : []), ...(existingError ? [existingError] : [])],
       _rowStatus:  rowStatus,
       _existingId: existingDoc?._id || null,
-      // expose existing booking number so it can be reused on update
       _existingBookingNumber: existingDoc?.bookingNumber || null,
     };
   });
+  return { rows: markDuplicates(out), roundVoyageIds };
 };
 
+// ── Preview ───────────────────────────────────────────────────────────────────
+const previewImport = async (args) => (await analyseRows(args)).rows;
+
 // ── Save ──────────────────────────────────────────────────────────────────────
-const saveImport = async ({ rows, agentId, roundId, importType, createdBy }) => {
-  await lock.assertRoundOpen(roundId);
+const saveImport = async ({ rows, agentId, roundId, importType, createdBy, partnerId = null, scope = null }) => {
   if (!rows?.length) throw { status: 400, message: 'No rows to save' };
-  if (!roundId)      throw { status: 400, message: 'Round is required' };
+  const { rows: analysed, roundVoyageIds } = await analyseRows({ rows, agentId, roundId, importType, scope });
 
-  // All voyages in the Round (including Cancelled) — scopes the existing-
-  // booking match and the Final Loading reconciliation sweep. The round's
-  // existence/voyages were already validated in previewImport(); if this
-  // comes back empty here it bubbles up as a 500 (correct — the import
-  // should not proceed against a Round we cannot resolve).
-  const roundVoyages = await Voyage.find({ roundId }).select('_id').lean();
-  const roundVoyageIds = roundVoyages.map(v => v._id);
-
-  const saveable = rows.filter(r =>
-    r._rowStatus === 'valid' || r._rowStatus === 'new' || r._rowStatus === 'update'
-  );
+  const saveable = analysed.filter((r) => SAVEABLE.includes(r._rowStatus));
+  if (importType === 'finalLoading') assertManifestComplete(analysed); // FL-04
   if (!saveable.length) throw { status: 400, message: 'No valid rows to save' };
 
-  // F-07: the reconciliation below cancels every booking of this agent that is not in the manifest. Refuse, before
-  // anything is written, if one of them is billed on a live invoice - it must be corrected with a credit note first.
-  if (importType === 'finalLoading') {
-    const manifest = saveable.map(r => r.containerNumber).filter(Boolean);
-    const doomed = await Booking.find({
-      voyageId: { $in: roundVoyageIds }, agentId, status: { $ne: 'Cancelled' }, containerNumber: { $nin: manifest },
-    }).select('_id containerNumber').lean();
-    if (doomed.length) {
-      const Invoice = require('../invoices/invoice.model');
-      const billed = await Invoice.find({
-        status: { $ne: 'Cancelled' },
-        lineItems: { $elemMatch: { bookingId: { $in: doomed.map(b => b._id) }, orphaned: { $ne: true } } },
-      }).select('invoiceNumber lineItems.bookingId').lean();
-      if (billed.length) {
-        const containers = doomed.filter(b => billed.some(i => i.lineItems.some(li => String(li.bookingId) === String(b._id)))).map(b => b.containerNumber);
-        const err = new AppError(409,
-          `Cannot import: ${containers.length} booking(s) missing from this Final Loading file are on live invoices (${billed.map(i => i.invoiceNumber).join(', ')}). Raise a credit note or cancel the invoice first. Containers: ${containers.slice(0, 10).join(', ')}${containers.length > 10 ? '…' : ''}`,
-          'BOOKING_INVOICED');
-        err.invoices = billed.map(i => i.invoiceNumber); err.containers = containers;
-        throw err;
-      }
-    }
-  }
+  const labelPartner = scope || await assertPartner(partnerId); // null = leave the label alone
+  const source = scope ? 'PartnerUser' : 'Staff';
 
-  const toInsert = saveable.filter(r => r._rowStatus === 'valid' || r._rowStatus === 'new');
-  const toUpdate = saveable.filter(r => r._rowStatus === 'update');
+  const toInsert = saveable.filter((r) => r._rowStatus === 'valid' || r._rowStatus === 'new');
+  const toUpdate = saveable.filter((r) => r._rowStatus === 'update');
+  const unchanged = saveable.filter((r) => r._rowStatus === 'unchanged');
+  const failed = analysed.filter((r) => !SAVEABLE.includes(r._rowStatus))
+    .map((r) => ({ containerNumber: r.containerNumber, reason: (r._errors || [])[0] || 'Unresolved' }));
 
-  const failed  = [];
-  const created = [];
-  const updated = [];
+  const needsNumber = toInsert.filter((r) => !r.bookingNumber?.trim());
+  const autoNumbers = await nextNumberBatch('booking', needsNumber.length); // outside the transaction: a rollback burns numbers, never duplicates
+  let autoIdx = 0;
+  const docs = toInsert.map((r) => {
+    const freightRate = Number(r.rate);
+    const dgFlag = parseDg(r.dg);
+    return {
+      bookingNumber:   r.bookingNumber?.trim() || autoNumbers[autoIdx++],
+      voyageId:        r._resolvedVoyage._id,
+      agentId,
+      shipper:         r.shipper      || null,
+      consignee:       r.consignee    || null,
+      carrierName:     r.carrierName  || null,
+      polId:           r._resolvedPol._id,
+      podId:           r._resolvedPod._id,
+      polLegKey:       r._resolvedVoyage.polLegKey,
+      podLegKey:       r._resolvedVoyage.podLegKey,
+      partnerId:       labelPartner,
+      source,
+      containerTypeId: r._resolvedCt._id,
+      freightRate,
+      totalFreight:    freightRate, // flat rate per container
+      commodity:       r.commodity       || null,
+      containerNumber: r.containerNumber,
+      vgm:             parseNum(r.vgm),
+      dg:              dgFlag,
+      imdgCode:        dgFlag ? (r.imdgCode?.trim() || null) : null,
+      containerStatus: normContainerStatus(r.containerStatus),
+      remarks:         `Imported (${importType})`,
+      status:          'Pending',
+      createdBy,
+      updatedBy: createdBy,
+    };
+  });
 
-  // Sprint 031: Booking Storage Rule (system standard, on par with Sprint 030) —
-  // polId/podId are ALWAYS copied from the row's resolved Voyage, never from
-  // the row's own free-text-resolved ports. The row's own POL/POD text is
-  // used only as matching input during previewImport's voyage resolution.
-  const remarksFor = (r) => {
-    let remarks = `Imported (${importType})`;
-    if (r._voyageManual && r._resolvedPol && r._resolvedPod && r._resolvedVoyage) {
-      const samePol = String(r._resolvedPol._id) === String(r._resolvedVoyage.polId?._id);
-      const samePod = String(r._resolvedPod._id) === String(r._resolvedVoyage.podId?._id);
-      if (!samePol || !samePod) {
-        remarks += ` — POL/POD auto-corrected from Excel text "${r.pol} → ${r.pod}" to match selected Voyage ${r._resolvedVoyage.voyageNumber} (${r._resolvedVoyage.polId?.name || '?'} → ${r._resolvedVoyage.podId?.name || '?'})`;
-      }
-    }
-    return remarks;
-  };
+  const ops = toUpdate.map((r) => {
+    const freightRate = Number(r.rate);
+    const dgFlag = parseDg(r.dg);
+    const $set = {
+      voyageId:        r._resolvedVoyage._id,
+      containerTypeId: r._resolvedCt._id,
+      polId:           r._resolvedPol._id,
+      podId:           r._resolvedPod._id,
+      polLegKey:       r._resolvedVoyage.polLegKey,
+      podLegKey:       r._resolvedVoyage.podLegKey,
+      freightRate,
+      totalFreight:    freightRate,
+      dg:              dgFlag,
+      imdgCode:        dgFlag ? (r.imdgCode?.trim() || null) : null,
+      updatedBy:       createdBy,
+    };
+    if (labelPartner) { $set.partnerId = labelPartner; $set.source = source; }
+    if (r.shipper        !== undefined) $set.shipper        = r.shipper        || null;
+    if (r.consignee      !== undefined) $set.consignee      = r.consignee      || null;
+    if (r.carrierName    !== undefined) $set.carrierName    = r.carrierName    || null;
+    if (r.commodity      !== undefined) $set.commodity      = r.commodity      || null;
+    if (r.vgm            !== undefined) $set.vgm            = parseNum(r.vgm);
+    if (r.containerStatus !== undefined) $set.containerStatus = normContainerStatus(r.containerStatus);
+    return { updateOne: { filter: { _id: r._existingId, status: { $in: ['Pending', 'Confirmed'] } }, update: { $set } } };
+  });
 
-  // ── BATCH INSERT via insertMany ───────────────────────────────────────────
-  if (toInsert.length > 0) {
-    const validInserts = toInsert.filter(r => {
-      if (!r._resolvedCt || !r._resolvedVoyage || !r.containerNumber) {
-        failed.push({ containerNumber: r.containerNumber, reason: 'Unresolved references — re-validate before saving' });
-        return false;
-      }
-      return true;
-    });
+  // One transaction: a failed write rolls the whole file back (FL-04). Nothing is half-imported.
+  const result = await inTransaction(async (s) => {
+    const createdDocs = docs.length ? await Booking.insertMany(docs, { session: s }) : [];
+    if (ops.length) await Booking.bulkWrite(ops, { session: s });
 
-    if (validInserts.length > 0) {
-      // All inserts need a booking number — auto-generate if not supplied
-      const needsNumber = validInserts.filter(r => !r.bookingNumber?.trim());
-      const autoNumbers = await nextNumberBatch('booking', needsNumber.length);
-      let autoIdx = 0;
+    const created = createdDocs.map((b) => b.containerNumber);
+    const updated = toUpdate.map((r) => r.containerNumber);
+    const manifestIds = [...createdDocs.map((b) => b._id), ...toUpdate.map((r) => r._existingId), ...unchanged.map((r) => r._existingId)];
+    const markedFinalLoading = [];
+    const cancelled = [];
 
-      const docs = validInserts.map(r => {
-        const bookingNumber = r.bookingNumber?.trim() || autoNumbers[autoIdx++];
-        // Sprint 025: one row = one container; no quantity field
-        const freightRate   = Number(r.rate);
-        const dgFlag        = parseDg(r.dg);
-        return {
-          bookingNumber,
-          voyageId:        r._resolvedVoyage._id,
-          agentId,
-          shipper:         r.shipper      || null,
-          consignee:       r.consignee    || null,
-          carrierName:     r.carrierName  || null,
-          // Sprint 031: polId/podId always copied from the resolved Voyage
-          polId:           r._resolvedVoyage.polId._id,
-          podId:           r._resolvedVoyage.podId._id,
-          containerTypeId: r._resolvedCt._id,
-          freightRate,
-          totalFreight:    freightRate, // flat rate per container
-          commodity:       r.commodity       || null,
-          containerNumber: r.containerNumber,           // always set — required field
-          vgm:             parseNum(r.vgm),
-          dg:              dgFlag,
-          imdgCode:        dgFlag ? (r.imdgCode?.trim() || null) : null, // Sprint 026
-          containerStatus: normContainerStatus(r.containerStatus),
-          remarks:         remarksFor(r),
-          status:          'Pending',
-          createdBy,
-          updatedBy: createdBy,
-        };
-      });
-
-      try {
-        const result = await Booking.insertMany(docs, { ordered: false });
-        result.forEach(b => created.push(b.containerNumber));
-      } catch (err) {
-        if (err.insertedDocs) err.insertedDocs.forEach(b => created.push(b.containerNumber));
-        if (err.writeErrors)  err.writeErrors.forEach(e => failed.push({ containerNumber: docs[e.index]?.containerNumber, reason: e.errmsg }));
-      }
-    }
-  }
-
-  // ── BATCH UPDATE via bulkWrite — match by containerNumber (_existingId) ───
-  if (toUpdate.length > 0) {
-    const validUpdates = toUpdate.filter(r => {
-      if (!r._resolvedCt || !r._resolvedVoyage || !r._existingId) {
-        failed.push({ containerNumber: r.containerNumber, reason: 'Unresolved references — re-validate before saving' });
-        return false;
-      }
-      return true;
-    });
-
-    if (validUpdates.length > 0) {
-      const ops = validUpdates.map(r => {
-        // Sprint 025: one row = one container; no quantity field
-        const freightRate = Number(r.rate);
-        const dgFlag      = parseDg(r.dg);
-        const $set = {
-          // Sprint 031: voyageId may change between import runs within the
-          // same Round (container reassigned to a different voyage leg) —
-          // polId/podId always follow the resolved Voyage, never the row's
-          // own text.
-          voyageId:        r._resolvedVoyage._id,
-          agentId,
-          containerTypeId: r._resolvedCt._id,
-          polId:           r._resolvedVoyage.polId._id,
-          podId:           r._resolvedVoyage.podId._id,
-          freightRate,
-          totalFreight:    freightRate, // flat rate per container
-          dg:              dgFlag,
-          imdgCode:        dgFlag ? (r.imdgCode?.trim() || null) : null, // Sprint 026
-          updatedBy:       createdBy,
-        };
-        if (r.shipper        !== undefined) $set.shipper        = r.shipper        || null;
-        if (r.consignee      !== undefined) $set.consignee      = r.consignee      || null;
-        if (r.carrierName    !== undefined) $set.carrierName    = r.carrierName    || null;
-        if (r.commodity      !== undefined) $set.commodity      = r.commodity      || null;
-        // containerNumber stays as-is on update — it IS the key
-        if (r.vgm            !== undefined) $set.vgm            = parseNum(r.vgm);
-        if (r.containerStatus !== undefined)
-          $set.containerStatus = normContainerStatus(r.containerStatus);
-        // Sprint 031: only touch remarks when the manual-correction audit note applies —
-        // ordinary updates leave remarks untouched, same as before this sprint.
-        if (r._voyageManual) {
-          const note = remarksFor(r);
-          if (note !== `Imported (${importType})`) $set.remarks = note;
+    if (importType === 'finalLoading') {
+      // F-07: refuse, before cancelling, if a booking missing from the file is billed on a live invoice.
+      const live = await Booking.find({ voyageId: { $in: roundVoyageIds }, agentId, status: { $ne: 'Cancelled' } }).session(s).lean();
+      const doomed = sweepTargets(live, saveable.map((r) => r.containerNumber));
+      if (doomed.length) {
+        const Invoice = require('../invoices/invoice.model');
+        const billed = await Invoice.find({
+          status: { $ne: 'Cancelled' },
+          lineItems: { $elemMatch: { bookingId: { $in: doomed.map((b) => b._id) }, orphaned: { $ne: true } } },
+        }).select('invoiceNumber lineItems.bookingId').session(s).lean();
+        if (billed.length) {
+          const containers = doomed.filter((b) => billed.some((i) => i.lineItems.some((li) => String(li.bookingId) === String(b._id)))).map((b) => b.containerNumber);
+          const err = new AppError(409,
+            `Cannot import: ${containers.length} booking(s) missing from this Final Loading file are on live invoices (${billed.map((i) => i.invoiceNumber).join(', ')}). Raise a credit note or cancel the invoice first. Containers: ${containers.slice(0, 10).join(', ')}${containers.length > 10 ? '…' : ''}`,
+            'BOOKING_INVOICED');
+          err.invoices = billed.map((i) => i.invoiceNumber); err.containers = containers;
+          throw err;
         }
-        return { updateOne: { filter: { _id: r._existingId }, update: { $set } } };
-      });
-
-      try {
-        await Booking.bulkWrite(ops, { ordered: false });
-        validUpdates.forEach(r => updated.push(r.containerNumber));
-      } catch (err) {
-        if (err.result?.nModified > 0) validUpdates.slice(0, err.result.nModified).forEach(r => updated.push(r.containerNumber));
-        failed.push({ containerNumber: 'batch-update', reason: err.message });
       }
-    }
-  }
 
-  // ── Final Loading reconciliation — Round + Agent scope (Sprint 031) ───────
-  const markedFinalLoading = [];
-  const cancelled          = [];
-  // savedContainerNumbers = the set imported in this run
-  const savedContainerNumbers = new Set([...created, ...updated]);
+      await Booking.updateMany({ _id: { $in: manifestIds }, status: { $ne: 'Cancelled' } }, { $set: { status: 'Final Loading', updatedBy: createdBy } }, { session: s });
+      saveable.forEach((r) => markedFinalLoading.push(r.containerNumber));
 
-  if (importType === 'finalLoading') {
-    if (savedContainerNumbers.size > 0) {
-      // Mark all imported containers as Final Loading, across every voyage in the Round
-      await Booking.updateMany(
-        { containerNumber: { $in: [...savedContainerNumbers] }, voyageId: { $in: roundVoyageIds }, agentId },
-        { $set: { status: 'Final Loading', updatedBy: createdBy } }
-      );
-      savedContainerNumbers.forEach(n => markedFinalLoading.push(n));
-    }
-
-    // Sprint 031: Final Loading represents the ENTIRE Round for ONE Agent —
-    // cancel every booking for this agent, on ANY voyage in this Round,
-    // whose containerNumber is NOT in the manifest. Other agents' bookings
-    // are never affected (agentId filter, unchanged principle from Sprint 026).
-    const cancelResult = await Booking.updateMany(
-      {
-        voyageId: { $in: roundVoyageIds },
-        agentId,
-        status:    { $nin: ['Cancelled'] },
-        containerNumber: { $nin: [...savedContainerNumbers] },
-      },
-      { $set: { status: 'Cancelled', updatedBy: createdBy } }
-    );
-    if (cancelResult.modifiedCount > 0) {
-      const cancelledDocs = await Booking.find(
-        { voyageId: { $in: roundVoyageIds }, agentId, status: 'Cancelled' },
-        { containerNumber: 1 }
-      ).lean();
-      cancelledDocs.forEach(b => {
-        if (b.containerNumber && !savedContainerNumbers.has(b.containerNumber))
-          cancelled.push(b.containerNumber);
-      });
-
-      // Sprint 033 Edge Case 1: a booking cancelled here may already be
-      // referenced by a non-cancelled Invoice's lineItems (only Final Loading
-      // bookings are ever invoiced — Decision 1 — so this reconciliation and
-      // the invoiced population fully overlap). Ownership lives on the
-      // Invoice side only (no field on Booking), so flag the matching line
-      // item directly via arrayFilters — never silently leave the invoice
-      // overstating its total.
-      const cancelledIds = cancelledDocs.map(b => b._id);
-      if (cancelledIds.length) {
+      if (doomed.length) {
+        const doomedIds = doomed.map((b) => b._id);
+        await Booking.updateMany({ _id: { $in: doomedIds } }, { $set: { status: 'Cancelled', updatedBy: createdBy } }, { session: s });
+        doomed.forEach((b) => cancelled.push(b.containerNumber));
+        // Sprint 033 Edge Case 1: flag any (already refused above unless orphaned) invoice line of a cancelled booking.
         const Invoice = require('../invoices/invoice.model');
         await Invoice.updateMany(
-          { 'lineItems.bookingId': { $in: cancelledIds }, status: { $ne: 'Cancelled' } },
-          {
-            $set: {
-              'lineItems.$[li].orphaned':       true,
-              'lineItems.$[li].orphanedAt':      new Date(),
-              'lineItems.$[li].orphanedReason':  'Booking cancelled by Final Loading import reconciliation (Sprint 031)',
-            },
-          },
-          { arrayFilters: [{ 'li.bookingId': { $in: cancelledIds }, 'li.orphaned': false }] }
+          { 'lineItems.bookingId': { $in: doomedIds }, status: { $ne: 'Cancelled' } },
+          { $set: { 'lineItems.$[li].orphaned': true, 'lineItems.$[li].orphanedAt': new Date(), 'lineItems.$[li].orphanedReason': 'Booking cancelled by Final Loading import reconciliation (Sprint 031)' } },
+          { arrayFilters: [{ 'li.bookingId': { $in: doomedIds }, 'li.orphaned': false }], session: s }
         );
       }
     }
-  }
+    return { created, updated, unchanged: unchanged.map((r) => r.containerNumber), markedFinalLoading, cancelled };
+  });
 
-  // Invalidate capacity cache — every voyage in this Round may have changed
   invalidateRoundCache(roundId);
-  require('../billing/bookingItem.service').scheduleSync({ roundId }); // Sprint051: Final Loading changes the invoiceable items
-
-  return { created, updated, failed, markedFinalLoading, cancelled, total: saveable.length };
+  require('../billing/bookingItem.service').scheduleSync({ roundId }); // Final Loading changes the invoiceable items
+  return { ...result, failed, total: saveable.length };
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Sprint 045 — Discharge import: confirms the ACTUAL operational outcome of
-// already-Final-Loading bookings after a specific Voyage's port call.
-//
-// Deliberately implemented as its own pair of functions, not new branches
-// inside previewImport/saveImport above — the shape of this work is
-// fundamentally different (match-only, never creates/edits booking data,
-// requires one specific Voyage rather than a Round-wide per-row voyage
-// resolution) and keeping it separate avoids threading more conditionals
-// through the already-complex existing functions, which stay byte-for-byte
-// unchanged by this sprint.
-//
-// Only two fields are ever written: Booking.dischargeStatus ('Discharged' |
-// 'Remaining') and dischargedAt. `status` itself is NEVER touched — a
-// Remaining booking stays 'Final Loading' forever, exactly as it was.
+// Discharge import (Sprint 045, reworked 2026-11-10). The scope is no longer one voyage: it is
+// (Round + Agent + POD [+ POL] [+ Voyage]) — the Final Loading bookings that end at the port where the
+// discharge happened. A container booked to a LATER port is neither Discharged nor Remaining here.
+// Matched rows -> Discharged; the other bookings of the scope -> Remaining. `status` is never touched.
+// Save re-analyses the raw rows (never trusts the preview echo).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const previewDischargeImport = async ({ rows, agentId, voyageId }) => {
+const norm = (s) => String(s || '').trim().toUpperCase();
+
+const analyseDischarge = async ({ rows, agentId, roundId, polId, podId, voyageId }) => {
   if (!rows?.length) throw { status: 400, message: 'No rows provided' };
   if (!agentId)      throw { status: 400, message: 'Agent is required' };
-  if (!voyageId)     throw { status: 400, message: 'Voyage is required' };
+  if (!roundId)      throw { status: 400, message: 'Round is required' };
+  if (!podId)        throw { status: 400, message: 'POD (the port where the discharge happened) is required' };
 
-  const voyage = await Voyage.findById(voyageId)
-    .populate('polId', 'name code')
-    .populate('podId', 'name code')
-    .lean();
-  if (!voyage) throw { status: 404, message: 'Voyage not found' };
-
-  // Every voyage in the same Round — used only to name the actual voyage a
-  // mismatched container belongs to (a precise error message), never to
-  // resolve or reassign anything.
-  const roundVoyages = await Voyage.find({ roundId: voyage.roundId }).lean();
+  const voyages = await Voyage.find({ roundId }).select('voyageNumber').lean();
+  if (!voyages.length) throw { status: 404, message: 'No voyages found in this Round' };
   const voyagesById = {};
-  roundVoyages.forEach(v => { voyagesById[String(v._id)] = v; });
-  const roundVoyageIds = roundVoyages.map(v => v._id);
+  voyages.forEach((v) => { voyagesById[String(v._id)] = v; });
+  const roundVoyageIds = voyages.map((v) => v._id);
+  if (voyageId && !voyagesById[String(voyageId)]) throw { status: 400, message: 'The voyage does not belong to this Round' };
 
-  // Candidate population: every booking for this agent anywhere in the Round
-  // (any status) — broad enough to distinguish "wrong voyage" from "wrong
-  // status" from "doesn't exist at all", each with its own precise error
-  // message below.
-  const candidateBookings = await Booking.find({
-    agentId,
-    voyageId:  { $in: roundVoyageIds },
-  }).lean();
+  // Wider than the scope on purpose: lets each row say precisely why it does not match.
+  const candidates = await Booking.find({ agentId, voyageId: { $in: roundVoyageIds } })
+    .populate('polId', 'name code').populate('podId', 'name code').lean();
   const byContainer = {};
-  candidateBookings.forEach(b => {
-    if (b.containerNumber) byContainer[b.containerNumber] = b;
-  });
+  candidates.forEach((b) => { if (b.containerNumber && (!byContainer[b.containerNumber] || byContainer[b.containerNumber].status === 'Cancelled')) byContainer[b.containerNumber] = b; });
 
-  return rows.map((row, idx) => {
+  const inScope = (b) => b.status === 'Final Loading'
+    && String(b.podId?._id || b.podId) === String(podId)
+    && (!polId || String(b.polId?._id || b.polId) === String(polId))
+    && (!voyageId || String(b.voyageId) === String(voyageId));
+
+  const out = rows.map((row, idx) => {
     const errors = [];
     const cntr = normCntr(row.containerNumber);
     if (!cntr) errors.push('Container Number is required');
-
     const existing = cntr ? byContainer[cntr] : null;
     let matchStatus = 'not-found';
 
     if (cntr && !existing) {
       errors.push('No booking found for this container in this Round/Agent');
-      matchStatus = 'not-found';
-    } else if (existing && String(existing.voyageId) !== String(voyageId)) {
-      const otherVoyage = voyagesById[String(existing.voyageId)];
-      errors.push(`Container belongs to voyage ${otherVoyage?.voyageNumber || 'another voyage'}, not the selected voyage ${voyage.voyageNumber}`);
-      matchStatus = 'wrong-voyage';
     } else if (existing && existing.status !== 'Final Loading') {
       errors.push(`Booking exists but is not Final Loading (current status: ${existing.status}) — cannot record a discharge outcome for it`);
       matchStatus = 'wrong-status';
+    } else if (existing && voyageId && String(existing.voyageId) !== String(voyageId)) {
+      errors.push(`Container belongs to voyage ${voyagesById[String(existing.voyageId)]?.voyageNumber || 'another voyage'}, not the selected voyage`);
+      matchStatus = 'wrong-voyage';
+    } else if (existing && !inScope(existing)) {
+      errors.push(`Container is booked ${existing.polId?.name || '?'} → ${existing.podId?.name || '?'}, outside the selected port scope`);
+      matchStatus = 'port-mismatch';
     } else if (existing) {
       matchStatus = 'match';
     }
 
-    // Cross-check the row's own POL/POD text (same shared template as Final
-    // Loading, so these columns are present) against the SELECTED voyage's
-    // actual ports. Voyage is an explicit, mandatory choice for this import
-    // type (unlike Sprint 031's Round-scoped per-row resolution), so a
-    // mismatch here is a hard validation error, never a silent auto-correct.
+    // The row's own POL/POD text must agree with the booking's own ports (never auto-corrected).
     if (matchStatus === 'match' && (row.pol || row.pod)) {
-      const norm = (s) => String(s || '').trim().toUpperCase();
-      const polOk = !row.pol || norm(row.pol) === norm(voyage.polId?.name) || norm(row.pol) === norm(voyage.polId?.code);
-      const podOk = !row.pod || norm(row.pod) === norm(voyage.podId?.name) || norm(row.pod) === norm(voyage.podId?.code);
+      const polOk = !row.pol || norm(row.pol) === norm(existing.polId?.name) || norm(row.pol) === norm(existing.polId?.code);
+      const podOk = !row.pod || norm(row.pod) === norm(existing.podId?.name) || norm(row.pod) === norm(existing.podId?.code);
       if (!polOk || !podOk) {
-        errors.push(`Row POL/POD ("${row.pol || '—'}" → "${row.pod || '—'}") does not match the selected voyage's actual ports (${voyage.polId?.name || '?'} → ${voyage.podId?.name || '?'})`);
+        errors.push(`Row POL/POD ("${row.pol || '—'}" → "${row.pod || '—'}") does not match the booking's ports (${existing.polId?.name || '?'} → ${existing.podId?.name || '?'})`);
         matchStatus = 'port-mismatch';
       }
     }
@@ -652,55 +495,37 @@ const previewDischargeImport = async ({ rows, agentId, voyageId }) => {
       _rowStatus:      errors.length > 0 ? 'invalid' : 'match',
     };
   });
+  return { rows: out, candidates: candidates.filter(inScope) };
 };
 
-const saveDischargeImport = async ({ rows, agentId, voyageId, createdBy }) => {
-  await lock.assertVoyageRoundOpen(voyageId);
+const previewDischargeImport = async (args) => (await analyseDischarge(args)).rows;
+
+const saveDischargeImport = async ({ rows, agentId, roundId, polId, podId, voyageId, createdBy }) => {
+  await lock.assertRoundOpen(roundId);
   if (!rows?.length) throw { status: 400, message: 'No rows to save' };
-  if (!agentId)      throw { status: 400, message: 'Agent is required' };
-  if (!voyageId)     throw { status: 400, message: 'Voyage is required' };
+  const { rows: analysed, candidates } = await analyseDischarge({ rows, agentId, roundId, polId, podId, voyageId });
 
-  const voyage = await Voyage.findById(voyageId).lean();
-  if (!voyage) throw { status: 404, message: 'Voyage not found' };
-
-  const matched = rows.filter(r => r._rowStatus === 'match' && r._existingId);
+  const matched = analysed.filter((r) => r._rowStatus === 'match' && r._existingId);
   if (!matched.length) throw { status: 400, message: 'No valid rows to save' };
+  const matchedIds = matched.map((r) => r._existingId);
+  const matchedSet = new Set(matchedIds.map(String));
+  const remainingIds = candidates.filter((b) => !matchedSet.has(String(b._id))).map((b) => b._id);
 
-  const matchedIds = matched.map(r => r._existingId);
+  await inTransaction(async (s) => {
+    // Idempotent: re-confirming an already-Discharged booking just refreshes dischargedAt.
+    await Booking.updateMany({ _id: { $in: matchedIds } }, { $set: { dischargeStatus: 'Discharged', dischargedAt: new Date(), updatedBy: createdBy } }, { session: s });
+    // Every OTHER Final Loading booking of the scope not in the file -> Remaining. Always reflects the latest upload.
+    if (remainingIds.length) {
+      await Booking.updateMany({ _id: { $in: remainingIds } }, { $set: { dischargeStatus: 'Remaining', updatedBy: createdBy } }, { session: s });
+    }
+  });
 
-  // Every matched row's booking → Discharged. Idempotent: re-confirming an
-  // already-Discharged booking just refreshes dischargedAt.
-  await Booking.updateMany(
-    { _id: { $in: matchedIds } },
-    { $set: { dischargeStatus: 'Discharged', dischargedAt: new Date(), updatedBy: createdBy } }
-  );
-
-  // Every OTHER Final Loading booking for this Agent, on THIS SAME VOYAGE,
-  // NOT present in the uploaded file → Remaining ("expected to discharge
-  // here but didn't"). Scoped to one voyage, not the whole Round — narrower
-  // than Final Loading's own Round-wide reconciliation — and its outcome is
-  // 'Remaining', never 'Cancelled'; `status` itself is never touched here.
-  // Not blocked from re-running: a booking previously Discharged that is
-  // absent from a later, corrected file for the same voyage becomes
-  // Remaining again — always reflects the latest upload, same principle as
-  // Final Loading's own reconciliation.
-  const remainingResult = await Booking.updateMany(
-    {
-      voyageId,
-      agentId,
-      status:    'Final Loading',
-      _id:       { $nin: matchedIds },
-    },
-    { $set: { dischargeStatus: 'Remaining', updatedBy: createdBy } }
-  );
-
-  invalidateRoundCache(voyage.roundId);
-
+  invalidateRoundCache(roundId);
   return {
-    discharged:     matched.map(r => r.containerNumber),
-    remainingCount: remainingResult.modifiedCount,
-    failed:         rows.filter(r => r._rowStatus !== 'match')
-                         .map(r => ({ containerNumber: r.containerNumber, reason: (r._errors || [])[0] || 'Unresolved' })),
+    discharged:     matched.map((r) => r.containerNumber),
+    remainingCount: remainingIds.length,
+    failed:         analysed.filter((r) => r._rowStatus !== 'match')
+                            .map((r) => ({ containerNumber: r.containerNumber, reason: (r._errors || [])[0] || 'Unresolved' })),
     total: matched.length,
   };
 };

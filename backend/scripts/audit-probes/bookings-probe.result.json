@@ -1,0 +1,317 @@
+[
+  {
+    "key": "BK-01",
+    "title": "Booking P1 -> P4 (no voyage sent)",
+    "expected": "201, eastbound V0008E",
+    "observed": "201 Booking created voyage=V0008E",
+    "ok": true
+  },
+  {
+    "key": "BK-02",
+    "title": "Booking P4 -> P1 (return)",
+    "expected": "201, westbound V0009W",
+    "observed": "201 Booking created voyage=V0009W",
+    "ok": true
+  },
+  {
+    "key": "BK-03",
+    "title": "Booking between two intermediate ports P2 -> P3 (east)",
+    "expected": "201, V0008E, own POL/POD kept",
+    "observed": "201 Booking created voyage=V0008E pol=6af34ee71ee965114467dd3e pod=6af34ee71ee965114467dd41",
+    "ok": true
+  },
+  {
+    "key": "BK-04",
+    "title": "Booking P3 -> P2 (west, intermediate)",
+    "expected": "201, V0009W",
+    "observed": "201 Booking created voyage=V0009W",
+    "ok": true
+  },
+  {
+    "key": "BK-05",
+    "title": "POL = POD",
+    "expected": "400",
+    "observed": "400 POL and POD must be different ports",
+    "ok": true
+  },
+  {
+    "key": "BK-06",
+    "title": "POD that is not on any run of the round",
+    "expected": "400 no voyage runs POL -> POD",
+    "observed": "400 No voyage of this round runs from this POL to this POD",
+    "ok": true
+  },
+  {
+    "key": "BK-07",
+    "title": "Client-chosen voyage that runs the opposite way",
+    "expected": "400 (the voyage cannot be forced)",
+    "observed": "400 The chosen voyage does not run from this POL to this POD",
+    "ok": true
+  },
+  {
+    "key": "BK-08",
+    "title": "resolve-voyage previews the voyage without writing",
+    "expected": "resolved V0008E",
+    "observed": "200 resolved V0008E",
+    "ok": true
+  },
+  {
+    "key": "BK-09",
+    "title": "Layer 1 booking P2 -> P4 gets the voyage too",
+    "expected": "201, V0008E",
+    "observed": "201 Manual booking created voyage=V0008E",
+    "ok": true
+  },
+  {
+    "key": "BK-10",
+    "title": "Second eastbound run with no dates: the pair is ambiguous",
+    "expected": "409 + both candidates",
+    "observed": "409 More than one voyage of this round runs from this POL to this POD - choose one [{\"voyageId\":\"6af350a9d1cbd04357456c89\",\"voyageNumber\":\"V0008E\",\"voyageName\":\"ZB east 1\",\"direction\":\"East\",\"status\":\"Scheduled\",\"polLegKey\":\"829cfbbe6b\",\"podLe",
+    "ok": true
+  },
+  {
+    "key": "BK-11",
+    "title": "Re-send with the chosen candidate",
+    "expected": "201 on V0010E",
+    "observed": "201 Booking created voyage=V0010E",
+    "ok": true
+  },
+  {
+    "key": "BK-12",
+    "title": "The westbound pair is still unique",
+    "expected": "201 on V0009W",
+    "observed": "201 Booking created voyage=V0009W",
+    "ok": true
+  },
+  {
+    "key": "CP-01",
+    "title": "East run P1-P2-P3-P4 with a P1->P4 container, a P2->P3 container and a P2->P4 estimate (qty 2)",
+    "expected": "3 segments aboard [1, 4, 3] TEU",
+    "observed": "[1,4,3]",
+    "ok": true
+  },
+  {
+    "key": "CP-02",
+    "title": "Voyage row peak, remaining and layer split",
+    "expected": "peak 4, remaining 996, L1 loaded 2",
+    "observed": "peak=4 remaining=996 l1=2",
+    "ok": true
+  },
+  {
+    "key": "CP-03",
+    "title": "Westbound run: two P4->P1 containers and one P3->P2 container sit on the reversed legs",
+    "expected": "segments P4>P3 2, P3>P2 3, P2>P1 2",
+    "observed": "[2,3,2]",
+    "ok": true
+  },
+  {
+    "key": "CP-04",
+    "title": "Intermediate-port bookings are counted, not dropped (FL-01 / BK-02)",
+    "expected": "no BOOKING_PORT_NOT_IN_ROUND warnings",
+    "observed": "0",
+    "ok": true
+  },
+  {
+    "key": "CP-05",
+    "title": "Preview for one more container P2->P3",
+    "expected": "canFit, remaining after 995",
+    "observed": "200 Voyage preview computed fit=true rem=995",
+    "ok": true
+  },
+  {
+    "key": "VC-01",
+    "title": "Cancelling a voyage cancels all its bookings",
+    "expected": "1 live booking(s) before, all Cancelled after, response reports them",
+    "observed": "200 Voyage updated cancelled={\"bookings\":1,\"estimates\":0} statuses=Cancelled",
+    "ok": true
+  },
+  {
+    "key": "IM-01",
+    "title": "Preview assigns voyages by POL/POD, flags a pair no run serves",
+    "expected": "row1+2 resolved on the east run, row3 unresolved",
+    "observed": "valid:V0008E valid:V0008E unresolved:-",
+    "ok": true
+  },
+  {
+    "key": "FL-02",
+    "title": "Import save with forged _resolved* ids and a forced valid status",
+    "expected": "server re-resolves: booking is P1 -> P4 on the east run",
+    "observed": "201 voyage=V0008E pol=P1",
+    "ok": true
+  },
+  {
+    "key": "FL-02b",
+    "title": "Import save of a row no run can carry",
+    "expected": "nothing saved (400 / not created)",
+    "observed": "400 No valid rows to save",
+    "ok": true
+  },
+  {
+    "key": "FL-03",
+    "title": "Import \"update\" of a Final Loading booking",
+    "expected": "refused, rate unchanged (111)",
+    "observed": "400 No valid rows to save rate=111 status=Final Loading",
+    "ok": true
+  },
+  {
+    "key": "FL-03b",
+    "title": "Import \"update\" of a Pending booking still works and re-routes it",
+    "expected": "rate 75, P2 -> P3",
+    "observed": "201 rate=75 pol=true pod=true",
+    "ok": true
+  },
+  {
+    "key": "FL-04",
+    "title": "Final Loading file with one row that cannot be saved",
+    "expected": "whole file refused; no booking cancelled",
+    "observed": "400 Final Loading cancels every booking missing from the file, so every row must be valid: 1 row(s) are invalid, unresolved or ambiguous - fix them first victim=Pending",
+    "ok": true
+  },
+  {
+    "key": "FL-04b",
+    "title": "Valid Final Loading file",
+    "expected": "file container Final Loading; missing live bookings (Pending and Final Loading) Cancelled",
+    "observed": "201 good=Final Loading victim=Cancelled unlisted-FL=Cancelled",
+    "ok": true
+  },
+  {
+    "key": "DS-01",
+    "title": "Discharge list P1 -> P3",
+    "expected": "only Final Loading bookings P1 -> P3",
+    "observed": "ZBUY81DZ0025",
+    "ok": true
+  },
+  {
+    "key": "DS-02",
+    "title": "Excel export of the same list",
+    "expected": "200 xlsx",
+    "observed": "200 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet 7231b",
+    "ok": true
+  },
+  {
+    "key": "DS-03",
+    "title": "Export of a pair with no Final Loading bookings",
+    "expected": "404",
+    "observed": "404",
+    "ok": true
+  },
+  {
+    "key": "DS-04",
+    "title": "Discharge at P3: the P1 -> P4 booking is neither Discharged nor Remaining",
+    "expected": "d2 Discharged, d1 untouched (null)",
+    "observed": "201 Discharge recorded — 1 discharged, 0 remaining d2=Discharged d1=null",
+    "ok": true
+  },
+  {
+    "key": "DS-05",
+    "title": "A Final Loading booking of the same scope missing from the file",
+    "expected": "Remaining",
+    "observed": "201 Discharge recorded — 1 discharged, 1 remaining d3=Remaining",
+    "ok": true
+  },
+  {
+    "key": "PT-01",
+    "title": "Staff labels a booking with a partner",
+    "expected": "201, partner shown, source Staff",
+    "observed": "201 Booking created partner=ZBPY81DZA source=Staff",
+    "ok": true
+  },
+  {
+    "key": "PT-02",
+    "title": "Deleting a partner that has labelled bookings",
+    "expected": "refused (dependents)",
+    "observed": "409 Cannot delete this partner — still has: 1 bookings labelled with them",
+    "ok": true
+  },
+  {
+    "key": "PT-03",
+    "title": "A user of a partner role without a partner",
+    "expected": "400",
+    "observed": "400 A partner is required for a user of a partner role",
+    "ok": true
+  },
+  {
+    "key": "PT-04",
+    "title": "Turning off the partner flag while a user holds the role",
+    "expected": "400",
+    "observed": "400 Cannot change the partner flag — 1 user(s) are assigned to this role",
+    "ok": true
+  },
+  {
+    "key": "PT-05",
+    "title": "Partner user creates a booking and tries to set another partner and status Confirmed",
+    "expected": "201, own partner, source PartnerUser, Pending",
+    "observed": "201 Booking created partner=ZBPY81DZA source=PartnerUser status=Pending",
+    "ok": true
+  },
+  {
+    "key": "PT-06",
+    "title": "Partner user lists bookings",
+    "expected": "only their partner's",
+    "observed": "2 rows, foreign=0",
+    "ok": true
+  },
+  {
+    "key": "PT-07",
+    "title": "Partner user opens another booking (unlabelled)",
+    "expected": "404",
+    "observed": "404",
+    "ok": true
+  },
+  {
+    "key": "PT-08",
+    "title": "Partner user changes the status",
+    "expected": "403",
+    "observed": "403 Partner users cannot change the status of a booking",
+    "ok": true
+  },
+  {
+    "key": "PT-09",
+    "title": "Partner user tries to re-label a booking",
+    "expected": "label unchanged",
+    "observed": "200 partner=ZBPY81DZA",
+    "ok": true
+  },
+  {
+    "key": "PT-10",
+    "title": "Partner user on agents, reports, invoices, users, dashboard, ledger account-lookup (BK-01)",
+    "expected": "all 403",
+    "observed": "403,403,403,403,403,403",
+    "ok": true
+  },
+  {
+    "key": "PT-11",
+    "title": "Partner user gets the booking pick-lists",
+    "expected": "200 agents, rounds, container types, ports (no bank data)",
+    "observed": "200 agents=6 ports=4 bank=false",
+    "ok": true
+  },
+  {
+    "key": "PT-12",
+    "title": "Partner user on the discharge list and export",
+    "expected": "403 / 403",
+    "observed": "403 / 403",
+    "ok": true
+  },
+  {
+    "key": "PT-13",
+    "title": "Partner user runs a Final Loading import",
+    "expected": "403",
+    "observed": "403 Partner users can only import bookings",
+    "ok": true
+  },
+  {
+    "key": "PT-14",
+    "title": "Partner user imports bookings",
+    "expected": "201, rows labelled with their partner",
+    "observed": "201 Import complete — 1 created, 0 updated labelled=true",
+    "ok": true
+  },
+  {
+    "key": "PT-15",
+    "title": "Partner user filters by another partner",
+    "expected": "still only their own",
+    "observed": "3 rows, foreign=0",
+    "ok": true
+  }
+]

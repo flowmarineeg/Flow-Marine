@@ -32,8 +32,15 @@ const getRoundRoutePorts = async (req, res, next) => {
 const create = async (req, res, next) => {
   try {
     const { roundId, ...rest } = req.body;
-    const voyage = await voyageService.createManualVoyage(roundId, rest, req.user._id);
+    const voyage = await voyageService.createVoyage(roundId, rest, req.user._id);
     return created(res, voyage, 'Voyage created');
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+// POST /voyages/:id/refresh-port-calls — rebuild port calls from the round's current legs
+const refreshPortCalls = async (req, res, next) => {
+  try {
+    return success(res, await voyageService.refreshPortCalls(req.params.id, req.user._id), 'Port calls refreshed');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
@@ -57,4 +64,4 @@ const remove = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { list, getById, getRoundRoutePorts, create, update, remove };
+module.exports = { list, getById, getRoundRoutePorts, create, refreshPortCalls, update, remove };

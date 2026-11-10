@@ -1,7 +1,20 @@
 'use strict';
 
 const mongoose = require('mongoose');
-const { VOYAGE_STATUS } = require('../../config/constants');
+const { VOYAGE_STATUS, VOYAGE_DIRECTION } = require('../../config/constants');
+
+// Ports of the run in travel order (snapshot taken when the voyage is created or refreshed).
+const portCallSchema = new mongoose.Schema(
+  {
+    legKey:   { type: String, required: true },
+    portId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Port', required: true },
+    portName: { type: String, default: null },
+    portCode: { type: String, default: null },
+    eta:      { type: Date, default: null },
+    etd:      { type: Date, default: null },
+  },
+  { _id: false }
+);
 
 const voyageSchema = new mongoose.Schema(
   {
@@ -13,6 +26,11 @@ const voyageSchema = new mongoose.Schema(
     polId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Port',    required: true },
     podId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Port',    required: true },
     sequence:     { type: Number, required: true, min: 1 },
+    // polId/podId = first/last port call, kept so bookings, reports and invoices read the voyage unchanged.
+    direction:    { type: String, enum: VOYAGE_DIRECTION, default: null },
+    fromLegKey:   { type: String, default: null },
+    toLegKey:     { type: String, default: null },
+    portCalls:    { type: [portCallSchema], default: [] },
     etd:          { type: Date, default: null },
     eta:          { type: Date, default: null },
     etp:          { type: Date, default: null },

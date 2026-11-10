@@ -2,7 +2,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { badRequest } = require('../../utils/responseHelper');
-const { VOYAGE_STATUS } = require('../../config/constants');
+const { VOYAGE_STATUS, VOYAGE_DIRECTION } = require('../../config/constants');
 
 const handle = (req, res, next) => {
   const errors = validationResult(req);
@@ -15,14 +15,18 @@ const handle = (req, res, next) => {
 // ─── Validate manual voyage creation ─────────────────────────────────────────
 const validateCreate = [
   body('roundId').notEmpty().withMessage('Round is required').isMongoId(),
-  body('polId').notEmpty().withMessage('Port of Loading is required').isMongoId(),
-  body('podId').notEmpty().withMessage('Port of Discharge is required').isMongoId(),
+  body('direction').isIn(VOYAGE_DIRECTION).withMessage(`Direction must be one of: ${VOYAGE_DIRECTION.join(', ')}`),
+  body('fromLegKey').isString().notEmpty().withMessage('Start leg is required'),
+  body('toLegKey').isString().notEmpty().withMessage('End leg is required'),
+  body('portCalls').optional().isArray(),
+  body('portCalls.*.legKey').isString().notEmpty(),
+  body('portCalls.*.eta').optional({ nullable: true, checkFalsy: true }).isISO8601(),
+  body('portCalls.*.etd').optional({ nullable: true, checkFalsy: true }).isISO8601(),
   body('etd').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid ETD'),
   body('eta').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid ETA'),
   body('etp').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid ETP'),
   body('atd').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid ATD'),
   body('ata').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Invalid ATA'),
-  body('status').optional().isIn(VOYAGE_STATUS).withMessage(`Status must be one of: ${VOYAGE_STATUS.join(', ')}`),
   body('voyageCode').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 50 }),
   body('voyageName').trim().notEmpty().withMessage('Voyage Name is required'),
   handle,
@@ -38,6 +42,10 @@ const validateUpdate = [
   body('status').optional().isIn(VOYAGE_STATUS).withMessage(`Must be one of: ${VOYAGE_STATUS.join(', ')}`),
   body('voyageCode').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 50 }),
   body('voyageName').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('portCalls').optional().isArray(),
+  body('portCalls.*.legKey').isString().notEmpty(),
+  body('portCalls.*.eta').optional({ nullable: true, checkFalsy: true }).isISO8601(),
+  body('portCalls.*.etd').optional({ nullable: true, checkFalsy: true }).isISO8601(),
   handle,
 ];
 

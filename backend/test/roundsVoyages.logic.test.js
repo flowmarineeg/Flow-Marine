@@ -101,10 +101,6 @@ test('voyage: schedule problems are warnings, not errors', () => {
 });
 
 // ── RV-22 ─────────────────────────────────────────────────────────────────────
-test('voyage: middle generated voyage cannot be deleted; last generated and manual can', () => {
-  const sibs = [{ isManual: false, sequence: 1 }, { isManual: false, sequence: 3 }, { isManual: true, sequence: 4 }];
-  assert.match(V.deleteBlockReason({ isManual: false, sequence: 2 }, sibs), /Cancel it instead/);
-  assert.match(V.deleteBlockReason({ isManual: false, sequence: 1 }, sibs), /Cancel it instead/);
-  assert.equal(V.deleteBlockReason({ isManual: false, sequence: 3 }, [{ isManual: false, sequence: 1 }, { isManual: true, sequence: 4 }]), null);
-  assert.equal(V.deleteBlockReason({ isManual: true, sequence: 4 }, sibs), null);
+test('voyage: deleteBlockReason no longer exists (any voyage may go when nothing depends on it)', () => {
+  assert.equal(V.deleteBlockReason, undefined);
 });

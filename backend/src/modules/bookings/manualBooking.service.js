@@ -7,8 +7,12 @@ const ContainerType = require('../containerTypes/containerType.model');
 const { nextNumber }         = require('../../utils/autoNumber');
 const { resolveTEU }         = require('../../utils/teuResolver');
 const { escapeRegex }        = require('../../utils/escapeRegex');
-const { invalidateRoundCache } = require('../capacity/capacity.service');
+const { invalidateRoundCache, computeRoutePreview } = require('../capacity/capacity.service');
+const { capacityEnforcement } = require('../../config/env');
 const logger = require('../../utils/logger');
+const Port = require('../locations/port.model');
+const { resolveVoyage } = require('./bookingVoyage.service');
+const { assertPartner, assertOwn } = require('./partnerScope');
 const { DEFAULT_PAGE, DEFAULT_LIMIT, BOOKING_STATUS } = require('../../config/constants');
 
 // ── Status machine (identical to Layer 2) ────────────────────────────────────
@@ -31,10 +35,11 @@ const validateTransition = (current, next) => {
 
 // ── Populate helper ───────────────────────────────────────────────────────────
 const populate = (q) =>
-  q.populate('voyageId', 'voyageNumber voyageName roundId polId podId etd eta status')
+  q.populate('voyageId', 'voyageNumber voyageName direction roundId polId podId etd eta status')
    .populate('agentId',  'agentCode agentName')
    .populate('polId',    'name code')
    .populate('podId',    'name code')
+   .populate('partnerId', 'code name')
    .populate('cargoRows.containerTypeId', 'code size type');
 
 // ── Compute totals from cargoRows ─────────────────────────────────────────────
@@ -54,7 +59,8 @@ const computeTotals = (rows, sizeMap) => {
   const warnings   = [];
 
   const computed = rows.map((row, idx) => {
-    const rowTotal   = Number(row.quantity) * Number(row.rate);
+    const rate       = Number(row.rate) || 0; // the rate is optional on an estimate
+    const rowTotal   = Number(row.quantity) * rate;
     const ctId       = String(row.containerTypeId);
     const ctExists   = Object.prototype.hasOwnProperty.call(sizeMap, ctId);
     const size       = sizeMap[ctId] || '';
@@ -75,7 +81,7 @@ const computeTotals = (rows, sizeMap) => {
     totalFreight   += rowTotal;
     totalTEU       += Number(row.quantity) * teu;
     totalUnits     += Number(row.quantity);
-    return { ...row, rowTotal };
+    return { ...row, rate, rowTotal };
   });
 
   return { computed, totalFreight, totalTEU, totalUnits, warnings };
@@ -93,11 +99,14 @@ const fetchSizeMap = async (containerTypeIds) => {
 // ── List ──────────────────────────────────────────────────────────────────────
 const list = async ({
   page = DEFAULT_PAGE, limit = DEFAULT_LIMIT,
-  search = '', voyageId = '', agentId = '', status = '',
-} = {}) => {
+  search = '', voyageId = '', agentId = '', roundId = '', partnerId = '', status = '',
+} = {}, scope = null) => {
   const query = {};
+  if (roundId) query.voyageId = { $in: await Voyage.find({ roundId }).distinct('_id') };
   if (voyageId) query.voyageId = voyageId;
   if (agentId)  query.agentId  = agentId;
+  if (scope) query.partnerId = scope;
+  else if (partnerId) query.partnerId = partnerId;
   if (status) {
     query.status = status.includes(',')
       ? { $in: status.split(',').map(s => s.trim()) }
@@ -117,21 +126,22 @@ const list = async ({
 };
 
 // ── Get by ID ─────────────────────────────────────────────────────────────────
-const getById = async (id) => {
+const getById = async (id, scope = null) => {
   const doc = await populate(ManualBooking.findOne({ _id: id })).lean();
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
+  if (scope && String(doc.partnerId?._id || doc.partnerId || '') !== scope) throw { status: 404, message: 'Manual booking not found' };
   return doc;
 };
 
 // ── Create ────────────────────────────────────────────────────────────────────
-const create = async (data, createdBy) => {
-  await lock.assertVoyageRoundOpen(data.voyageId);
-  const voyage = await Voyage.findById(data.voyageId).lean();
-  if (!voyage) throw { status: 400, message: 'Voyage not found' };
-  if (['Cancelled', 'Completed'].includes(voyage.status)) {
-    throw { status: 400, message: `Cannot book on a voyage with status "${voyage.status}"` };
-  }
-  await lock.assertRoundBookable(voyage);
+// Bookings sprint 2026-11-10: roundId + the booking's own POL/POD; the voyage is assigned by the server.
+const create = async (data, createdBy, scope = null) => {
+  const { voyage, polLegKey, podLegKey } = await resolveVoyage({
+    roundId: data.roundId, polId: data.polId, podId: data.podId,
+    polLegKey: data.polLegKey, podLegKey: data.podLegKey, voyageId: data.voyageId,
+  });
+  const [pol, pod] = await Promise.all([Port.exists({ _id: data.polId }), Port.exists({ _id: data.podId })]);
+  if (!pol || !pod) throw { status: 400, message: 'POL or POD port not found' };
 
   const rows = data.cargoRows || [];
   if (!rows.length) throw { status: 400, message: 'At least one cargo row is required' };
@@ -142,23 +152,41 @@ const create = async (data, createdBy) => {
   warnings.forEach(w => logger.warn(`[ManualBooking.create] ${w.message}`));
 
   await require('../agents/agent.service').assertBookingSource(data.agentId);
+
+  // Pre-flight capacity check for the estimate too (both layers hold space; env ENABLE_CAPACITY_ENFORCEMENT)
+  const enforcementMode = capacityEnforcement();
+  let capacityWarning = null;
+  if (enforcementMode && totalTEU > 0) {
+    try {
+      const preview = await computeRoutePreview(voyage.roundId, { voyageId: String(voyage._id), polId: String(data.polId), podId: String(data.podId), polLegKey, podLegKey, addedTEU: totalTEU });
+      if (!preview.canFit) {
+        if (enforcementMode === 'strict') {
+          throw { status: 400, message: `Estimate would exceed vessel capacity on voyage ${preview.voyage?.voyageNumber}. Added ${totalTEU} TEU; remaining after: ${preview.voyage?.remainingAfter} TEU.`, capacityPreview: preview };
+        }
+        capacityWarning = preview;
+      }
+    } catch (capErr) {
+      if (capErr.status === 400 && capErr.capacityPreview) throw capErr;
+    }
+  }
   const bookingNumber = await nextNumber('manualBooking');
 
   const doc = await ManualBooking.create({
     bookingNumber,
-    voyageId:     data.voyageId,
+    voyageId:     voyage._id,
     agentId:      data.agentId,
     customerId:   data.customerId || null,
-    // Sprint 030: POL/POD are no longer client-submitted — always the
-    // selected voyage's own polId/podId.
-    polId:        voyage.polId,
-    podId:        voyage.podId,
+    polId:        data.polId,
+    podId:        data.podId,
+    polLegKey, podLegKey,
+    partnerId:    scope || await assertPartner(data.partnerId),
+    source:       scope ? 'PartnerUser' : 'Staff',
     cargoRows:    computed,
     totalFreight,
     totalTEU,
     totalUnits,
     remarks:      data.remarks  || null,
-    status:       data.status   || 'Pending',
+    status:       scope || !data.status || data.status === 'Cancelled' ? 'Pending' : data.status,
     createdBy,
     updatedBy:    createdBy,
   });
@@ -168,14 +196,19 @@ const create = async (data, createdBy) => {
 
   const saved = await getById(doc._id);
   if (warnings.length) saved._teuWarnings = warnings;
+  if (capacityWarning) saved._capacityWarning = capacityWarning;
   return saved;
 };
 
 // ── Update ────────────────────────────────────────────────────────────────────
-const update = async (id, data, updatedBy) => {
+const update = async (id, data, updatedBy, scope = null) => {
   await lock.assertDocRoundOpen('ManualBooking', id);
   const doc = await ManualBooking.findOne({ _id: id });
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
+  assertOwn(doc, scope);
+  if (scope && data.status && data.status !== doc.status) {
+    throw { status: 403, message: 'Partner users cannot change the status of a booking' };
+  }
 
   if (['Cancelled', 'Final Loading'].includes(doc.status)) {
     throw { status: 400, message: `${doc.status} bookings cannot be edited` };
@@ -201,13 +234,14 @@ const update = async (id, data, updatedBy) => {
   }
 
   // Scalar fields
-  if (data.agentId  !== undefined) {
+  if (data.agentId  !== undefined && !scope) {
     if (String(data.agentId) !== String(doc.agentId)) await require('../agents/agent.service').assertBookingSource(data.agentId);
     doc.agentId = data.agentId;
   }
   if (data.customerId !== undefined) doc.customerId = data.customerId || null;
+  if (!scope && data.partnerId !== undefined) doc.partnerId = await assertPartner(data.partnerId);
   if (data.remarks  !== undefined) doc.remarks  = data.remarks  || null;
-  if (data.status   !== undefined) doc.status   = data.status;
+  if (data.status   !== undefined && !scope) doc.status = data.status;
   doc.updatedBy = updatedBy;
 
   await doc.save();
@@ -224,10 +258,12 @@ const update = async (id, data, updatedBy) => {
 // No guard — matches the existing rule (ManualBooking had no delete guard
 // before this sprint either; not adding one now, per "do not redesign
 // business rules unless required for referential integrity").
-const hardDelete = async (id) => {
+const hardDelete = async (id, scope = null) => {
   await lock.assertDocRoundOpen('ManualBooking', id);
   const doc = await ManualBooking.findOne({ _id: id });
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
+  assertOwn(doc, scope);
+  if (scope && doc.status !== 'Pending') throw { status: 403, message: 'Partner users can only delete Pending bookings' };
 
   const voyage = await Voyage.findById(doc.voyageId).select('roundId').lean();
   await ManualBooking.findByIdAndDelete(id);

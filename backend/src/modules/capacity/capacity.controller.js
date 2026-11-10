@@ -47,16 +47,16 @@ const getVesselActiveCapacity = async (req, res, next) => {
 /**
  * POST /api/v1/capacity/preview
  * Phase 4 — pre-flight capacity check for a prospective booking.
- * Body: { roundId, voyageId, containerTypeId, podId? }
- * podId is optional — when provided, all transited voyages are checked.
+ * Body: { roundId, voyageId, containerTypeId, podId?, polId? }
+ * With polId + podId every segment between the two ports of that voyage is checked (per-leg); without, the whole run.
  */
 const previewCapacity = async (req, res, next) => {
   try {
-    const { roundId, voyageId, containerTypeId, podId } = req.body;
+    const { roundId, voyageId, containerTypeId, podId, polId } = req.body;
     if (!roundId || !voyageId || !containerTypeId) {
       return error(res, 'roundId, voyageId, containerTypeId are required', 400);
     }
-    const data = await capacityService.computeVoyagePreview(roundId, voyageId, containerTypeId, podId);
+    const data = await capacityService.computeVoyagePreview(roundId, voyageId, containerTypeId, podId, polId);
     return success(res, data, 'Voyage preview computed');
   } catch (err) {
     if (err.status) return error(res, err.message, err.status);

@@ -241,12 +241,12 @@ const makeBookings = async (W, voyage, agentCode, mix, status, uid, extra = {}) 
       const dg = i % 11 === 10;
       const reefer = ctCode.includes('RF');
       out.push(await m.bookingSvc.create({
-        voyageId: voyage._id, agentId: W.agent[agentCode]._id, containerTypeId: W.ct[ctCode]._id,
+        roundId: voyage.roundId, polId: extra.polId || voyage.polId, podId: extra.podId || voyage.podId, agentId: W.agent[agentCode]._id, containerTypeId: W.ct[ctCode]._id,
         freightRate: dg ? rate + 150 : rate, containerNumber: boxNo(), containerStatus: i % 9 === 8 ? 'Empty' : 'Full',
         shipper: SHIPPERS[i % SHIPPERS.length], consignee: SHIPPERS[(i + 3) % SHIPPERS.length], carrierName: 'Flow Marine',
         commodity: reefer ? 'Frozen food' : COMMODITIES[i % COMMODITIES.length], vgm: 8000 + i * 350,
         dg, imdgCode: dg ? 'IMDG Class 3' : null, status, remarks: null, ...extra,
-      }, uid));
+      }, uid, extra.scope || null));
     }
   }
   return out;
@@ -254,6 +254,14 @@ const makeBookings = async (W, voyage, agentCode, mix, status, uid, extra = {}) 
 
 const setVoyage = (id, data, uid) => m.voyageSvc.update(id, data, uid, true); // true = override: jump to any status
 const voyagesOf = (roundId) => m.Voyage.find({ roundId }).sort({ sequence: 1 }).lean();
+// Voyages are no longer generated with the round: create each run over the round's legs (indexes into its leg list).
+const makeVoyages = async (round, runs, uid) => {
+  const legs = [...round.routeSnapshot.legs].sort((a, b) => a.sequence - b.sequence);
+  for (const r of runs) {
+    await m.voyageSvc.createVoyage(round._id, { direction: r.dir, fromLegKey: legs[r.from].legKey, toLegKey: legs[r.to].legKey, voyageName: r.name }, uid);
+  }
+  return voyagesOf(round._id);
+};
 
 const invoiceFor = async (W, voyage, agentCode, { invoiceDate, dueDate, issue = true }, uid) => {
   const agentId = W.agent[agentCode]._id;
@@ -288,7 +296,11 @@ const seedRoundA = async (W, user) => {
     startDate: daysAgo(130), endDate: daysAgo(40), status: 'Active', notes: 'Seed test data: full lifecycle, closed and settled',
   }, uid);
   const round = created.round;
-  const [v1, v2, v3] = await voyagesOf(round._id);
+  const [v1, v2, v3] = await makeVoyages(round, [
+    { dir: 'East', from: 0, to: 1, name: 'Shanghai - Singapore' },
+    { dir: 'East', from: 1, to: 2, name: 'Singapore - Jebel Ali' },
+    { dir: 'East', from: 2, to: 3, name: 'Jebel Ali - Jeddah' },
+  ], uid);
 
   // v3 is billed to a Direct Line customer instead of the port agent
   await step('A: Final Loading bookings (3 voyages)', async () => {
@@ -405,7 +417,10 @@ const seedRoundB = async (W, user) => {
     startDate: daysAgo(24), endDate: daysAhead(36), status: 'Active', notes: 'Seed test data: in-flight round, every booking/invoice state',
   }, uid);
   const round = created.round;
-  const [v1, v2] = await voyagesOf(round._id);
+  const [v1, v2] = await makeVoyages(round, [
+    { dir: 'West', from: 0, to: 1, name: 'Jebel Ali - Jeddah' },
+    { dir: 'West', from: 1, to: 2, name: 'Jeddah - Port Said' },
+  ], uid);
 
   await step('B: bookings in every status', async () => {
     await makeBookings(W, v1, 'DXB-AG', [['20DRY', 1000, 12], ['40HC', 1800, 9], ['20RF', 2300, 3]], 'Final Loading', uid);
@@ -430,9 +445,9 @@ const seedRoundB = async (W, user) => {
   });
   await step('B: Layer 1 manual bookings', async () => {
     const row = (ct, quantity, rate, extra = {}) => ({ containerTypeId: W.ct[ct]._id, quantity, rate, commodity: 'General cargo', vgm: 9000, ...extra });
-    await m.manualSvc.create({ voyageId: v1._id, agentId: W.agent['DXB-AG']._id, cargoRows: [row('20DRY', 6, 980), row('40HC', 4, 1780)], status: 'Confirmed', remarks: 'Estimated, firm' }, uid);
-    await m.manualSvc.create({ voyageId: v2._id, agentId: W.agent['JED-AG']._id, cargoRows: [row('20RF', 3, 2250, { commodity: 'Frozen food' }), row('20OT', 2, 1500, { dg: true, dgValue: 'Class 3, UN1203' })], status: 'Pending' }, uid);
-    await m.manualSvc.create({ voyageId: v2._id, agentId: W.agent['PSD-AG']._id, cargoRows: [row('40HC', 8, 1650)], status: 'Final Loading' }, uid);
+    await m.manualSvc.create({ roundId: v1.roundId, polId: v1.polId, podId: v1.podId, agentId: W.agent['DXB-AG']._id, cargoRows: [row('20DRY', 6, 980), row('40HC', 4, 1780)], status: 'Confirmed', remarks: 'Estimated, firm' }, uid);
+    await m.manualSvc.create({ roundId: v2.roundId, polId: v2.polId, podId: v2.podId, agentId: W.agent['JED-AG']._id, cargoRows: [row('20RF', 3, 2250, { commodity: 'Frozen food' }), row('20OT', 2, 1500, { dg: true, dgValue: 'Class 3, UN1203' })], status: 'Pending' }, uid);
+    await m.manualSvc.create({ roundId: v2.roundId, polId: v2.polId, podId: v2.podId, agentId: W.agent['PSD-AG']._id, cargoRows: [row('40HC', 8, 1650)], status: 'Final Loading' }, uid);
   });
   await step('B: expenses (one open PDA estimate, others posted)', async () => {
     await fullExpense({ voyageId: v1._id, portId: v1.polId, expenseTypeId: W.et['Port Dues']._id, agentId: W.agent['DXB-AG']._id, paidBy: 'PortAgent', amount: 6800, expenseDate: daysAgo(22), description: 'Jebel Ali port dues' }, 6950, uid);
@@ -475,11 +490,32 @@ const seedRoundC = async (W, user) => {
     roundName: 'TEST Round C - Planned', serviceId: W.service.ASME._id, vesselId: W.vessel.GPION._id,
     startDate: daysAhead(30), endDate: daysAhead(100), status: 'Planned', notes: 'Seed test data: not started yet',
   }, uid);
-  const [v1, v2] = await voyagesOf(created.round._id);
+  // Round C shows the new model: one full eastbound run (leg 1 -> 4) and the full westbound return (4 -> 1)
+  const [v1, v2] = await makeVoyages(created.round, [
+    { dir: 'East', from: 0, to: 3, name: 'Asia - Middle East (eastbound)' },
+    { dir: 'West', from: 3, to: 0, name: 'Middle East - Asia (westbound)' },
+  ], uid);
   await step('C: advance manual bookings', async () => {
     const row = (ct, quantity, rate) => ({ containerTypeId: W.ct[ct]._id, quantity, rate, commodity: 'Machinery parts', vgm: 12000 });
-    await m.manualSvc.create({ voyageId: v1._id, agentId: W.agent['SHA-AG']._id, cargoRows: [row('40HC', 10, 2200), row('20DRY', 6, 1300)], status: 'Confirmed' }, uid);
-    await m.manualSvc.create({ voyageId: v2._id, agentId: W.agent['SIN-AG']._id, cargoRows: [row('40DRY', 5, 1900)], status: 'Pending' }, uid);
+    await m.manualSvc.create({ roundId: v1.roundId, polId: v1.polId, podId: v1.podId, agentId: W.agent['SHA-AG']._id, cargoRows: [row('40HC', 10, 2200), row('20DRY', 6, 1300)], status: 'Confirmed' }, uid);
+    await m.manualSvc.create({ roundId: v2.roundId, polId: v2.polId, podId: v2.podId, agentId: W.agent['SIN-AG']._id, cargoRows: [row('40DRY', 5, 1900)], status: 'Pending' }, uid);
+  });
+  // Bookings sprint 2026-11-10: POL/POD inside a run (the voyage is found by the server, direction included)
+  // and bookings labelled with the partner that gave them to us.
+  await step('C: bookings between intermediate ports + partner labels', async () => {
+    const legs = [...created.round.routeSnapshot.legs].sort((a, b) => a.sequence - b.sequence);
+    const at = (i, j) => ({ polId: legs[i].portId, podId: legs[j].portId });
+    await makeBookings(W, v1, 'SIN-AG', [['20DRY', 900, 3]], 'Pending', uid, at(1, 2));                       // leg 2 -> leg 3, eastbound run
+    await makeBookings(W, v2, 'SIN-AG', [['40HC', 1500, 2]], 'Pending', uid, at(2, 1));                       // leg 3 -> leg 2, westbound run
+    await makeBookings(W, v1, 'SHA-AG', [['40HC', 2100, 2]], 'Pending', uid, { partnerId: W.partner.ALFA._id }); // labelled with Alfa
+  });
+  await step('C: partner role + partner user (partner@logistics.com)', async () => {
+    const Role = require('../modules/roles/role.model');
+    const Permission = require('../modules/permissions/permission.model');
+    const bcrypt = require('bcryptjs');
+    const role = await Role.findOneAndUpdate({ name: 'Partner Portal' }, { $set: { isPartnerRole: true, description: 'External partner: own bookings only' } }, { upsert: true, new: true });
+    await Permission.findOneAndUpdate({ roleId: role._id, module: 'bookings' }, { $set: { actions: { create: true, read: true, update: true, delete: true, import: true } } }, { upsert: true });
+    await m.User.findOneAndUpdate({ email: 'partner@logistics.com' }, { $set: { name: 'Alfa Partner User', roleId: role._id, partnerId: W.partner.ALFA._id, status: 'Active', isDeleted: false, password: await bcrypt.hash('Demo@123456', 12) } }, { upsert: true });
   });
   return created.round;
 };
