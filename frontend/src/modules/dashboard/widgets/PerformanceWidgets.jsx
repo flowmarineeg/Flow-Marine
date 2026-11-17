@@ -53,7 +53,7 @@ export function TopAgentsWidget() {
           {topAgents.map((a, i) => (
             <div key={i} className="flex items-center justify-between text-xs">
               <span className="text-gray-600 truncate max-w-[60%]">{i + 1}. {a.agentName}</span>
-              <span className="mono font-semibold text-teal-700">{fmtMoney(a.totalRevenue)}</span>
+              <span className="mono font-semibold text-blue-800">{fmtMoney(a.totalRevenue)}</span>
             </div>
           ))}
         </div>
@@ -91,7 +91,7 @@ export function TopRoutesWidget() {
           {topRoutes.map((r, i) => (
             <div key={i} className="flex items-center justify-between text-xs">
               <span className="text-gray-600 truncate max-w-[60%]">{i + 1}. {r.polName || '—'} → {r.podName || '—'}</span>
-              <span className="mono font-semibold text-teal-700">{fmtMoney(r.totalRevenue)}</span>
+              <span className="mono font-semibold text-blue-800">{fmtMoney(r.totalRevenue)}</span>
             </div>
           ))}
         </div>
@@ -129,12 +129,12 @@ export function VoyageLeaderboardWidget() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wider mb-2">Best</p>
+            <p className="text-[10px] font-bold text-green-700 uppercase tracking-wider mb-2">Best</p>
             <div className="flex flex-col gap-1.5">
               {best.map(v => (
                 <div key={v.voyageId} className="flex items-center justify-between text-xs">
                   <span className="mono text-gray-600">{getVoyageLabel(v)}</span>
-                  <span className="font-semibold text-teal-700">{fmtMoney(v.netProfit)}</span>
+                  <span className="font-semibold text-blue-800">{fmtMoney(v.netProfit)}</span>
                 </div>
               ))}
             </div>

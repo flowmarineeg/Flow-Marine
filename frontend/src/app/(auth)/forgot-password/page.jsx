@@ -26,10 +26,10 @@ export default function ForgotPasswordPage() {
         <div className="login-card animate-fadeIn" style={{ width: '100%', maxWidth: 420, padding: '40px 36px', textAlign: 'center' }}>
           <div style={{
             width: 56, height: 56, borderRadius: 16,
-            background: '#D1FAE5', display: 'flex', alignItems: 'center',
+            background: '#DDF3E6', display: 'flex', alignItems: 'center',
             justifyContent: 'center', margin: '0 auto 20px',
           }}>
-            <svg width="26" height="26" fill="none" stroke="#059669" strokeWidth="2.5" viewBox="0 0 24 24">
+            <svg width="26" height="26" fill="none" stroke="#1B7F4B" strokeWidth="2.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
@@ -56,10 +56,10 @@ export default function ForgotPasswordPage() {
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{
             width: 52, height: 52, borderRadius: 14,
-            background: 'linear-gradient(135deg, var(--teal) 0%, var(--teal-dark) 100%)',
+            background: 'var(--navy)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 16px',
-            boxShadow: '0 4px 16px rgba(13,148,136,0.35)',
+            boxShadow: 'none',
           }}>
             <svg width="24" height="24" fill="none" stroke="white" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)', margin: 0 }}>Forgot Password</h1>
           <p style={{ fontSize: 13.5, color: 'var(--text-muted)', marginTop: 6 }}>
-            Enter your email and we'll send a reset link
+            Enter your email and we&apos;ll send a reset link
           </p>
         </div>
 

@@ -26,7 +26,7 @@ function PnlChart({ expenseBreakdown = [], totalRevenue = 0 }) {
 
     const labels  = ['Revenue', ...expenseBreakdown.map(e => e.category)];
     const values  = [totalRevenue, ...expenseBreakdown.map(e => e.total)];
-    const colors  = ['#0D9488', ...expenseBreakdown.map(() => '#F87171')];
+    const colors  = ['#D9480F', ...expenseBreakdown.map(() => '#F87171')];
 
     chartRef.current = new Chart(canvasRef.current, {
       type: 'bar',

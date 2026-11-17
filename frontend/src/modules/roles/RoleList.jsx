@@ -13,7 +13,7 @@ import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import Input from '@/components/ui/Input';
 
 export default function RoleList() {
@@ -115,7 +115,7 @@ export default function RoleList() {
       </div>
 
       {/* Modal */}
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.edit ? 'Edit Role' : 'New Role'} size="sm">
+      <FormPage open={!!modal} onClose={() => setModal(null)} title={modal?.edit ? 'Edit Role' : 'New Role'} size="sm">
         <form onSubmit={handleSubmit(d => saveMutation.mutate(d))} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Input id="name" label="Role Name" placeholder="e.g. Operations Manager" required
             error={errors.name?.message}
@@ -138,7 +138,7 @@ export default function RoleList() {
             <Button type="submit" loading={saveMutation.isPending}>{modal?.edit ? 'Save Changes' : 'Create Role'}</Button>
           </div>
         </form>
-      </Modal>
+      </FormPage>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteMutation.mutate(deleteTarget._id)} loading={deleteMutation.isPending}

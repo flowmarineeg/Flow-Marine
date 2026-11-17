@@ -14,9 +14,9 @@ import PageHeader from '@/components/ui/PageHeader';
 const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'import', 'export', 'override', 'issue', 'cancel', 'record', 'approve', 'offset', 'commission', 'close', 'closeOverride', 'reopen', 'carryForward', 'useReserve', 'manage', 'hidden'];
 
 const ACTION_COLORS = {
-  view:   { active: '#DBEAFE', text: '#1E40AF' },
+  view:   { active: '#DCE6F2', text: '#0B2A4A' },
   read:   { active: '#D1FAE5', text: '#065F46' },
-  create: { active: '#CCFBF1', text: '#0F766E' },
+  create: { active: '#FFE8DC', text: '#8A2D08' },
   update: { active: '#FEF3C7', text: '#92400E' },
   delete: { active: '#FEE2E2', text: '#991B1B' },
   // Sprint046: invoices-only in practice (full manual status/lock override),
@@ -25,17 +25,17 @@ const ACTION_COLORS = {
   // unused, for modules like 'reports').
   // Sprint049: import/export were on the schema since Sprint019 but had no toggle
   import: { active: '#E0E7FF', text: '#3730A3' },
-  export: { active: '#E0F2FE', text: '#075985' },
+  export: { active: '#DCE6F2', text: '#075985' },
   override: { active: '#FCE7F3', text: '#9D174D' },
   issue:  { active: '#DCFCE7', text: '#166534' }, // Sprint051: issue invoices / notes
   cancel: { active: '#FEE2E2', text: '#991B1B' }, // Sprint051: cancel issued invoice
   record: { active: '#CFFAFE', text: '#155E75' }, // Sprint051: record / void settlements
   approve:{ active: '#FEF9C3', text: '#854D0E' }, // Sprint052: approve / post an FDA expense
-  offset: { active: '#EDE9FE', text: '#5B21B6' }, // Sprint052: agent netting, advances, settlement statements
+  offset: { active: '#EEF3F9', text: '#123A63' }, // Sprint052: agent netting, advances, settlement statements
   commission: { active: '#FDF2F8', text: '#831843' }, // audit H7: cancel / adjust agent commission
   close:  { active: '#FEE2E2', text: '#7F1D1D' }, // Sprint053: close a Round
   closeOverride: { active: '#FFE4E6', text: '#9F1239' }, // Sprint053: close with open PDAs + reason
-  reopen: { active: '#E0F2FE', text: '#0C4A6E' }, // Sprint053: reopen a closed Round
+  reopen: { active: '#DCE6F2', text: '#0C4A6E' }, // Sprint053: reopen a closed Round
   carryForward: { active: '#ECFCCB', text: '#3F6212' }, // Sprint053: hold profit in the JV reserve
   useReserve: { active: '#F3E8FF', text: '#6B21A8' }, // Sprint053: fund an expense from the reserve
   manage: { active: '#FFEDD5', text: '#9A3412' }, // Sprint050: partners/ledger administration

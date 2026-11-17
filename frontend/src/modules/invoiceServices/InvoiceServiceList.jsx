@@ -16,7 +16,7 @@ import Pagination from '@/components/ui/Pagination';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import InvoiceServiceForm from '@/modules/invoiceServices/InvoiceServiceForm';
 
 const APPLIES = { SOC_ONLY: 'SOC only', COC_ONLY: 'COC only', BOTH: 'SOC & COC' };
@@ -95,9 +95,9 @@ export default function InvoiceServiceList() {
         </div>
       )}
 
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal === 'create' ? 'New Invoice Service' : 'Edit Invoice Service'} size="md">
+      <FormPage open={!!modal} onClose={() => setModal(null)} title={modal === 'create' ? 'New Invoice Service' : 'Edit Invoice Service'} size="md">
         {modal && <InvoiceServiceForm item={modal?.edit || null} onSuccess={() => setModal(null)} onCancel={() => setModal(null)} />}
-      </Modal>
+      </FormPage>
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => del.mutate(deleteTarget._id)}
         loading={del.isPending} title="Delete Invoice Service" message={`Delete "${deleteTarget?.serviceName}"? This is permanent.`} />
     </div>

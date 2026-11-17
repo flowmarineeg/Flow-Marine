@@ -17,7 +17,7 @@ import Pagination from '@/components/ui/Pagination';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import ServiceForm from '@/modules/services/ServiceForm';
 
 export default function ServiceList() {
@@ -200,7 +200,7 @@ export default function ServiceList() {
       )}
 
       {/* Create / Edit Modal */}
-      <Modal
+      <FormPage
         open={!!modal}
         onClose={() => setModal(null)}
         title={modal === 'create' ? 'New Route' : 'Edit Route'}
@@ -213,7 +213,7 @@ export default function ServiceList() {
             onCancel={() => setModal(null)}
           />
         )}
-      </Modal>
+      </FormPage>
 
       {/* Delete confirm */}
       <ConfirmDialog

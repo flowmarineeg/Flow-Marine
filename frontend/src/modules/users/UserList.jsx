@@ -15,7 +15,7 @@ import Pagination from '@/components/ui/Pagination';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import UserForm from './UserForm';
 import { USER_STATUS } from '@/utils/constants';
 
@@ -134,20 +134,20 @@ export default function UserList() {
       )}
 
       {/* Modals */}
-      <Modal open={modal === 'create' || !!modal?.edit} onClose={() => setModal(null)}
+      <FormPage open={modal === 'create' || !!modal?.edit} onClose={() => setModal(null)}
         title={modal === 'create' ? 'Create User' : 'Edit User'} size="md">
         {(modal === 'create' || modal?.edit) && (
           <UserForm user={modal?.edit || null} mode={modal === 'create' ? 'create' : 'edit'}
             onSuccess={() => { setModal(null); qc.invalidateQueries(['users']); }}
             onCancel={() => setModal(null)} />
         )}
-      </Modal>
+      </FormPage>
 
-      <Modal open={modal === 'invite'} onClose={() => setModal(null)} title="Send Invitation" size="md">
+      <FormPage open={modal === 'invite'} onClose={() => setModal(null)} title="Send Invitation" size="md">
         <UserForm mode="invite"
           onSuccess={() => { setModal(null); qc.invalidateQueries(['users']); }}
           onCancel={() => setModal(null)} />
-      </Modal>
+      </FormPage>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteMutation.mutate(deleteTarget._id)} loading={deleteMutation.isPending}

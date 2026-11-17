@@ -8,7 +8,7 @@ import { bookingsService } from '@/services/bookings.service';
 import { usePermission }   from '@/context/PermissionContext';
 import { getVoyageLabel }  from '@/utils/voyageLabel';
 import Badge         from '@/components/ui/Badge';
-import Modal         from '@/components/ui/Modal';
+import FormPage         from '@/components/ui/FormPage';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useState } from 'react';
 import BookingForm from '@/modules/bookings/BookingForm';
@@ -169,7 +169,7 @@ export default function BookingDetailCard({ booking, onMutated }) {
       </div>
 
       {/* Edit modal */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Edit Booking — ${booking.bookingNumber}`} size="lg">
+      <FormPage open={editOpen} onClose={() => setEditOpen(false)} title={`Edit Booking — ${booking.bookingNumber}`} size="lg">
         {editOpen && (
           <BookingForm
             item={booking}
@@ -182,7 +182,7 @@ export default function BookingDetailCard({ booking, onMutated }) {
             onCancel={() => setEditOpen(false)}
           />
         )}
-      </Modal>
+      </FormPage>
 
       <ConfirmDialog
         open={delOpen}

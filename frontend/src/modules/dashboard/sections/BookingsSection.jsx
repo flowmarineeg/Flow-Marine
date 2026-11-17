@@ -5,7 +5,7 @@ import { BookingCountsWidget, BookingStatusChartWidget } from '../widgets/Bookin
 export default function BookingsSection() {
   return (
     <section className="flex flex-col gap-3">
-      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Bookings</p>
+      <h2 className="section-title">Bookings</h2>
       <BookingCountsWidget />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1">

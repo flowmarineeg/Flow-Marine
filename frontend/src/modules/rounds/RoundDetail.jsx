@@ -9,7 +9,7 @@ import { showErrorToast } from '@/utils/errorToast';
 import { roundsService } from '@/services/rounds.service';
 import { usePermission } from '@/context/PermissionContext';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import RoundForm from '@/modules/rounds/RoundForm';
 import RoundVoyageList from '@/modules/rounds/RoundVoyageList';
 import RoundLegsPanel from '@/modules/rounds/RoundLegsPanel';
@@ -178,7 +178,7 @@ export default function RoundDetailPage({ roundId }) {
       {/* Sprint 053 V2 - financial close, partner settlement, reserve (flag-gated inside) */}
       <RoundAccountingPanel round={round} />
 
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Round" size="md">
+      <FormPage open={editOpen} onClose={() => setEditOpen(false)} title="Edit Round" size="md">
         {editOpen && (
           <RoundForm
             item={round}
@@ -190,7 +190,7 @@ export default function RoundDetailPage({ roundId }) {
             onCancel={() => setEditOpen(false)}
           />
         )}
-      </Modal>
+      </FormPage>
     </div>
   );
 }

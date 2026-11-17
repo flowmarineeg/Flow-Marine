@@ -9,7 +9,7 @@ import { getVoyageLabel } from '@/utils/voyageLabel';
 import { voyagesService } from '@/services/voyages.service';
 import { usePermission } from '@/context/PermissionContext';
 import Badge        from '@/components/ui/Badge';
-import Modal        from '@/components/ui/Modal';
+import FormPage        from '@/components/ui/FormPage';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import VoyageEditForm from '@/modules/voyages/VoyageEditForm';
 import VoyageAddForm  from '@/modules/voyages/VoyageAddForm';
@@ -293,7 +293,7 @@ export default function RoundVoyageList({ roundId, round }) {
       )}
 
       {/* ── Add Voyage Modal ─────────────────────────────────────────────── */}
-      <Modal
+      <FormPage
         open={addOpen}
         onClose={() => setAddOpen(false)}
         title="Add Voyage"
@@ -310,10 +310,10 @@ export default function RoundVoyageList({ roundId, round }) {
             onCancel={() => setAddOpen(false)}
           />
         )}
-      </Modal>
+      </FormPage>
 
       {/* ── Edit Voyage Modal ────────────────────────────────────────────── */}
-      <Modal
+      <FormPage
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
         title={`Edit Voyage — ${getVoyageLabel(editTarget) || ''}`}
@@ -330,7 +330,7 @@ export default function RoundVoyageList({ roundId, round }) {
             onCancel={() => setEditTarget(null)}
           />
         )}
-      </Modal>
+      </FormPage>
 
       {/* ── Delete Confirm ───────────────────────────────────────────────── */}
       <ConfirmDialog

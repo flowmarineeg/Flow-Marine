@@ -79,9 +79,9 @@ function SectionHeader({ icon: Icon, title, iconColor = 'text-teal-600', iconBg 
 
 // ── Booking status doughnut ───────────────────────────────────────────────────
 const BOOKING_COLORS = {
-  'Confirmed': '#0D9488',
+  'Confirmed': '#D9480F',
   'Pending': '#F59E0B',
-  'Final Loading': '#3B82F6',
+  'Final Loading': '#2A5C91',
   'Cancelled': '#F87171',
 };
 

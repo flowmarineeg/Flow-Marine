@@ -7,7 +7,7 @@ import { showErrorToast } from '@/utils/errorToast';
 import { roundsService } from '@/services/rounds.service';
 import { agentsService } from '@/services/agents.service';
 import { usePermission } from '@/context/PermissionContext';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import { LegRow, emptyLeg } from '@/modules/services/RouteEditor';
 
 const idOf = (v) => (v && typeof v === 'object' ? v._id : v) || '';
@@ -102,7 +102,7 @@ export default function RoundLegsPanel({ round }) {
         ))}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title={`Edit legs — ${round.roundNumber}`} size="xl">
+      <FormPage open={open} onClose={() => setOpen(false)} title={`Edit legs — ${round.roundNumber}`} size="xl">
         {open && (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-gray-500">
@@ -126,7 +126,7 @@ export default function RoundLegsPanel({ round }) {
             </div>
           </div>
         )}
-      </Modal>
+      </FormPage>
     </div>
   );
 }

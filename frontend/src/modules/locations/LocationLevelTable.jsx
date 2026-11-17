@@ -11,7 +11,7 @@ import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import LocationForm from './LocationForm';
 
 /**
@@ -111,7 +111,7 @@ export default function LocationLevelTable({
         )}
       </div>
 
-      <Modal
+      <FormPage
         open={!!modal}
         onClose={() => setModal(null)}
         title={modal === 'create' ? `New ${singular}` : `Edit ${singular}`}
@@ -125,7 +125,7 @@ export default function LocationLevelTable({
             onCancel={() => setModal(null)}
           />
         )}
-      </Modal>
+      </FormPage>
 
       <ConfirmDialog
         open={!!deleteTarget}

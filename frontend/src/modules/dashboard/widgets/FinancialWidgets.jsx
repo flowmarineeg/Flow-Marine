@@ -36,7 +36,7 @@ export function VoyageProfitabilityWidget() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Revenue</p>
-            <p className="text-sm font-bold text-teal-700">{fmtMoney(summary?.totalRevenue)}</p>
+            <p className="text-sm font-bold text-blue-800">{fmtMoney(summary?.totalRevenue)}</p>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Voyage Cost</p>
@@ -48,7 +48,7 @@ export function VoyageProfitabilityWidget() {
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Net Profit</p>
-            <p className={`text-sm font-bold ${(summary?.netProfit ?? 0) >= 0 ? 'text-teal-700' : 'text-red-600'}`}>{fmtMoney(summary?.netProfit)}</p>
+            <p className={`text-sm font-bold ${(summary?.netProfit ?? 0) >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmtMoney(summary?.netProfit)}</p>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Profit Margin</p>

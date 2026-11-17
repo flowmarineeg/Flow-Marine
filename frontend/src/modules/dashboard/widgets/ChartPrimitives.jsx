@@ -9,7 +9,7 @@ import { Chart } from 'chart.js';
 // PERF-006 targeted registration) — these components only construct
 // chart instances, they do not re-register anything.
 
-const PALETTE = ['#0D9488','#6366F1','#F59E0B','#EC4899','#10B981','#3B82F6','#8B5CF6'];
+const PALETTE = ['#0B2A4A','#D9480F','#2A5C91','#F57F3F','#5F83AB','#B33A0A','#8FAAC9']; // navy + orange family
 
 export function MonthlyTrendChart({ data }) {
   const ref      = useRef(null);
@@ -33,14 +33,14 @@ export function MonthlyTrendChart({ data }) {
         datasets: [
           {
             label: 'Revenue ($)', data: data.freight,
-            borderColor: '#0D9488', backgroundColor: 'rgba(13,148,136,0.12)',
-            borderWidth: 2.5, pointBackgroundColor: '#0D9488', pointRadius: 4,
+            borderColor: '#D9480F', backgroundColor: 'rgba(217,72,15,0.12)',
+            borderWidth: 2.5, pointBackgroundColor: '#D9480F', pointRadius: 4,
             fill: true, tension: 0.4, yAxisID: 'y',
           },
           {
             label: 'Booking Count', data: data.counts,
-            borderColor: '#6366F1', backgroundColor: 'rgba(99,102,241,0.08)',
-            borderWidth: 2, pointBackgroundColor: '#6366F1', pointRadius: 3,
+            borderColor: '#0B2A4A', backgroundColor: 'rgba(11,42,74,0.07)',
+            borderWidth: 2, pointBackgroundColor: '#0B2A4A', pointRadius: 3,
             fill: true, tension: 0.4, yAxisID: 'y1',
           },
         ],
@@ -53,7 +53,7 @@ export function MonthlyTrendChart({ data }) {
           tooltip: { callbacks: { label: ctx => ctx.datasetIndex === 0 ? ` Revenue: $${Number(ctx.raw).toLocaleString()}` : ` Bookings: ${ctx.raw}` } },
         },
         scales: {
-          y:  { type:'linear', position:'left',  beginAtZero:true, ticks:{ callback: v=>`$${(v/1000).toFixed(0)}k`, font:{size:11} }, grid:{color:'#F3F4F6'} },
+          y:  { type:'linear', position:'left',  beginAtZero:true, ticks:{ callback: v=>`$${(v/1000).toFixed(0)}k`, font:{size:11} }, grid:{color:'#E6EAF0'} },
           y1: { type:'linear', position:'right', beginAtZero:true, ticks:{ font:{size:11} }, grid:{drawOnChartArea:false} },
           x:  { ticks:{ font:{size:11} }, grid:{display:false} },
         },
@@ -88,7 +88,7 @@ export function RevenueBarChart({ data }) {
       options: {
         indexAxis:'y', responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:ctx=>` $${Number(ctx.raw).toLocaleString()}` } } },
-        scales:{ x:{ beginAtZero:true, ticks:{callback:v=>`$${(v/1000).toFixed(0)}k`, font:{size:11}}, grid:{color:'#F3F4F6'} }, y:{ ticks:{font:{size:11}}, grid:{display:false} } },
+        scales:{ x:{ beginAtZero:true, ticks:{callback:v=>`$${(v/1000).toFixed(0)}k`, font:{size:11}}, grid:{color:'#E6EAF0'} }, y:{ ticks:{font:{size:11}}, grid:{display:false} } },
       },
     });
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };

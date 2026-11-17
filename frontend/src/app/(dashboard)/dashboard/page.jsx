@@ -61,17 +61,17 @@ export default function DashboardPage() {
       <div className="animate-fadeIn flex flex-col gap-5">
 
         {/* Welcome */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800 tracking-tight">
+        <div className="dash-hero">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight m-0">
               {greeting()}, {user?.name?.split(' ')[0] || 'there'}
             </h1>
-            <p className="text-sm text-gray-400 mt-0.5">
+            <p className="text-sm mt-1 m-0" style={{ color: '#9DB4CF' }}>
               {new Date().toLocaleDateString('en-GB', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-full">
-            <MdAnchor className="w-3.5 h-3.5" />
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-white text-blue-800 px-3 py-1.5 rounded-full">
+            <MdAnchor className="w-3.5 h-3.5 text-teal-600" />
             {user?.roleId?.name || 'Operations'}
           </span>
         </div>

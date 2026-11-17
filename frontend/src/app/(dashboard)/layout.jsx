@@ -4,8 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { usePermission } from '@/context/PermissionContext';
-import Sidebar from '@/components/layout/Sidebar';
-import Header from '@/components/layout/Header';
+import TopBar from '@/components/layout/TopBar';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 // Ordered list of fallback routes for non-SuperAdmin users.
@@ -72,14 +71,11 @@ export default function DashboardLayout({ children }) {
   if (!isAuthenticated) return null;
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--surface)', overflow: 'clip' }}>
-      <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'clip' }}>
-        <Header />
-        <main className='max-w-[1680px]' style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-          {children}
-        </main>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--surface)', overflow: 'clip' }}>
+      <TopBar />
+      <main className='w-full max-w-[1680px] mx-auto p-3 sm:p-5 lg:p-6' style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        {children}
+      </main>
     </div>
   );
 }

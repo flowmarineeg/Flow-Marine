@@ -5,8 +5,8 @@ import CustomerForm from '@/modules/customers/CustomerForm';
 import { customersService, CUSTOMER_TYPES } from '@/services/customers.service';
 
 const TYPE_STYLES = {
-  'Commercial Agent':  { bg: '#DBEAFE', color: '#1E40AF' },
-  'NVOCC':             { bg: '#EDE9FE', color: '#5B21B6' },
+  'Commercial Agent':  { bg: '#DCE6F2', color: '#0B2A4A' },
+  'NVOCC':             { bg: '#EEF3F9', color: '#123A63' },
   'Freight Forwarder': { bg: '#FEF3C7', color: '#92400E' },
 };
 

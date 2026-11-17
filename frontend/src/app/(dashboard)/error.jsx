@@ -37,7 +37,7 @@ export default function DashboardError({ error, reset }) {
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={() => reset()} style={{
           padding: '8px 18px', borderRadius: 8, border: 'none',
-          background: '#0D9488', color: '#fff', fontWeight: 600,
+          background: '#D9480F', color: '#fff', fontWeight: 600,
           fontSize: 13, cursor: 'pointer',
         }}>
           Try again

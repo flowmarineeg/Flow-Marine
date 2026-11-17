@@ -15,7 +15,7 @@ import Badge from '@/components/ui/Badge';
 import Pagination from '@/components/ui/Pagination';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ExportButton from '@/components/ui/ExportButton';
 import Button from '@/components/ui/Button';
@@ -284,7 +284,7 @@ export default function VoyageList() {
       )}
 
       {/* Edit Modal */}
-      <Modal
+      <FormPage
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
         title={`Edit Voyage — ${getVoyageLabel(editTarget) || ''}`}
@@ -300,7 +300,7 @@ export default function VoyageList() {
             onCancel={() => setEditTarget(null)}
           />
         )}
-      </Modal>
+      </FormPage>
 
       {/* Delete confirm */}
       <ConfirmDialog

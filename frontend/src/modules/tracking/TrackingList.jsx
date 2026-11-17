@@ -13,7 +13,7 @@ import PageHeader            from '@/components/ui/PageHeader';
 import Pagination            from '@/components/ui/Pagination';
 import EmptyState            from '@/components/ui/EmptyState';
 import LoadingSpinner        from '@/components/ui/LoadingSpinner';
-import Modal                 from '@/components/ui/Modal';
+import FormPage                 from '@/components/ui/FormPage';
 import TrackingForm          from './TrackingForm';
 import TrackingDetailModal   from './TrackingDetailModal';
 import { getVoyageLabel } from '@/utils/voyageLabel';
@@ -277,7 +277,7 @@ export default function TrackingList() {
       )}
 
       {/* ── Add Tracking Modal ──────────────────────────────────────── */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Tracking Entry" size="lg">
+      <FormPage open={addOpen} onClose={() => setAddOpen(false)} title="Add Tracking Entry" size="lg">
         {addOpen && (
           <TrackingForm
             onEntryAdded={(voyageId) => {
@@ -286,7 +286,7 @@ export default function TrackingList() {
             }}
           />
         )}
-      </Modal>
+      </FormPage>
 
       {/* ── Entry Detail Modal ──────────────────────────────────────── */}
       <TrackingDetailModal

@@ -31,7 +31,7 @@ export default function QuickActionsWidget() {
           <button
             key={a.href}
             onClick={() => router.push(a.href)}
-            className="btn btn-secondary btn-sm"
+            className={`btn btn-sm ${a.href === '/bookings/new' ? 'btn-primary' : 'btn-secondary'}`}
           >
             {a.label}
           </button>

@@ -35,7 +35,7 @@ export default function GlobalError({ error, reset }) {
           <div style={{ display: 'flex', gap: 12 }}>
             <button onClick={() => reset()} style={{
               padding: '10px 20px', borderRadius: 8, border: 'none',
-              background: '#0D9488', color: '#fff', fontWeight: 600,
+              background: '#D9480F', color: '#fff', fontWeight: 600,
               fontSize: 14, cursor: 'pointer',
             }}>
               Try again

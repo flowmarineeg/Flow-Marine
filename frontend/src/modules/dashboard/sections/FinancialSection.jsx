@@ -5,7 +5,7 @@ import { VoyageProfitabilityWidget, TotalExpensesWidget } from '../widgets/Finan
 export default function FinancialSection() {
   return (
     <section className="flex flex-col gap-3">
-      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Financial</p>
+      <h2 className="section-title">Financial</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <VoyageProfitabilityWidget />
         <TotalExpensesWidget />

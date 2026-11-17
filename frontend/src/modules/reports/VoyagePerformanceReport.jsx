@@ -36,7 +36,7 @@ function VoyageFreightChart({ rows = [] }) {
         datasets: [{
           label: 'Freight (USD)',
           data,
-          backgroundColor: '#0D9488',
+          backgroundColor: '#D9480F',
           borderRadius: 4,
           borderSkipped: false,
         }],

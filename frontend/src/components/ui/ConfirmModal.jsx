@@ -45,9 +45,9 @@ export default function ConfirmModal({
   if (!open) return null;
 
   const colors = {
-    danger:  { icon: '#DC2626', iconBg: '#FEE2E2', btn: '#DC2626', btnHover: '#B91C1C' },
-    warning: { icon: '#D97706', iconBg: '#FEF3C7', btn: '#D97706', btnHover: '#B45309' },
-    info:    { icon: '#2563EB', iconBg: '#DBEAFE', btn: '#2563EB', btnHover: '#1D4ED8' },
+    danger:  { icon: '#C62828', iconBg: '#FBE4E4', btn: '#C62828', btnHover: '#A61F1F' },
+    warning: { icon: '#B45309', iconBg: '#FDF0D5', btn: '#0B2A4A', btnHover: '#123A63' },
+    info:    { icon: '#0B2A4A', iconBg: '#DCE6F2', btn: '#0B2A4A', btnHover: '#123A63' },
   };
   const c = colors[variant] || colors.danger;
 
@@ -76,8 +76,7 @@ export default function ConfirmModal({
         onClick={onCancel}
         style={{
           position: 'fixed', inset: 0, zIndex: 1000,
-          background: 'rgba(0,0,0,0.45)',
-          backdropFilter: 'blur(2px)',
+          background: 'rgba(11,42,74,0.55)',
           animation: 'fadeIn 0.15s ease',
         }}
       />
@@ -101,7 +100,8 @@ export default function ConfirmModal({
       >
         <div style={{
           background:   'var(--card)',
-          borderRadius: 16,
+          borderRadius: 12,
+          borderTop:    '4px solid var(--navy)',
           padding:      '28px 28px 24px',
           boxShadow:    '0 20px 60px rgba(0,0,0,0.25)',
           display:      'flex',

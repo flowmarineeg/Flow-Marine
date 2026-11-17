@@ -20,11 +20,11 @@ export default function ConfirmDialog({ open, onClose, onConfirm, title = 'Are y
         {/* Icon */}
         <div style={{
           width: 44, height: 44, borderRadius: 12,
-          background: '#FEE2E2', display: 'flex',
+          background: '#FBE4E4', display: 'flex',
           alignItems: 'center', justifyContent: 'center',
           marginBottom: 16,
         }}>
-          <svg width="20" height="20" fill="none" stroke="#DC2626" strokeWidth="2" viewBox="0 0 24 24">
+          <svg width="20" height="20" fill="none" stroke="#C62828" strokeWidth="2" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
         </div>

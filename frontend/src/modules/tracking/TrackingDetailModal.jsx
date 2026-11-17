@@ -1,6 +1,6 @@
 'use client';
 
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import { getVoyageLabel } from '@/utils/voyageLabel';
 
 const fmtDT = (d) => d
@@ -28,7 +28,7 @@ function InfoRow({ label, value }) {
 export default function TrackingDetailModal({ entry, open, onClose }) {
   if (!entry) return null;
   return (
-    <Modal open={open} onClose={onClose} title="Tracking Entry Detail" size="md">
+    <FormPage open={open} onClose={onClose} title="Tracking Entry Detail" size="md">
       <div className="flex flex-col gap-5">
 
         {/* Status + timestamp */}
@@ -92,6 +92,6 @@ export default function TrackingDetailModal({ entry, open, onClose }) {
           <p className="text-[11px] text-gray-400">Append-only record — tracking entries cannot be edited or deleted.</p>
         </div>
       </div>
-    </Modal>
+    </FormPage>
   );
 }

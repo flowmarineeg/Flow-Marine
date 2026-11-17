@@ -1,6 +1,6 @@
 export default function Button({
   children, type = 'button', variant = 'primary', size = 'md',
-  disabled = false, loading = false, onClick, className = '',
+  disabled = false, loading = false, onClick, className = '', style,
 }) {
   const sizes    = { sm: 'btn-sm', md: 'btn-md', lg: 'btn-lg' };
   const variants = {
@@ -16,6 +16,7 @@ export default function Button({
       type={type}
       disabled={disabled || loading}
       onClick={onClick}
+      style={style}
       className={`btn ${variants[variant] || 'btn-primary'} ${sizes[size] || 'btn-md'} ${className}`}
     >
       {loading && (

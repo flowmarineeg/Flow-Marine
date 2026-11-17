@@ -68,7 +68,7 @@ export function CapacityWarningsWidget() {
 
 const ACTION_STYLES = {
   CREATE: { bg: '#D1FAE5', color: '#065F46', label: 'Created' },
-  UPDATE: { bg: '#DBEAFE', color: '#1E40AF', label: 'Updated' },
+  UPDATE: { bg: '#DCE6F2', color: '#0B2A4A', label: 'Updated' },
   DELETE: { bg: '#FEE2E2', color: '#991B1B', label: 'Deleted' },
   LOGIN:  { bg: '#F3F4F6', color: '#374151', label: 'Login'   },
   LOGOUT: { bg: '#F3F4F6', color: '#374151', label: 'Logout'  },

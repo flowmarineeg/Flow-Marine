@@ -16,7 +16,7 @@ import ExportButton from '@/components/ui/ExportButton';
 
 const ACTION_STYLES = {
   CREATE: { bg: '#D1FAE5', color: '#065F46' },
-  UPDATE: { bg: '#DBEAFE', color: '#1E40AF' },
+  UPDATE: { bg: '#DCE6F2', color: '#0B2A4A' },
   DELETE: { bg: '#FEE2E2', color: '#991B1B' },
   LOGIN:  { bg: '#F1F5F9', color: '#475569' },
   LOGOUT: { bg: '#F1F5F9', color: '#475569' },

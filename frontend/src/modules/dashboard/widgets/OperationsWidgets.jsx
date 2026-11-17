@@ -98,7 +98,7 @@ export function FleetUtilisationWidget() {
               const colorClasses = {
                 red:   { bar: 'bg-red-500',   text: 'text-red-600',   bg: 'bg-red-50',   border: 'border-red-200' },
                 amber: { bar: 'bg-amber-400', text: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
-                green: { bar: 'bg-teal-500',  text: 'text-teal-600',  bg: 'bg-teal-50',  border: 'border-teal-200' },
+                green: { bar: 'bg-green-600', text: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200' },
                 gray:  { bar: 'bg-gray-300',  text: 'text-gray-500',  bg: 'bg-gray-50',  border: 'border-gray-200' },
               }[item.color] || { bar: 'bg-gray-300', text: 'text-gray-500', bg: 'bg-gray-50', border: 'border-gray-200' };
               const pct = Math.min(item.peakPct ?? 0, 100);

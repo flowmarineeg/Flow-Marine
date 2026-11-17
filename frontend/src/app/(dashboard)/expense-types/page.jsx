@@ -6,7 +6,7 @@ import { expenseTypesService } from '@/services/expenseTypes.service';
 import { EXPENSE_CATEGORIES } from '@/utils/constants';
 
 const CATEGORY_STYLES = {
-  'Port Expense':      { bg: '#DBEAFE', color: '#1E40AF' },
+  'Port Expense':      { bg: '#DCE6F2', color: '#0B2A4A' },
   'Operating Expense': { bg: '#FEF3C7', color: '#92400E' },
   'Other':             { bg: '#F1F5F9', color: '#475569' },
 };

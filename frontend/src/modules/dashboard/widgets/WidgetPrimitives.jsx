@@ -5,22 +5,30 @@
  * These hold no query, no filter-reading logic, and no navigation logic
  * of their own (Section 3.4) — they render whatever their owning Widget
  * already fetched.
+ *
+ * Restyle 2026-11-17: navy/orange system. Colour is reserved for meaning.
  */
 
-export function KpiCard({ icon: Icon, label, value, sub, iconBg, iconColor, loading, onClick }) {
+// iconBg / iconColor are accepted for API compatibility but ignored: every KPI
+// uses the same navy chip so colour carries status, not decoration.
+export function KpiCard({ icon: Icon, label, value, sub, loading, onClick }) {
+  const interactive = !!onClick;
   return (
     <div
-      className={`card p-4 flex items-center gap-4 ${onClick ? 'cursor-pointer hover:shadow-sm transition' : ''}`}
+      className={`card p-4 flex items-center gap-4 border-l-4 border-l-[var(--navy)] ${interactive ? 'cursor-pointer hover:border-l-[var(--teal)] hover:shadow-md transition' : ''}`}
       onClick={onClick}
+      role={interactive ? 'link' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={interactive ? (e) => { if (e.key === 'Enter') onClick(); } : undefined}
     >
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-        <Icon className={`text-xl ${iconColor}`} />
+      <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-100">
+        <Icon className="text-xl text-blue-800" />
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider truncate">{label}</p>
-        {loading ? <div className="h-6 w-16 bg-gray-100 rounded animate-pulse mt-1" />
-                 : <p className="text-xl font-bold text-gray-800 leading-tight">{value}</p>}
-        {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+        <p className="dash-label !mb-0 truncate">{label}</p>
+        {loading ? <div className="h-7 w-16 bg-gray-100 rounded animate-pulse mt-1" />
+                 : <p className="kpi-num text-2xl font-bold text-blue-800 leading-tight">{value}</p>}
+        {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -28,10 +36,10 @@ export function KpiCard({ icon: Icon, label, value, sub, iconBg, iconColor, load
 
 export function WidgetCard({ title, action, children, className = '' }) {
   return (
-    <div className={`card p-5 ${className}`}>
+    <div className={`card p-4 sm:p-5 ${className}`}>
       {(title || action) && (
-        <div className="flex items-center justify-between mb-4">
-          {title && <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">{title}</p>}
+        <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b-2 border-[var(--border)]">
+          {title && <h3 className="text-xs font-bold text-blue-800 uppercase tracking-widest m-0">{title}</h3>}
           {action}
         </div>
       )}
@@ -42,7 +50,7 @@ export function WidgetCard({ title, action, children, className = '' }) {
 
 export function WidgetEmptyState({ message }) {
   return (
-    <div className="flex items-center justify-center py-10 text-gray-300 text-sm text-center px-4">
+    <div className="flex items-center justify-center py-10 text-gray-500 text-sm text-center px-4">
       {message}
     </div>
   );
@@ -52,7 +60,7 @@ export function WidgetSkeleton({ rows = 3, height = 40 }) {
   return (
     <div className="flex flex-col gap-2">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="bg-gray-50 rounded-lg animate-pulse" style={{ height }} />
+        <div key={i} className="bg-gray-100 rounded-lg animate-pulse" style={{ height }} />
       ))}
     </div>
   );

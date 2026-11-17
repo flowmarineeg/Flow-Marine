@@ -11,7 +11,7 @@ import { ReportStatCard, ReportEmptyState, rsc, fmtMoney, fmtNum } from './repor
 Chart.register(...registerables);
 
 // ── Revenue Doughnut Chart ────────────────────────────────────────────────────
-const PALETTE = ['#0D9488','#6366F1','#F59E0B','#EC4899','#10B981','#3B82F6'];
+const PALETTE = ['#0B2A4A','#D9480F','#2A5C91','#F57F3F','#5F83AB','#B33A0A'];
 
 function RevenueDoughnut({ rows = [] }) {
   const canvasRef = useRef(null);

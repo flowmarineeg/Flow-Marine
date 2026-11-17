@@ -72,9 +72,9 @@ export default function SearchSelect({
               <li key={o.value}>
                 <button
                   type="button" onClick={() => pick(o.value)}
-                  style={{ width: '100%', textAlign: 'left', padding: '6px 8px', fontSize: 13, borderRadius: 6, background: String(o.value) === String(value) ? '#F0FDFA' : 'transparent' }}
+                  style={{ width: '100%', textAlign: 'left', padding: '6px 8px', fontSize: 13, borderRadius: 6, background: String(o.value) === String(value) ? '#FFF4ED' : 'transparent' }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = '#F9FAFB'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = String(o.value) === String(value) ? '#F0FDFA' : 'transparent'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = String(o.value) === String(value) ? '#FFF4ED' : 'transparent'; }}
                 >{o.label}</button>
               </li>
             ))}

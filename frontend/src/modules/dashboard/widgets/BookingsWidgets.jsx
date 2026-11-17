@@ -7,7 +7,7 @@ import { dashboardService } from '@/services/dashboard.service';
 import { KpiCard, WidgetCard, fmtNum } from './WidgetPrimitives';
 import { DoughnutChart } from './ChartPrimitives';
 
-const BOOKING_STATUS_COLORS = { Confirmed:'#0D9488', Pending:'#F59E0B', 'Final Loading':'#3B82F6', Cancelled:'#F87171' };
+const BOOKING_STATUS_COLORS = { Confirmed:'#2A5C91', Pending:'#B45309', 'Final Loading':'#0B2A4A', Cancelled:'#C62828' };
 
 // Sprint 039 — Bookings section reuses GET /dashboard/stats's existing
 // Tier 1 counts (both layers already counted separately there since

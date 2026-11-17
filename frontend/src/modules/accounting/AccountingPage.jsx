@@ -8,7 +8,7 @@ import { accountingService } from '@/services/accounting.service';
 import { usePermission } from '@/context/PermissionContext';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Modal from '@/components/ui/Modal';
+import FormPage from '@/components/ui/FormPage';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AccountForm from '@/modules/accounting/AccountForm';
@@ -160,9 +160,9 @@ function ChartTab() {
         Headers never take entries. Ledger posting accounts (4-digit) are fixed. Master data only: the ledger still posts to its 4-digit accounts; this 6-digit chart is used to pick revenue, expense, accrual and AR accounts.
       </p>
 
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.edit ? 'Edit Account' : 'New Account'} size="lg">
+      <FormPage open={!!modal} onClose={() => setModal(null)} title={modal?.edit ? 'Edit Account' : 'New Account'} size="lg">
         {modal && <AccountForm item={modal?.edit || null} defaultParentId={modal?.parentId ? String(modal.parentId) : ''} headers={headers} meta={meta} onSuccess={() => setModal(null)} onCancel={() => setModal(null)} />}
-      </Modal>
+      </FormPage>
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => del.mutate(deleteTarget._id)} loading={del.isPending}
         title="Delete account?" message={deleteTarget ? `Delete ${deleteTarget.code} — ${deleteTarget.name}? This is refused while it has child accounts, ledger lines or is used by a master (services, expense types, agents, customers).` : ''} />
     </div>

@@ -14,7 +14,7 @@ import EmptyState from '../ui/EmptyState';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import Pagination from '../ui/Pagination';
 import ConfirmDialog from '../ui/ConfirmDialog';
-import Modal from '../ui/Modal';
+import FormPage from '../ui/FormPage';
 
 export default function MasterTable({
   queryKey, module, title, subtitle,
@@ -187,7 +187,7 @@ export default function MasterTable({
       )}
 
       {/* Modal */}
-      <Modal
+      <FormPage
         open={!!modal}
         onClose={() => setModal(null)}
         title={modal === 'create' ? `New ${singularTitle}` : `Edit ${singularTitle}`}
@@ -200,7 +200,7 @@ export default function MasterTable({
             onCancel={() => setModal(null)}
           />
         )}
-      </Modal>
+      </FormPage>
 
       {/* Delete confirm */}
       <ConfirmDialog
