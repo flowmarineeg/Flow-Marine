@@ -77,6 +77,56 @@ const list = (r) => (Array.isArray(r.data) ? r.data : r.data?.items || r.data?.d
   const noCodePort = await admin.post('/locations/ports', { ...portBase, name: `E2E Port B ${RUN}` });
   expectStatus('port without a code still allowed (optional)', noCodePort, 201);
 
+  section('Locations: pagination, total, search, parent filter, max limit');
+  const shape = await admin.get('/locations/cities');
+  check('list shape: success + data[] + total + page + limit', shape.body?.success === true && Array.isArray(shape.data) && Number.isInteger(shape.body.total) && shape.body.page === 1 && shape.body.limit === 20, JSON.stringify({ t: shape.body?.total, p: shape.body?.page, l: shape.body?.limit }));
+  check('default page size is 20', list(shape).length === 20 && shape.body.total > 20, `got ${list(shape).length} of ${shape.body?.total}`);
+  const big = await admin.get('/locations/cities?limit=100');
+  check('limit=100 returns 100', list(big).length === 100 && big.body.limit === 100);
+  const over = await admin.get('/locations/cities?limit=5000');
+  check('limit above the max is capped at 100', list(over).length === 100 && over.body.limit === 100, `got ${list(over).length}/${over.body?.limit}`);
+  const zero = await admin.get('/locations/cities?limit=0&page=-3');
+  check('limit=0 / page=-3 fall back to 20 / 1', zero.body?.limit === 20 && zero.body?.page === 1 && list(zero).length === 20);
+  const lp1 = await admin.get('/locations/cities?limit=50&page=1'); const lp2 = await admin.get('/locations/cities?limit=50&page=2');
+  const ids1 = list(lp1).map((c) => c._id); const ids2 = list(lp2).map((c) => c._id);
+  check('page 2 does not overlap page 1', ids2.length === 50 && !ids2.some((i) => ids1.includes(i)));
+  const names = [...list(lp1), ...list(lp2)].map((c) => c.name);
+  check('sorted by name across pages (stable order)', names.every((n, i) => i === 0 || names[i - 1] <= n), 'order broke');
+  check('total is the same on every page', lp1.body.total === lp2.body.total && lp1.body.total > 100);
+  const lastPage = Math.ceil(lp1.body.total / 50); const last = await admin.get(`/locations/cities?limit=50&page=${lastPage}`);
+  check('last page holds the remainder', list(last).length === lp1.body.total - (lastPage - 1) * 50, `got ${list(last).length}`);
+  const past = await admin.get(`/locations/cities?limit=50&page=${lastPage + 5}`);
+  check('page past the end is empty but keeps the total', list(past).length === 0 && past.body.total === lp1.body.total);
+
+  const sJ = await admin.get('/locations/cities?search=jeddah&limit=100'); const sJu = await admin.get('/locations/cities?search=JEDDAH&limit=100');
+  check('search is case-insensitive and matches the name', sJ.body.total >= 1 && sJ.body.total === sJu.body.total && list(sJ).every((c) => /jeddah/i.test(c.name)), `total ${sJ.body.total}`);
+  check('search narrows the total', sJ.body.total < lp1.body.total);
+  check('search with regex characters is safe (no 500, no match)', (await admin.get('/locations/cities?search=' + encodeURIComponent('a.b(c['))).status === 200);
+  const byCode = await admin.get('/locations/ports?search=sajed');
+  check('port search matches the code', list(byCode).some((p) => p.code === 'SAJED'), `total ${byCode.body?.total}`);
+  const cCode = await admin.get('/locations/countries?search=eg');
+  check('country search matches name or code', list(cCode).some((c) => c.code === 'EG'));
+
+  const sa = list(await admin.get('/locations/countries?search=SA&limit=100')).find((c) => c.code === 'SA');
+  const saCities = await admin.get(`/locations/cities?countryId=${sa._id}&limit=100`);
+  check('city parent filter: every city is in that country', saCities.body.total > 0 && list(saCities).every((c) => String(c.countryId?._id) === String(sa._id)), `total ${saCities.body?.total}`);
+  check('parent filter changes the total', saCities.body.total < lp1.body.total);
+  const jedCity = list(await admin.get(`/locations/cities?countryId=${sa._id}&search=jeddah`))[0];
+  check('parent filter + search combine', !!jedCity && /jeddah/i.test(jedCity.name));
+  const jedPorts = await admin.get(`/locations/ports?cityId=${jedCity._id}`);
+  check('port parent filter (cityId)', jedPorts.body.total >= 1 && list(jedPorts).every((p) => String(p.cityId?._id) === String(jedCity._id)));
+  const saPorts = await admin.get(`/locations/ports?countryId=${sa._id}&limit=100`);
+  check('port parent filter (countryId)', saPorts.body.total >= jedPorts.body.total && list(saPorts).every((p) => String(p.countryId?._id) === String(sa._id)));
+  const anyTerm = list(await admin.get('/locations/terminals?limit=1'))[0];
+  const tFilt = await admin.get(`/locations/terminals?portId=${anyTerm.portId._id}`);
+  check('terminal parent filter (portId)', tFilt.body.total >= 1 && list(tFilt).every((t) => String(t.portId?._id) === String(anyTerm.portId._id)));
+  const tAll = await admin.get('/locations/terminals?limit=100');
+  check('terminals list paginated with a total', tAll.body.total === list(tAll).length || tAll.body.total > list(tAll).length);
+  expectStatus('invalid parent id is a 400, not a 500', await admin.get('/locations/cities?countryId=nope'), 400);
+  expectStatus('operator-style parent id is a 400', await admin.get('/locations/ports?cityId[$ne]=x'), 400);
+  const one = await admin.get(`/locations/cities/${jedCity._id}`);
+  check('a saved record loads by id (edit forms / pickers)', one.status === 200 && one.data?._id === jedCity._id);
+
   // ── container types ───────────────────────────────────────────────────────────
   section('Container types: ISO code, server-derived TEU factor');
   const isoUsed = new Set(list(await admin.get('/container-types?limit=100')).map((c) => c.isoCode));

@@ -5,7 +5,24 @@ const Country  = require('./country.model');
 const City     = require('./city.model');
 const Port     = require('./port.model');
 const Terminal = require('./terminal.model');
-const { escapeRegex } = require('../../utils/escapeRegex');
+const { coastalCountryError } = require('./coastal.logic');
+const { parsePaging, searchFilter, idParam, STABLE_SORT } = require('./paging.logic');
+
+// Paginated list: { items, total, page, limit }. Sorted by name then _id so pages are stable.
+const paged = async (Model, query, params, populate = []) => {
+  const { page, limit, skip } = parsePaging(params);
+  const [total, items] = await Promise.all([
+    Model.countDocuments(query),
+    populate.reduce((q, p) => q.populate(...p), Model.find(query)).sort(STABLE_SORT).skip(skip).limit(limit).lean(),
+  ]);
+  return { items, total, page, limit };
+};
+
+// Only sea / coastal locations are allowed (2026-11-19): a landlocked country, and any city or port under one, is refused.
+const assertCoastal = (country) => {
+  const msg = coastalCountryError(country);
+  if (msg) throw { status: 400, message: msg };
+};
 
 // RouteLeg module (Sprint 6) may not exist yet — guard against it safely
 const countRouteLegsReferencing = async (query) => {
@@ -22,16 +39,9 @@ const countRouteLegsReferencing = async (query) => {
 // COUNTRIES
 // ════════════════════════════════════════════════════════════════════════════
 
-const listCountries = async ({ search = '' } = {}) => {
-  const query = {};
-  if (search) {
-    const rx = escapeRegex(search);
-    query.$or = [
-      { name: { $regex: rx, $options: 'i' } },
-      { code: { $regex: rx, $options: 'i' } },
-    ];
-  }
-  return Country.find(query).sort({ name: 1 }).lean();
+const listCountries = async (params = {}) => {
+  const query = searchFilter(params.search, ['name', 'code']) || {};
+  return paged(Country, query, params);
 };
 
 const getCountryById = async (id) => {
@@ -42,6 +52,7 @@ const getCountryById = async (id) => {
 
 const createCountry = async (data, createdBy) => {
   const code = data.code.toUpperCase();
+  assertCoastal({ name: data.name, code });
   const exists = await Country.findOne({ $or: [{ name: data.name }, { code }] });
   if (exists) throw { status: 400, message: `Country with this name or code "${code}" already exists` };
   const country = await Country.create({ ...pickFields(Country, data), code, createdBy });
@@ -54,6 +65,7 @@ const updateCountry = async (id, data, updatedBy) => {
 
   const code = data.code ? data.code.toUpperCase() : country.code;
   const name = data.name || country.name;
+  if (code !== country.code) assertCoastal({ name, code }); // existing records stay editable; only a code change is checked
   const dup = await Country.findOne({ $or: [{ name }, { code }], _id: { $ne: id } });
   if (dup) throw { status: 400, message: `Country with this name or code "${code}" already exists` };
 
@@ -76,11 +88,11 @@ const deleteCountry = async (id) => {
 // CITIES
 // ════════════════════════════════════════════════════════════════════════════
 
-const listCities = async ({ countryId = '', search = '' } = {}) => {
-  const query = {};
+const listCities = async (params = {}) => {
+  const query = { ...(searchFilter(params.search, ['name']) || {}) };
+  const countryId = idParam(params.countryId, 'country');
   if (countryId) query.countryId = countryId;
-  if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
-  return City.find(query).populate('countryId', 'name code localCurrency').sort({ name: 1 }).lean();
+  return paged(City, query, params, [['countryId', 'name code localCurrency']]);
 };
 
 const getCityById = async (id) => {
@@ -92,6 +104,7 @@ const getCityById = async (id) => {
 const createCity = async (data, createdBy) => {
   const country = await Country.findOne({ _id: data.countryId });
   if (!country) throw { status: 400, message: 'Selected country does not exist' };
+  assertCoastal(country);
 
   const exists = await City.findOne({ name: data.name, countryId: data.countryId });
   if (exists) throw { status: 400, message: `City "${data.name}" already exists in this country` };
@@ -108,6 +121,7 @@ const updateCity = async (id, data, updatedBy) => {
   if (data.countryId) {
     const country = await Country.findOne({ _id: countryId });
     if (!country) throw { status: 400, message: 'Selected country does not exist' };
+    if (String(countryId) !== String(city.countryId)) assertCoastal(country);
   }
 
   const name = data.name || city.name;
@@ -133,22 +147,13 @@ const deleteCity = async (id) => {
 // PORTS
 // ════════════════════════════════════════════════════════════════════════════
 
-const listPorts = async ({ cityId = '', countryId = '', search = '' } = {}) => {
-  const query = {};
+const listPorts = async (params = {}) => {
+  const query = { ...(searchFilter(params.search, ['name', 'code']) || {}) };
+  const cityId = idParam(params.cityId, 'city');
+  const countryId = idParam(params.countryId, 'country');
   if (cityId) query.cityId = cityId;
   if (countryId) query.countryId = countryId;
-  if (search) {
-    const rx = escapeRegex(search);
-    query.$or = [
-      { name: { $regex: rx, $options: 'i' } },
-      { code: { $regex: rx, $options: 'i' } },
-    ];
-  }
-  return Port.find(query)
-    .populate('cityId', 'name')
-    .populate('countryId', 'name code localCurrency')
-    .sort({ name: 1 })
-    .lean();
+  return paged(Port, query, params, [['cityId', 'name'], ['countryId', 'name code localCurrency']]);
 };
 
 const getPortById = async (id) => {
@@ -166,6 +171,7 @@ const createPort = async (data, createdBy) => {
   if (String(city.countryId) !== String(data.countryId)) {
     throw { status: 400, message: 'Selected city does not belong to the selected country' };
   }
+  assertCoastal(await Country.findOne({ _id: city.countryId }).lean());
 
   const exists = await Port.findOne({ name: data.name, cityId: data.cityId });
   if (exists) throw { status: 400, message: `Port "${data.name}" already exists in this city` };
@@ -187,6 +193,7 @@ const updatePort = async (id, data, updatedBy) => {
     if (String(city.countryId) !== String(countryId)) {
       throw { status: 400, message: 'Selected city does not belong to the selected country' };
     }
+    if (String(cityId) !== String(port.cityId)) assertCoastal(await Country.findOne({ _id: city.countryId }).lean());
   }
 
   const name = data.name || port.name;
@@ -218,11 +225,11 @@ const deletePort = async (id) => {
 // TERMINALS
 // ════════════════════════════════════════════════════════════════════════════
 
-const listTerminals = async ({ portId = '', search = '' } = {}) => {
-  const query = {};
+const listTerminals = async (params = {}) => {
+  const query = { ...(searchFilter(params.search, ['name']) || {}) };
+  const portId = idParam(params.portId, 'port');
   if (portId) query.portId = portId;
-  if (search) query.name = { $regex: escapeRegex(search), $options: 'i' };
-  return Terminal.find(query).populate('portId', 'name code').sort({ name: 1 }).lean();
+  return paged(Terminal, query, params, [['portId', 'name code']]);
 };
 
 const getTerminalById = async (id) => {

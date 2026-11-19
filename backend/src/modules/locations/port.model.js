@@ -15,7 +15,9 @@ const portSchema = new mongoose.Schema(
 );
 
 portSchema.index({ name: 1, cityId: 1 }, { unique: true });
-portSchema.index({ cityId: 1 });
-portSchema.index({ countryId: 1 });
+portSchema.index({ cityId: 1, name: 1, _id: 1 }); // parent filters + stable paging order (replace the plain cityId / countryId indexes)
+portSchema.index({ countryId: 1, name: 1, _id: 1 });
+portSchema.index({ name: 1, _id: 1 });
+portSchema.index({ code: 1 });
 
 module.exports = mongoose.model('Port', portSchema);

@@ -115,6 +115,29 @@ const DEPENDENTS = {
     { model: 'ManualBooking',    field: 'polId', label: 'estimated bookings (loading port)' },
     { model: 'ManualBooking',    field: 'podId', label: 'estimated bookings (discharge port)' },
     { model: 'Round',            field: 'routeSnapshot.legs.portId', label: 'rounds (route snapshot)' },
+    { model: 'Voyage',           field: 'portCalls.portId', label: 'voyages (port calls)' },     // locations cleanup 2026-11-19
+    { model: 'Expense',          field: 'portId', label: 'expenses' },
+    { model: 'TrackingHistory',  field: 'portId', label: 'tracking entries' },
+    { model: 'Agent',            field: 'portId', label: 'vessels/agents' },
+    { model: 'RouteLeg',         field: 'portId', label: 'route legs' },
+  ],
+  // Locations cleanup 2026-11-19: used by backend/scripts/clean-coastal-locations.js (children are checked by the script).
+  country: [
+    { model: 'RouteLeg',         field: 'countryId', label: 'route legs' },
+    { model: 'Agent',            field: 'countryId', label: 'vessels/agents' },
+    { model: 'TrackingHistory',  field: 'countryId', label: 'tracking entries' },
+    { model: 'Round',            field: 'routeSnapshot.legs.countryId', label: 'rounds (route snapshot)' },
+  ],
+  city: [
+    { model: 'RouteLeg',         field: 'cityId', label: 'route legs' },
+    { model: 'Agent',            field: 'cityId', label: 'vessels/agents' },
+    { model: 'TrackingHistory',  field: 'cityId', label: 'tracking entries' },
+    { model: 'Round',            field: 'routeSnapshot.legs.cityId', label: 'rounds (route snapshot)' },
+  ],
+  terminal: [
+    { model: 'RouteLeg',         field: 'terminalId', label: 'route legs' },
+    { model: 'TrackingHistory',  field: 'terminalId', label: 'tracking entries' },
+    { model: 'Round',            field: 'routeSnapshot.legs.terminalId', label: 'rounds (route snapshot)' },
   ],
 };
 

@@ -13,6 +13,7 @@ const terminalSchema = new mongoose.Schema(
 );
 
 terminalSchema.index({ name: 1, portId: 1 }, { unique: true });
-terminalSchema.index({ portId: 1 });
+terminalSchema.index({ portId: 1, name: 1, _id: 1 }); // parent filter + stable paging order (replaces the plain portId index)
+terminalSchema.index({ name: 1, _id: 1 });
 
 module.exports = mongoose.model('Terminal', terminalSchema);

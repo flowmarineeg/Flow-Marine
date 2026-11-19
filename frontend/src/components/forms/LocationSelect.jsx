@@ -1,12 +1,10 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { locationsService } from '@/services/locations.service';
-import SearchSelect from '../ui/SearchSelect';
+import LocationPicker from './LocationPicker';
 
 /**
  * Reusable cascading location picker: Country -> City -> Port -> Terminal.
- * Selecting a parent clears all child selections.
+ * Selecting a parent clears all child selections. Each level is searchable and loads on type (20 per request).
  * Reused in RouteLegs, Booking, and Tracking forms.
  */
 export default function LocationSelect({
@@ -18,29 +16,6 @@ export default function LocationSelect({
 }) {
   const { countryId = '', cityId = '', portId = '', terminalId = '' } = value;
 
-  const { data: countries } = useQuery({
-    queryKey: ['locationSelect', 'countries'],
-    queryFn:  () => locationsService.getCountries().then(r => r.data.data),
-  });
-
-  const { data: cities } = useQuery({
-    queryKey: ['locationSelect', 'cities', countryId],
-    queryFn:  () => locationsService.getCities({ countryId }).then(r => r.data.data),
-    enabled:  !!countryId,
-  });
-
-  const { data: ports } = useQuery({
-    queryKey: ['locationSelect', 'ports', cityId],
-    queryFn:  () => locationsService.getPorts({ cityId }).then(r => r.data.data),
-    enabled:  !!cityId,
-  });
-
-  const { data: terminals } = useQuery({
-    queryKey: ['locationSelect', 'terminals', portId],
-    queryFn:  () => locationsService.getTerminals({ portId }).then(r => r.data.data),
-    enabled:  !!portId && showTerminal,
-  });
-
   const handleCountryChange = (v) => { onChange({ countryId: v, cityId: '', portId: '', terminalId: '' }); };
   const handleCityChange = (v) => { onChange({ countryId, cityId: v, portId: '', terminalId: '' }); };
   const handlePortChange = (v) => { onChange({ countryId, cityId, portId: v, terminalId: '' }); };
@@ -48,34 +23,30 @@ export default function LocationSelect({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <SearchSelect
-        label="Country" required={required} disabled={disabled}
+      <LocationPicker
+        level="country" label="Country" required={required} disabled={disabled}
         value={countryId} onChange={handleCountryChange}
-        options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))}
-        placeholder="Select country…"
+        placeholder="Select country…" searchPlaceholder="Search country…"
       />
       {countryId && (
-        <SearchSelect
-          label="City" required={required} disabled={disabled}
-          value={cityId} onChange={handleCityChange}
-          options={(cities || []).map(c => ({ value: c._id, label: c.name }))}
-          placeholder="Select city…"
+        <LocationPicker
+          level="city" label="City" required={required} disabled={disabled}
+          value={cityId} onChange={handleCityChange} parent={{ countryId }}
+          placeholder="Select city…" searchPlaceholder="Search city…"
         />
       )}
       {cityId && (
-        <SearchSelect
-          label="Port" required={required} disabled={disabled}
-          value={portId} onChange={handlePortChange}
-          options={(ports || []).map(p => ({ value: p._id, label: p.name }))}
-          placeholder="Select port…"
+        <LocationPicker
+          level="port" label="Port" required={required} disabled={disabled}
+          value={portId} onChange={handlePortChange} parent={{ cityId }}
+          placeholder="Select port…" searchPlaceholder="Search port…"
         />
       )}
       {showTerminal && portId && (
-        <SearchSelect
-          label="Terminal" disabled={disabled}
-          value={terminalId} onChange={handleTerminalChange}
-          options={(terminals || []).map(t => ({ value: t._id, label: t.name }))}
-          placeholder="Select terminal (optional)…"
+        <LocationPicker
+          level="terminal" label="Terminal" disabled={disabled}
+          value={terminalId} onChange={handleTerminalChange} parent={{ portId }}
+          placeholder="Select terminal (optional)…" searchPlaceholder="Search terminal…"
         />
       )}
     </div>

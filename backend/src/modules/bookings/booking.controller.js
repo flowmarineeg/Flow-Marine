@@ -3,6 +3,7 @@
 const bookingService = require('./booking.service');
 const voyageService  = require('./bookingVoyage.service');
 const lookups        = require('./bookingLookups.service');
+const summary        = require('./bookingSummary.service');
 const { scopeOf }    = require('./partnerScope');
 const { success, created, error, paginate } = require('../../utils/responseHelper');
 
@@ -14,6 +15,15 @@ const list = async (req, res, next) => {
     const { page = 1, limit = 20, search = '', voyageId = '', agentId = '', roundId = '', partnerId = '', status = '', dateFrom = '', dateTo = '', dischargeStatus = '' } = req.query;
     const { data, total } = await bookingService.list({ page, limit, search, voyageId, agentId, roundId, partnerId, status, dateFrom, dateTo, dischargeStatus }, scopeOf(req.user));
     return success(res, data, 'Bookings retrieved', 200, paginate(total, page, limit));
+  } catch (err) { fail(res, next, err); }
+};
+
+// GET /bookings/voyage-summary?tab=estimated|operational|discharged|remaining&roundId=&agentId=&partnerId=&status=&search=&page=&limit=
+// One row per voyage with bookings of that kind: round, voyage, bookings, total freight, total TEU.
+const voyageSummary = async (req, res, next) => {
+  try {
+    const { data, total, page, limit } = await summary.voyageSummary(req.query, scopeOf(req.user));
+    return success(res, data, 'Voyage summary retrieved', 200, paginate(total, page, limit));
   } catch (err) { fail(res, next, err); }
 };
 
@@ -90,4 +100,4 @@ const exportDischargeList = async (req, res, next) => {
   } catch (err) { fail(res, next, err); }
 };
 
-module.exports = { list, getById, getVoyagePorts, create, update, remove, resolveVoyage, getLookups, dischargeList, exportDischargeList };
+module.exports = { list, voyageSummary, getById, getVoyagePorts, create, update, remove, resolveVoyage, getLookups, dischargeList, exportDischargeList };

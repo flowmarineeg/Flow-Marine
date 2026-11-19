@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
-import { voyagesService }   from '@/services/voyages.service';
 import { useRounds }        from '@/hooks/useRounds';
 import { useBookingLookups } from '@/hooks/useBookingLookups';
 import { usePermission }    from '@/context/PermissionContext';
@@ -23,10 +22,24 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import FormPage         from '@/components/ui/FormPage';
 import ExportButton  from '@/components/ui/ExportButton';
 import BookingForm   from '@/modules/bookings/BookingForm';
+import BookingVoyageList from '@/modules/bookings/BookingVoyageList';
 import DischargeListExportModal from '@/modules/bookings/DischargeListExportModal';
 
 const fmt      = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
+
+/** "← Voyages / round / voyage" bar shown above the bookings of an opened voyage. */
+function VoyageCrumb({ drill, onBack }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 mb-3 text-[13px]">
+      <button type="button" onClick={onBack} className="font-semibold text-teal-600 hover:text-teal-800 transition">← Voyages</button>
+      <span className="text-gray-300">/</span>
+      <span className="text-gray-600">{drill.roundNumber}{drill.roundName ? ` — ${drill.roundName}` : ''}</span>
+      <span className="text-gray-300">/</span>
+      <span className="mono font-semibold text-gray-800">{getVoyageLabel(drill)}{drill.voyageName ? ` (${drill.voyageNumber})` : ''}</span>
+    </div>
+  );
+}
 
 export default function BookingList() {
   const router  = useRouter();
@@ -38,9 +51,9 @@ export default function BookingList() {
   const [search,       setSearch]       = useState('');
   const [status,       setStatus]       = useState('');
   const [roundId,      setRoundId]      = useState('');
-  const [voyageId,     setVoyageId]     = useState('');
   const [agentId,      setAgentId]      = useState('');
   const [partnerId,    setPartnerId]    = useState(''); // staff filter: bookings given to us by a partner
+  const [drill,        setDrill]        = useState(null); // the voyage row opened from the voyage list (null = voyage list)
   const [selected,     setSelected]     = useState([]);
   const [modal,        setModal]        = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -65,15 +78,17 @@ export default function BookingList() {
     setPrevActiveTab(activeTab);
     setSelected([]);
     setManualSelected([]);
+    setDrill(null); // every tab starts at its voyage rows
   }
 
   // Layer 2 — 'detail' (Operational), 'discharged' and 'remaining' (Sprint 045) all
   // share this same query/table, just scoped by dischargeStatus.
   const dischargeStatusParam = activeTab === 'discharged' ? 'Discharged' : activeTab === 'remaining' ? 'Remaining' : '';
+  const drillId = drill?.voyageId || '';
   const { data, isLoading } = useQuery({
-    queryKey: ['bookings', page, search, status, roundId, voyageId, agentId, partnerId, dischargeStatusParam],
-    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, roundId, voyageId, agentId, partnerId, dischargeStatus: dischargeStatusParam }).then(r => r.data),
-    enabled:  ['detail', 'discharged', 'remaining'].includes(activeTab),
+    queryKey: ['bookings', page, search, status, drillId, agentId, partnerId, dischargeStatusParam],
+    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, voyageId: drillId, agentId, partnerId, dischargeStatus: dischargeStatusParam }).then(r => r.data),
+    enabled:  ['detail', 'discharged', 'remaining'].includes(activeTab) && !!drillId,
   });
 
   // Layer 1 — Manual Bookings
@@ -81,13 +96,12 @@ export default function BookingList() {
   const [manualSearch,   setManualSearch]   = useState('');
   const [manualStatus,   setManualStatus]   = useState('');
   const [manualRoundId,  setManualRoundId]  = useState(''); // Sprint 030
-  const [manualVoyageId, setManualVoyageId] = useState(''); // Sprint 030
   const [manualAgentId,  setManualAgentId]  = useState('');
 
   const { data: manualData, isLoading: manualLoading } = useQuery({
-    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, manualRoundId, manualVoyageId, manualAgentId, partnerId],
-    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, roundId: manualRoundId, voyageId: manualVoyageId, agentId: manualAgentId, partnerId }).then(r => r.data),
-    enabled:  activeTab === 'manual',
+    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, drillId, manualAgentId, partnerId],
+    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, voyageId: drillId, agentId: manualAgentId, partnerId }).then(r => r.data),
+    enabled:  activeTab === 'manual' && !!drillId,
   });
 
   // Sprint 030: Round → Voyage cascading filters (both tabs)
@@ -97,18 +111,6 @@ export default function BookingList() {
   const isPartnerUser = lookups.isPartnerUser;
   const { rounds: staffRounds } = useRounds({}, { enabled: !isPartnerUser });
   const rounds = isPartnerUser ? lookups.rounds : staffRounds;
-  const { data: voyageData } = useQuery({
-    queryKey: ['voyages-dropdown', roundId],
-    queryFn:  () => voyagesService.list({ roundId, limit: 200 }).then(r => r.data.data),
-    enabled:  !!roundId && !isPartnerUser,
-  });
-  const { data: manualVoyageData } = useQuery({
-    queryKey: ['voyages-dropdown', manualRoundId],
-    queryFn:  () => voyagesService.list({ roundId: manualRoundId, limit: 200 }).then(r => r.data.data),
-    enabled:  !!manualRoundId && !isPartnerUser,
-  });
-  const voyages       = voyageData       || [];
-  const manualVoyages = manualVoyageData || [];
   const agents        = lookups.agents;
   const partners      = lookups.partners;
 
@@ -255,14 +257,10 @@ export default function BookingList() {
           <div className="flex-1 min-w-[200px]">
             <SearchBar value={search} onChange={v => { setSearch(v); setPage(1); setSelected([]); }} placeholder="Search booking no, shipper, consignee…" />
           </div>
-          <select value={roundId} onChange={e => { setRoundId(e.target.value); setVoyageId(''); setPage(1); }} className={sc}>
-            <option value="">All Rounds</option>
-            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
-          </select>
-          {!isPartnerUser && (
-            <select value={voyageId} onChange={e => { setVoyageId(e.target.value); setPage(1); }} disabled={!roundId} className={`${sc} disabled:opacity-50`}>
-              <option value="">{roundId ? 'All Voyages' : 'Select a round first'}</option>
-              {voyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
+          {!drill && (
+            <select value={roundId} onChange={e => { setRoundId(e.target.value); setPage(1); }} className={sc}>
+              <option value="">All Rounds</option>
+              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
             </select>
           )}
           <select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} className={sc}>
@@ -279,7 +277,7 @@ export default function BookingList() {
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          {!isPartnerUser && <ExportButton module="bookings" filters={{ voyageId, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />}
+          {!isPartnerUser && <ExportButton module="bookings" filters={{ voyageId: drillId, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />}
           {/* Sprint 047 — bulk delete */}
           {selected.length > 0 && can('bookings', 'delete') && (
             <Button variant="danger" size="sm" onClick={() => setBulkConfirm(true)}>
@@ -299,6 +297,16 @@ export default function BookingList() {
             </button>
           )}
         </div>
+
+        {!drill ? (
+          <BookingVoyageList
+            key={`${activeTab}|${search}|${roundId}|${agentId}|${partnerId}|${status}`}
+            tab={activeTab === 'detail' ? 'operational' : activeTab}
+            filters={{ search, roundId, agentId, partnerId, status }}
+            onOpen={setDrill}
+          />
+        ) : (<>
+        <VoyageCrumb drill={drill} onBack={() => setDrill(null)} />
 
         {/* Table — overflow-x-auto clips the table, min-w-0 on the card prevents page blowout */}
         <div className="card overflow-hidden min-w-0">
@@ -393,6 +401,7 @@ export default function BookingList() {
             <Pagination page={pagination.page} totalPages={pagination.totalPages} onPageChange={setPage} />
           </div>
         )}
+        </>)}
       </>)}
 
       {/* ── MANUAL TAB ─────────────────────────────────────────────── */}
@@ -403,14 +412,10 @@ export default function BookingList() {
           <div className="flex-1 min-w-[200px]">
             <SearchBar value={manualSearch} onChange={v => { setManualSearch(v); setManualPage(1); }} placeholder="Search MB-number…" />
           </div>
-          <select value={manualRoundId} onChange={e => { setManualRoundId(e.target.value); setManualVoyageId(''); setManualPage(1); }} className={sc}>
-            <option value="">All Rounds</option>
-            {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
-          </select>
-          {!isPartnerUser && (
-            <select value={manualVoyageId} onChange={e => { setManualVoyageId(e.target.value); setManualPage(1); }} disabled={!manualRoundId} className={`${sc} disabled:opacity-50`}>
-              <option value="">{manualRoundId ? 'All Voyages' : 'Select a round first'}</option>
-              {manualVoyages.map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
+          {!drill && (
+            <select value={manualRoundId} onChange={e => { setManualRoundId(e.target.value); setManualPage(1); }} className={sc}>
+              <option value="">All Rounds</option>
+              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
             </select>
           )}
           <select value={manualAgentId} onChange={e => { setManualAgentId(e.target.value); setManualPage(1); }} className={sc}>
@@ -421,7 +426,7 @@ export default function BookingList() {
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          {!isPartnerUser && <ExportButton module="manualBookings" filters={{ voyageId: manualVoyageId, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />}
+          {!isPartnerUser && <ExportButton module="manualBookings" filters={{ voyageId: drillId, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />}
           {/* Sprint 047 — bulk delete */}
           {manualSelected.length > 0 && can('bookings', 'delete') && (
             <Button variant="danger" size="sm" onClick={() => setManualBulkConfirm(true)}>
@@ -429,6 +434,16 @@ export default function BookingList() {
             </Button>
           )}
         </div>
+
+        {!drill ? (
+          <BookingVoyageList
+            key={`manual|${manualSearch}|${manualRoundId}|${manualAgentId}|${partnerId}|${manualStatus}`}
+            tab="estimated"
+            filters={{ search: manualSearch, roundId: manualRoundId, agentId: manualAgentId, partnerId, status: manualStatus }}
+            onOpen={setDrill}
+          />
+        ) : (<>
+        <VoyageCrumb drill={drill} onBack={() => setDrill(null)} />
 
         <div className="card overflow-hidden min-w-0">
           {manualLoading ? (
@@ -492,6 +507,7 @@ export default function BookingList() {
             <Pagination page={manualData.pagination.page} totalPages={manualData.pagination.totalPages} onPageChange={setManualPage} />
           </div>
         )}
+        </>)}
       </>)}
 
       {/* ── Create / Edit Modal ─────────────────────────────────────── */}

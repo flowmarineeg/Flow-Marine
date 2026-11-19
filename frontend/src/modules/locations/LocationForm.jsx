@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { locationsService } from '@/services/locations.service';
 import Input from '@/components/ui/Input';
-import SearchSelect from '@/components/ui/SearchSelect';
+import LocationPicker from '@/components/forms/LocationPicker';
 import Button from '@/components/ui/Button';
 
 const CREATE_FN = {
@@ -44,24 +44,6 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
     }
   }, [item]);
 
-  const { data: countries } = useQuery({
-    queryKey: ['locationForm', 'countries'],
-    queryFn:  () => locationsService.getCountries().then(r => r.data.data),
-    enabled:  level === 'city' || level === 'port',
-  });
-
-  const { data: cities } = useQuery({
-    queryKey: ['locationForm', 'cities', selectedCountryId],
-    queryFn:  () => locationsService.getCities({ countryId: selectedCountryId }).then(r => r.data.data),
-    enabled:  level === 'port' && !!selectedCountryId,
-  });
-
-  const { data: ports } = useQuery({
-    queryKey: ['locationForm', 'ports'],
-    queryFn:  () => locationsService.getPorts().then(r => r.data.data),
-    enabled:  level === 'terminal',
-  });
-
   const mutation = useMutation({
     mutationFn: (data) => isEdit ? UPDATE_FN[level](item._id, data) : CREATE_FN[level](data),
     onSuccess:  () => { toast.success(`${level.charAt(0).toUpperCase() + level.slice(1)} ${isEdit ? 'updated' : 'created'}`); onSuccess?.(); },
@@ -80,36 +62,37 @@ export default function LocationForm({ level, item = null, onSuccess, onCancel }
       {level === 'port' && (
         <Controller name="countryId" control={control} rules={{ required: 'Country is required' }}
           render={({ field }) => (
-            <SearchSelect id="countryId" label="Country" required value={field.value || ''}
-              onChange={(v) => { field.onChange(v);setValue('cityId', ''); }}
-              options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))} error={errors.countryId?.message} placeholder="Select country…" />
+            <LocationPicker id="countryId" level="country" label="Country" required value={field.value || ''}
+              onChange={(v) => { field.onChange(v); setValue('cityId', ''); }}
+              error={errors.countryId?.message} placeholder="Select country…" searchPlaceholder="Search country…" />
           )} />
       )}
 
       {level === 'city' && (
         <Controller name="countryId" control={control} rules={{ required: 'Country is required' }}
           render={({ field }) => (
-            <SearchSelect id="countryId" label="Country" required value={field.value || ''}
+            <LocationPicker id="countryId" level="country" label="Country" required value={field.value || ''}
               onChange={(v) => { field.onChange(v); }}
-              options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))} error={errors.countryId?.message} placeholder="Select country…" />
+              error={errors.countryId?.message} placeholder="Select country…" searchPlaceholder="Search country…" />
           )} />
       )}
 
       {level === 'port' && (
         <Controller name="cityId" control={control} rules={{ required: 'City is required' }}
           render={({ field }) => (
-            <SearchSelect id="cityId" label="City" required disabled={!selectedCountryId} value={field.value || ''}
+            <LocationPicker id="cityId" level="city" label="City" required value={field.value || ''}
+              parent={{ countryId: selectedCountryId }} disabled={!selectedCountryId}
               onChange={(v) => { field.onChange(v); }}
-              options={(cities || []).map(c => ({ value: c._id, label: c.name }))} error={errors.cityId?.message} placeholder="Select city…" />
+              error={errors.cityId?.message} placeholder="Select city…" searchPlaceholder="Search city…" />
           )} />
       )}
 
       {level === 'terminal' && (
         <Controller name="portId" control={control} rules={{ required: 'Port is required' }}
           render={({ field }) => (
-            <SearchSelect id="portId" label="Port" required value={field.value || ''}
+            <LocationPicker id="portId" level="port" label="Port" required value={field.value || ''}
               onChange={(v) => { field.onChange(v); }}
-              options={(ports || []).map(p => ({ value: p._id, label: p.name }))} error={errors.portId?.message} placeholder="Select port…" />
+              error={errors.portId?.message} placeholder="Select port…" searchPlaceholder="Search port…" />
           )} />
       )}
 

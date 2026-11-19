@@ -5,3 +5,5 @@ src/uploads/*
 !src/uploads/.gitkeep
 *.log
 .claude
+
+backups/

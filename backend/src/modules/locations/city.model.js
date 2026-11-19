@@ -13,6 +13,7 @@ const citySchema = new mongoose.Schema(
 );
 
 citySchema.index({ name: 1, countryId: 1 }, { unique: true });
-citySchema.index({ countryId: 1 });
+citySchema.index({ countryId: 1, name: 1, _id: 1 }); // parent filter + stable paging order (replaces the plain countryId index)
+citySchema.index({ name: 1, _id: 1 });
 
 module.exports = mongoose.model('City', citySchema);

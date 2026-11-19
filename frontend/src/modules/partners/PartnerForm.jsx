@@ -7,9 +7,8 @@ import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { partnersService } from '@/services/partners.service';
 import Button from '@/components/ui/Button';
-import SearchSelect from '@/components/ui/SearchSelect';
+import LocationPicker from '@/components/forms/LocationPicker';
 import BankAccountsRows, { cleanBankAccounts } from '@/components/forms/BankAccountsRows';
-import { locationsService } from '@/services/locations.service';
 
 const LABEL = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
 const INPUT = 'w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:border-teal-500 focus:ring-teal-500/10 transition';
@@ -40,12 +39,6 @@ export default function PartnerForm({ item = null, onSuccess, onCancel }) {
   const isEdit = !!item;
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm({ defaultValues: EMPTY });
 
-  const { data: countryList = [] } = useQuery({
-    queryKey: ['locationSelect', 'countries'],
-    queryFn: () => locationsService.getCountries().then(r => r.data.data),
-  });
-  // stored as the country name; an older free-text value that is not in the list stays selectable
-  const countryOptions = (value) => { const base = countryList.map(c => ({ value: c.name, label: c.name })); return value && !base.some(o => o.value === value) ? [{ value, label: value }, ...base] : base; };
   const { fields, append, remove } = useFieldArray({ control, name: 'contacts' });
 
   useEffect(() => { reset(isEdit && item ? fromItem(item) : EMPTY); }, [item]);
@@ -88,7 +81,7 @@ export default function PartnerForm({ item = null, onSuccess, onCancel }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div><Controller name="country" control={control} render={({ field }) => (
-          <SearchSelect label="Country" value={field.value || ''} onChange={field.onChange} options={countryOptions(field.value)} placeholder="Select country…" searchPlaceholder="Search country…" />
+          <LocationPicker level="country" valueField="name" label="Country" value={field.value || ''} onChange={field.onChange} placeholder="Select country…" searchPlaceholder="Search country…" />
         )} /></div>
         <div><label className={LABEL}>Base Currency</label><input maxLength={3} {...register('baseCurrency')} className={`${INPUT} uppercase`} /></div>
       </div>

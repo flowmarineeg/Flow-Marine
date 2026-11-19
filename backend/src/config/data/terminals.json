@@ -1,0 +1,12 @@
+{
+  "SGSIN": ["Tuas Terminal", "Pasir Panjang Terminal", "Brani Terminal"],
+  "NLRTM": ["Euromax Terminal", "ECT Delta Terminal", "APM Terminals Maasvlakte II", "Rotterdam World Gateway"],
+  "DEHAM": ["Container Terminal Burchardkai", "Container Terminal Tollerort", "Container Terminal Altenwerder"],
+  "GBFXT": ["Trinity Terminal", "Landguard Terminal"],
+  "SAJED": ["South Container Terminal", "Red Sea Gateway Terminal"],
+  "EGPSD": ["SCCT"],
+  "MYPKG": ["Westports", "Northport"],
+  "LKCMB": ["Jaya Container Terminal", "South Asia Gateway Terminals", "Colombo International Container Terminals"],
+  "INNSA": ["Jawaharlal Nehru Port Container Terminal", "Gateway Terminals India", "Nhava Sheva International Container Terminal"],
+  "PKKHI": ["Karachi International Container Terminal", "Pakistan International Container Terminal"]
+}

@@ -8,8 +8,7 @@ import { showErrorToast } from '@/utils/errorToast';
 import { customersService, CUSTOMER_TYPES } from '@/services/customers.service';
 import { accountsService } from '@/services/accounts.service';
 import Button from '@/components/ui/Button';
-import SearchSelect from '@/components/ui/SearchSelect';
-import { locationsService } from '@/services/locations.service';
+import LocationPicker from '@/components/forms/LocationPicker';
 import BankAccountsRows, { cleanBankAccounts } from '@/components/forms/BankAccountsRows';
 
 const LABEL = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
@@ -28,12 +27,6 @@ export default function CustomerForm({ item = null, onSuccess, onCancel }) {
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm({ defaultValues: EMPTY });
   const { fields, append, remove } = useFieldArray({ control, name: 'contacts' });
 
-  const { data: countryList = [] } = useQuery({
-    queryKey: ['locationSelect', 'countries'],
-    queryFn: () => locationsService.getCountries().then(r => r.data.data),
-  });
-  // stored as the country name; an older free-text value that is not in the list stays selectable
-  const countryOptions = (value) => { const base = countryList.map(c => ({ value: c.name, label: c.name })); return value && !base.some(o => o.value === value) ? [{ value, label: value }, ...base] : base; };
 
   const { data: arAccounts = [] } = useQuery({
     queryKey: ['accounts', 'receivable'],
@@ -93,7 +86,7 @@ export default function CustomerForm({ item = null, onSuccess, onCancel }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div><Controller name="country" control={control} render={({ field }) => (
-          <SearchSelect label="Country" value={field.value || ''} onChange={field.onChange} options={countryOptions(field.value)} placeholder="Select country…" searchPlaceholder="Search country…" />
+          <LocationPicker level="country" valueField="name" label="Country" value={field.value || ''} onChange={field.onChange} placeholder="Select country…" searchPlaceholder="Search country…" />
         )} /></div>
         <div><label className={LABEL}>Default Currency</label><input maxLength={3} {...register('defaultCurrency')} className={`${INPUT} uppercase`} /></div>
       </div>

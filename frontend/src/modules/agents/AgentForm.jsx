@@ -12,7 +12,7 @@ import { accountsService } from '@/services/accounts.service';
 import BankAccountsRows, { cleanBankAccounts } from '@/components/forms/BankAccountsRows';
 import { AGENT_STATUS } from '@/utils/constants';
 import Button from '@/components/ui/Button';
-import SearchSelect from '@/components/ui/SearchSelect';
+import LocationPicker from '@/components/forms/LocationPicker';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
 
@@ -44,20 +44,7 @@ export default function AgentForm({ id = null }) {
   });
 
   const countryId = watch('countryId');
-  const { data: countries = [] } = useQuery({
-    queryKey: ['locationSelect', 'countries'],
-    queryFn:  () => locationsService.getCountries().then(r => r.data.data),
-  });
-  const { data: cities = [] } = useQuery({
-    queryKey: ['locationSelect', 'cities', countryId],
-    queryFn:  () => locationsService.getCities({ countryId }).then(r => r.data.data),
-    enabled:  !!countryId,
-  });
-
-  const { data: ports = [] } = useQuery({
-    queryKey: ['ports', 'all'],
-    queryFn:  () => locationsService.getPorts().then(r => r.data.data),
-  });
+  const cityId = watch('cityId');
 
   const { fields, append, remove } = useFieldArray({ control, name: 'contacts' });
 
@@ -171,19 +158,17 @@ export default function AgentForm({ id = null }) {
         <SectionCard title="Location">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <Controller name="countryId" control={control} render={({ field }) => (
-              <SearchSelect label="Country" value={field.value || ''} placeholder="Select country…" searchPlaceholder="Search country…"
-                onChange={(v) => { field.onChange(v); setValue('cityId', ''); }}
-                options={countries.map(c => ({ value: c._id, label: c.name }))} />
+              <LocationPicker level="country" label="Country" value={field.value || ''} placeholder="Select country…" searchPlaceholder="Search country…"
+                onChange={(v) => { field.onChange(v); setValue('cityId', ''); }} />
             )} />
             <Controller name="cityId" control={control} render={({ field }) => (
-              <SearchSelect label="City" value={field.value || ''} placeholder={countryId ? 'Select city…' : 'Select a country first'} searchPlaceholder="Search city…"
-                disabled={!countryId} onChange={field.onChange} options={cities.map(c => ({ value: c._id, label: c.name }))} />
+              <LocationPicker level="city" label="City" value={field.value || ''} placeholder={countryId ? 'Select city…' : 'Select a country first'} searchPlaceholder="Search city…"
+                parent={{ countryId }} disabled={!countryId} onChange={field.onChange} />
             )} />
             <div>
               <Controller name="portId" control={control} render={({ field }) => (
-                <SearchSelect label="Port / Location" value={field.value || ''} placeholder="Select port…" searchPlaceholder="Search port…"
-                  onChange={field.onChange}
-                  options={ports.map(p => ({ value: p._id, label: `${p.name}${p.code ? ` (${p.code})` : ''}${p.countryId?.name ? ` — ${p.countryId.name}` : ''}` }))} />
+                <LocationPicker level="port" label="Port / Location" value={field.value || ''} placeholder="Select port…" searchPlaceholder="Search port…"
+                  parent={{ cityId, countryId: cityId ? '' : countryId }} onChange={field.onChange} />
               )} />
               <input {...register('port')} placeholder="Older free-text port (optional)" className={`${ic(false)} mt-2 text-[12px]`} />
             </div>

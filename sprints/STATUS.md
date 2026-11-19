@@ -1,6 +1,11 @@
-# Status — 2026-11-10
+# Status — 2026-11-19
 
 Fresh status file. The previous one and every sprint spec (001–053) are in `sprints/archive/`.
+
+## Locations: sea / coastal only (2026-11-19)
+Owner brief (`prompt.txt`): remove landlocked locations from master data, safe and reversible. Done on the **Atlas test DB only**: 44 landlocked countries removed (250 → 206, 0 blocked, backup file written first); cities 7,799 / ports 11 / terminals 5 untouched. New: `coastal.logic.js`, `scripts/clean-coastal-locations.js` (dry run default, `--apply` + backup + bottom-up transaction, refuses non-test DB without `--allow-production --confirm-db`), validation in `location.service.js` (landlocked country / city / port refused), `seed:locations` skips landlocked countries, `DEPENDENTS.port` extended + `country/city/terminal`. Details in `docs/01-master-data.md`.
+- Verified: `npm test` 117/117 (+5 in `coastal.logic.test.js`), `e2e-masterdata` 111/111, validation probed over HTTP (refusals + edits of existing records still work), pickers return data. **Not done:** browser pass, production run (owner runs a read-only dry run there first), restore test of the backup.
+- **Open for owner:** 7,793 cities with no port/reference are listed, not deleted (second pass with a distance-to-coast check); Karachi code `PKKHA` (real LOCODE `PKKHI`) and the `E2E` probe ports left alone (clean with `seed:test-data -- --reset`).
 
 ## Follow-up 2026-11-10 (after the audit)
 Owner asked for: re-seed, browser pass, BK-01, working capacity per POL/POD for both layers, voyage cancel cancels its bookings. **Done:** test DB re-seeded (`seed:test-data -- --reset` 29/29, balanced; `seed:chart`, `seed:locations`, `migrate:masterdata`); BK-01 (partner users refused on `/ledger/account-lookup`); **capacity rewritten per leg** (`capacity.service.js` + `capacityLegs.logic.js`, R10 exception approved; segments aboard, both layers, L1+L2 pre-flight, per-leg table in the report); **voyage cancel cascades** to its L1/L2 bookings (transaction, 409 if invoiced); old probe scripts moved to the new booking request shape. Verified: `npm test` 112/112, `bookings-probe` 45/45, `rounds-voyages-probe` 64/64, `e2e-masterdata` 111/111 on the fresh data, frontend build OK. **Not done: browser pass** (no browser tool in the session), `test:int`, Notion §12.

@@ -4,6 +4,8 @@ const BASE = '/bookings';
 
 export const bookingsService = {
   list:            (params)      => api.get(BASE, { params }),
+  // Bookings tabs, first level: one row per voyage (round, voyage, bookings, total TEU, total freight)
+  voyageSummary:   (params)      => api.get(`${BASE}/voyage-summary`, { params }),
   getById:         (id)          => api.get(`${BASE}/${id}`),
   create:          (data)        => api.post(BASE, data),
   update:          (id, data)    => api.put(`${BASE}/${id}`, data),

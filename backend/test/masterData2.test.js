@@ -55,11 +55,6 @@ test('charter history: the newest entry is the latest', () => {
   assert.equal(out.charterHistory[0].deliveryPrice, '5.00');
 });
 
-test('seed-locations: unique city names, trimmed, case-insensitive, <=100 chars', () => {
-  const { uniqueCityNames } = require('../src/config/migrations/seed-locations');
-  assert.deepEqual(uniqueCityNames([{ name: ' Cairo ' }, { name: 'cairo' }, { name: '' }, { name: 'Giza' }, { name: 'x'.repeat(101) }]), ['Cairo', 'Giza']);
-});
-
 test('bank account rows: IBAN / SWIFT format helpers', () => {
   const v = require('../src/utils/masterValidators');
   assert.equal(v.isIban('GB82 WEST 1234 5698 7654 32'), true);

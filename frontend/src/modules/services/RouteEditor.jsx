@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import SearchSelect from '@/components/ui/SearchSelect';
+import LocationPicker from '@/components/forms/LocationPicker';
 import { routesService }    from '@/services/routes.service';
-import { locationsService } from '@/services/locations.service';
 import { agentsService }    from '@/services/agents.service';
 
 // ─── Empty leg factory ────────────────────────────────────────────────────────
@@ -23,27 +22,6 @@ const sc = 'w-full text-[13px] border border-gray-200 rounded-md px-3 py-2 bg-wh
 
 // ─── Single leg row ───────────────────────────────────────────────────────────
 export function LegRow({ leg, index, total, onChange, onRemove, disabled, agents }) {
-  const { data: countries } = useQuery({
-    queryKey: ['loc', 'countries'],
-    queryFn:  () => locationsService.getCountries().then(r => r.data.data),
-    staleTime: 5 * 60 * 1000,
-  });
-  const { data: cities } = useQuery({
-    queryKey: ['loc', 'cities', leg.countryId],
-    queryFn:  () => locationsService.getCities({ countryId: leg.countryId }).then(r => r.data.data),
-    enabled:  !!leg.countryId,
-  });
-  const { data: ports } = useQuery({
-    queryKey: ['loc', 'ports', leg.cityId],
-    queryFn:  () => locationsService.getPorts({ cityId: leg.cityId }).then(r => r.data.data),
-    enabled:  !!leg.cityId,
-  });
-  const { data: terminals } = useQuery({
-    queryKey: ['loc', 'terminals', leg.portId],
-    queryFn:  () => locationsService.getTerminals({ portId: leg.portId }).then(r => r.data.data),
-    enabled:  !!leg.portId,
-  });
-
   const update       = (field, val) => onChange(index, { ...leg, [field]: val });
   const handleCountry = (v) => onChange(index, { ...leg, countryId: v, cityId: '', portId: '', terminalId: '' });
   const handleCity    = (v) => onChange(index, { ...leg, cityId: v, portId: '', terminalId: '' });
@@ -65,8 +43,7 @@ export function LegRow({ leg, index, total, onChange, onRemove, disabled, agents
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             Country <span className="text-red-400">*</span>
           </label>
-          <SearchSelect value={leg.countryId} onChange={handleCountry} disabled={disabled} placeholder="Country…" searchPlaceholder="Search country…"
-            options={(countries || []).map(c => ({ value: c._id, label: `${c.name} (${c.code})` }))} />
+          <LocationPicker level="country" value={leg.countryId} onChange={handleCountry} disabled={disabled} placeholder="Country…" searchPlaceholder="Search country…" />
         </div>
 
         {/* City */}
@@ -74,8 +51,7 @@ export function LegRow({ leg, index, total, onChange, onRemove, disabled, agents
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             City <span className="text-red-400">*</span>
           </label>
-          <SearchSelect value={leg.cityId} onChange={handleCity} disabled={disabled || !leg.countryId} placeholder="City…" searchPlaceholder="Search city…"
-            options={(cities || []).map(c => ({ value: c._id, label: c.name }))} />
+          <LocationPicker level="city" value={leg.cityId} onChange={handleCity} parent={{ countryId: leg.countryId }} disabled={disabled || !leg.countryId} placeholder="City…" searchPlaceholder="Search city…" />
         </div>
 
         {/* Port */}
@@ -83,8 +59,7 @@ export function LegRow({ leg, index, total, onChange, onRemove, disabled, agents
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             Port <span className="text-red-400">*</span>
           </label>
-          <SearchSelect value={leg.portId} onChange={handlePort} disabled={disabled || !leg.cityId} placeholder="Port…" searchPlaceholder="Search port…"
-            options={(ports || []).map(p => ({ value: p._id, label: p.name }))} />
+          <LocationPicker level="port" value={leg.portId} onChange={handlePort} parent={{ cityId: leg.cityId }} disabled={disabled || !leg.cityId} placeholder="Port…" searchPlaceholder="Search port…" />
         </div>
 
         {/* Terminal */}
@@ -92,17 +67,7 @@ export function LegRow({ leg, index, total, onChange, onRemove, disabled, agents
           <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
             Terminal
           </label>
-          <select
-            value={leg.terminalId}
-            onChange={e => update('terminalId', e.target.value)}
-            disabled={disabled || !leg.portId}
-            className={sc}
-          >
-            <option value="">No terminal</option>
-            {(terminals || []).map(t => (
-              <option key={t._id} value={t._id}>{t.name}</option>
-            ))}
-          </select>
+          <LocationPicker level="terminal" value={leg.terminalId} onChange={(v) => update('terminalId', v)} parent={{ portId: leg.portId }} disabled={disabled || !leg.portId} placeholder="No terminal" searchPlaceholder="Search terminal…" />
         </div>
 
         {/* Agent */}
