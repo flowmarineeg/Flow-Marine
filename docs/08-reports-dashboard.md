@@ -29,6 +29,21 @@ All GET. Report pages use `refetch()` with `enabled:false` (run on button press)
 - A dead `$sum:'$quantity'` in the legacy block is kept on purpose.
 - `ledgerPnl` (when `basis` supplied) reuses `partnerSettlement` `roundLines` + `computeProfit` in USD: Accrual = revenue(4xxx) − expenses(5xxx); Cash = accrual profit − receivable outstanding + payable outstanding. Voyage scope only includes ledger lines tagged to that voyage.
 
+### Voyage totals (Voyage Details page, 2026-11-19)
+Every number on `/voyages/[id]` has ONE source; the page never computes a fourth way (S-02). All amounts are USD.
+| Number | Definition | Source |
+|---|---|---|
+| Booking chips | count per status (Pending, Confirmed, Final Loading, Cancelled) per layer; they add up to the total | `bookingSummary.voyageStatusTotals` |
+| Estimated TEU | Layer 1 **not Cancelled** (allocations included) | capacity engine row `layer1.loadedTEU` |
+| Operational TEU | Layer 2 Pending, Confirmed, Final Loading | capacity engine row `layer2.loadedTEU` |
+| TEU not placed | live booking TEU minus engine TEU (never negative): old or edited data the engine could not place | difference of the two sources |
+| Of which allocation | Layer 1 `kind = Allocation`, live statuses only; a sub-line of Estimated, never above it (count: all statuses, like the chips) | `voyageStatusTotals`, key `allocation` |
+| Estimated revenue | Layer 1 `totalFreight`, not Cancelled | `voyageStatusTotals` |
+| Operational revenue | Layer 2 `totalFreight`, **Final Loading only** (equals `round-pnl`) | `voyageStatusTotals` |
+| Pipeline | Layer 2 Pending and Confirmed, two numbers | `voyageStatusTotals` |
+| Invoiced | gross invoice lines of issued invoices (Issued, Partially Paid, Paid, Overdue; not notes) reached through `BookingItem.voyageId`, before credit/debit notes | `voyageSummary.service.invoicedForVoyage` (read-only) |
+Revenue is shown only with `invoices:read` or `reports:read`. Cancelled voyages have no capacity row, so TEU is 0 there.
+
 ### Consistency notes
 Dashboard, Revenue Report, Booking Revenue Details and Voyage Profitability all use Final Loading Layer 2 for revenue. `getVesselStats` (vessel detail page) uses the older "non-Cancelled, L1+L2" total and is the one exception.
 

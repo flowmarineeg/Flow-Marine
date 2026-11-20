@@ -14,6 +14,7 @@ router.use(auth);
 router.get('/round-ports/:roundId', rbac('voyages'), ctrl.getRoundRoutePorts);
 
 router.get('/',       rbac('voyages'), ctrl.list);
+router.get('/:id/summary', rbac('voyages'), ctrl.summary);
 router.get('/:id',    rbac('voyages'), ctrl.getById);
 
 // Manual voyage creation (Sprint 016)

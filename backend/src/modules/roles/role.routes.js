@@ -6,6 +6,7 @@ const ctrl    = require('./role.controller');
 const auth    = require('../../middleware/auth');
 const rbac    = require('../../middleware/rbac');
 const audit   = require('../../middleware/auditLogger');
+const superAdminOnly = require('../../middleware/superAdminOnly');
 const { body, validationResult } = require('express-validator');
 const { badRequest } = require('../../utils/responseHelper');
 
@@ -25,8 +26,8 @@ const validateRole = [
 router.use(auth);
 router.get('/',      rbac('roles'), ctrl.list);
 router.get('/:id',   rbac('roles'), ctrl.getById);
-router.post('/',     rbac('roles'), audit('roles'), validateRole, ctrl.create);
-router.put('/:id',   rbac('roles'), audit('roles'), validateRole, ctrl.update);
-router.delete('/:id', rbac('roles'), audit('roles'), ctrl.remove);
+router.post('/',     rbac('roles'), superAdminOnly, audit('roles'), validateRole, ctrl.create); // F-09: writes are SuperAdmin-only
+router.put('/:id',   rbac('roles'), superAdminOnly, audit('roles'), validateRole, ctrl.update);
+router.delete('/:id', rbac('roles'), superAdminOnly, audit('roles'), ctrl.remove);
 
 module.exports = router;

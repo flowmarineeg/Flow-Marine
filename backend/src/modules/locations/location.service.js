@@ -35,6 +35,15 @@ const countRouteLegsReferencing = async (query) => {
   return RouteLeg.countDocuments(query);
 };
 
+// Hard delete stays, but a country / city / terminal that any record still points to is refused (409 HAS_DEPENDENTS, with the
+// counts). Same table as the cleanup script: DEPENDENTS.country / city / terminal (agents, tracking, round snapshots, route legs).
+// The referencing models are loaded here so the scan never skips one that has not been required yet.
+const assertLocationUnused = async (what, id) => {
+  ['routes/routeLeg', 'agents/agent', 'tracking/trackingHistory', 'rounds/round'].forEach((m) => require(`../${m}.model`));
+  const { assertNoDependents, DEPENDENTS } = require('../../utils/dependents');
+  await assertNoDependents(what, id, DEPENDENTS[what]);
+};
+
 // ════════════════════════════════════════════════════════════════════════════
 // COUNTRIES
 // ════════════════════════════════════════════════════════════════════════════
@@ -80,6 +89,7 @@ const deleteCountry = async (id) => {
 
   const cityCount = await City.countDocuments({ countryId: id });
   if (cityCount > 0) throw { status: 400, message: `Cannot delete — ${cityCount} cit${cityCount === 1 ? 'y' : 'ies'} reference this country` };
+  await assertLocationUnused('country', id);
 
   await Country.findByIdAndDelete(id);
 };
@@ -139,6 +149,7 @@ const deleteCity = async (id) => {
 
   const portCount = await Port.countDocuments({ cityId: id });
   if (portCount > 0) throw { status: 400, message: `Cannot delete — ${portCount} port${portCount === 1 ? '' : 's'} reference this city` };
+  await assertLocationUnused('city', id);
 
   await City.findByIdAndDelete(id);
 };
@@ -272,8 +283,8 @@ const deleteTerminal = async (id) => {
   const terminal = await Terminal.findOne({ _id: id });
   if (!terminal) throw { status: 404, message: 'Terminal not found' };
 
-  const legCount = await countRouteLegsReferencing({ terminalId: id });
-  if (legCount > 0) throw { status: 400, message: `Cannot delete — ${legCount} route leg${legCount === 1 ? '' : 's'} reference this terminal` };
+  // route legs, tracking entries and round snapshots are all in DEPENDENTS.terminal (one message with every count)
+  await assertLocationUnused('terminal', id);
 
   await Terminal.findByIdAndDelete(id);
 };

@@ -6,15 +6,9 @@
     "semantic_hash": ""
   },
   "backend/scripts/audit-probes/bookings-probe.js": {
-    "mtime": 1794330016.4769926,
-    "seen": 1794335275.072828,
-    "ast_hash": "153cd34b0fdca8e968412e60b7a7e35f",
-    "semantic_hash": ""
-  },
-  "backend/scripts/audit-probes/bookings-probe.result.json": {
-    "mtime": 1794330872.0115142,
-    "seen": 1794335275.072831,
-    "ast_hash": "f6906268357193792ed892210b31a653",
+    "mtime": 1795097185.7842808,
+    "seen": 1795108975.5095892,
+    "ast_hash": "665305dda27c6247de444e3882667292",
     "semantic_hash": ""
   },
   "backend/scripts/audit-probes/probes-1.js": {
@@ -30,21 +24,15 @@
     "semantic_hash": ""
   },
   "backend/scripts/audit-probes/rounds-voyages-probe.js": {
-    "mtime": 1794326379.803638,
-    "seen": 1794335275.0728362,
-    "ast_hash": "b9004df5801c27dcbf0e122bc7f58c68",
-    "semantic_hash": ""
-  },
-  "backend/scripts/audit-probes/rounds-voyages-probe.result.json": {
-    "mtime": 1794331053.4699767,
-    "seen": 1794335275.0728374,
-    "ast_hash": "8d1a13a4488b247ab7c6ffb696db5a20",
+    "mtime": 1795097185.7842808,
+    "seen": 1795108975.5096219,
+    "ast_hash": "0f98d5e5d8fe33e414bae128cd45e54c",
     "semantic_hash": ""
   },
   "backend/scripts/e2e-masterdata.js": {
-    "mtime": 1794331112.8731267,
-    "seen": 1794335275.072839,
-    "ast_hash": "fc31a18375c2ac716e3ccd5751872935",
+    "mtime": 1795049372.0113976,
+    "seen": 1795057067.4505641,
+    "ast_hash": "15165db69f1e83124174ebe164379cdb",
     "semantic_hash": ""
   },
   "backend/src/config/constants.js": {
@@ -102,9 +90,9 @@
     "semantic_hash": ""
   },
   "backend/src/config/migrations/seed-locations.js": {
-    "mtime": 1793102135.1746204,
-    "seen": 1794335275.0728524,
-    "ast_hash": "dd2c7b311c1126f60e3e2e1edd74555b",
+    "mtime": 1795048647.4510293,
+    "seen": 1795057067.4505847,
+    "ast_hash": "51ccb0553e37f798e0fd0ecfc28e7394",
     "semantic_hash": ""
   },
   "backend/src/config/seed-test-data.js": {
@@ -318,9 +306,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/booking.controller.js": {
-    "mtime": 1794326632.2758088,
-    "seen": 1794335275.0729005,
-    "ast_hash": "98b30c629d069a2f3a1bc5ab1d600408",
+    "mtime": 1795098513.072234,
+    "seen": 1795108975.5098517,
+    "ast_hash": "e305778f786230f12fa698ee96ccccd6",
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/booking.model.js": {
@@ -330,15 +318,15 @@
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/booking.routes.js": {
-    "mtime": 1794325687.0137722,
-    "seen": 1794335275.0729032,
-    "ast_hash": "5dd89e008ede97319156bfb95ece1f95",
+    "mtime": 1795098512.6711686,
+    "seen": 1795108975.5098572,
+    "ast_hash": "bda98eea504fbcd0946880fe5ac59e86",
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/booking.service.js": {
-    "mtime": 1794329960.973088,
-    "seen": 1794335275.0729043,
-    "ast_hash": "8d381f0be28cf143351fd0eafdc08483",
+    "mtime": 1795098599.4349937,
+    "seen": 1795108975.5098596,
+    "ast_hash": "696ec03e27f400f61823aabe21aaa8e8",
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/booking.validation.js": {
@@ -378,27 +366,27 @@
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/manualBooking.controller.js": {
-    "mtime": 1794325491.4880128,
-    "seen": 1794335275.0729136,
-    "ast_hash": "5182173f70e2fd38234ca0d04bf33136",
+    "mtime": 1795098513.1712482,
+    "seen": 1795108975.5098953,
+    "ast_hash": "f7c8dc1274d05d2232904e665ce9eaa8",
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/manualBooking.model.js": {
-    "mtime": 1794325388.324916,
-    "seen": 1794335275.0729148,
-    "ast_hash": "a100cb90414bcce4e5281f3777f362d9",
+    "mtime": 1795095141.9304981,
+    "seen": 1795108975.509898,
+    "ast_hash": "3061bb9fb2bc10d548e848e1585794b2",
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/manualBooking.service.js": {
-    "mtime": 1794329960.973088,
-    "seen": 1794335275.0729163,
-    "ast_hash": "5f797c18771e4c73cb8a1383f73bb1a4",
+    "mtime": 1795098599.4349937,
+    "seen": 1795108975.509901,
+    "ast_hash": "318ef389680fab15df44c533a3c73918",
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/manualBooking.validation.js": {
-    "mtime": 1794326671.106099,
-    "seen": 1794335275.0729175,
-    "ast_hash": "47881d6a93574cc28936f78691094a4d",
+    "mtime": 1795095141.9304981,
+    "seen": 1795108975.509904,
+    "ast_hash": "7d70484b1bbf7331d61196d484cdb646",
     "semantic_hash": ""
   },
   "backend/src/modules/bookings/partnerScope.js": {
@@ -714,9 +702,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/locations/city.model.js": {
-    "mtime": 1785804133.6251993,
-    "seen": 1794335275.072986,
-    "ast_hash": "faee72fb0ad0ecf9e40431e5cb3fbe1f",
+    "mtime": 1795049143.6542258,
+    "seen": 1795057067.4507484,
+    "ast_hash": "b538b8e2170b15a74e70919bf40be1cd",
     "semantic_hash": ""
   },
   "backend/src/modules/locations/country.model.js": {
@@ -726,9 +714,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/locations/location.controller.js": {
-    "mtime": 1783292753.2101402,
-    "seen": 1794335275.0729885,
-    "ast_hash": "f63a83f5d94da8d34c547c742e3dcb3e",
+    "mtime": 1795049143.6542258,
+    "seen": 1795057067.4507532,
+    "ast_hash": "bcaeebcc82685ecb7c6a47d05a1438e7",
     "semantic_hash": ""
   },
   "backend/src/modules/locations/location.routes.js": {
@@ -738,9 +726,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/locations/location.service.js": {
-    "mtime": 1793031452.5475395,
-    "seen": 1794335275.072991,
-    "ast_hash": "3c62d3241324d376e5d8df06a2ec1aaa",
+    "mtime": 1795097113.9203026,
+    "seen": 1795108975.5100877,
+    "ast_hash": "f69eb39bda0241f1d08c000d39c04083",
     "semantic_hash": ""
   },
   "backend/src/modules/locations/location.validation.js": {
@@ -750,15 +738,15 @@
     "semantic_hash": ""
   },
   "backend/src/modules/locations/port.model.js": {
-    "mtime": 1785804133.630183,
-    "seen": 1794335275.0729935,
-    "ast_hash": "4e4db1893943ce8dc997589d4ddfae3c",
+    "mtime": 1795049143.6542258,
+    "seen": 1795057067.4507606,
+    "ast_hash": "e05d89919c1ff88f8e2c2f884283ef55",
     "semantic_hash": ""
   },
   "backend/src/modules/locations/terminal.model.js": {
-    "mtime": 1785804133.630183,
-    "seen": 1794335275.0729947,
-    "ast_hash": "6c5a02ec9ad0eabab5d55fd8980c16e4",
+    "mtime": 1795049143.6542258,
+    "seen": 1795057067.450762,
+    "ast_hash": "74d4697db700f78b2d1a824e95e3c04f",
     "semantic_hash": ""
   },
   "backend/src/modules/partnerSettlement/partnerSettlement.logic.js": {
@@ -840,9 +828,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/permissions/permission.routes.js": {
-    "mtime": 1792563109.8629692,
-    "seen": 1794335275.0730119,
-    "ast_hash": "8f5b9dc2443991324aebe1b59d167795",
+    "mtime": 1795098911.5092063,
+    "seen": 1795108975.5101418,
+    "ast_hash": "e9637b960667526bcc21efd108eb8b53",
     "semantic_hash": ""
   },
   "backend/src/modules/permissions/permission.service.js": {
@@ -864,9 +852,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/reports/reports.service.js": {
-    "mtime": 1792937818.5396755,
-    "seen": 1794335275.073017,
-    "ast_hash": "c6dc0c92ccb94c673225d9958010f68f",
+    "mtime": 1795098080.156573,
+    "seen": 1795108975.5101528,
+    "ast_hash": "a6fd3ea1cba6416adf3fda66bcd9dd10",
     "semantic_hash": ""
   },
   "backend/src/modules/roles/role.controller.js": {
@@ -882,9 +870,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/roles/role.routes.js": {
-    "mtime": 1794325370.0469205,
-    "seen": 1794335275.0730207,
-    "ast_hash": "56c7bb623884ba25ca8f66bd0822fb5c",
+    "mtime": 1795098911.4990957,
+    "seen": 1795108975.5101614,
+    "ast_hash": "a4a58400505f03c6d7f871552d7c8477",
     "semantic_hash": ""
   },
   "backend/src/modules/roles/role.service.js": {
@@ -900,9 +888,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/rounds/round.logic.js": {
-    "mtime": 1794092979.3485544,
-    "seen": 1794335275.0730243,
-    "ast_hash": "616c2cdb8323810017d137b1ce3dc6a8",
+    "mtime": 1795098773.8638308,
+    "seen": 1795108975.5101702,
+    "ast_hash": "0100295a78fedcf119d59db8fd37893f",
     "semantic_hash": ""
   },
   "backend/src/modules/rounds/round.model.js": {
@@ -918,9 +906,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/rounds/round.service.js": {
-    "mtime": 1794093002.3444593,
-    "seen": 1794335275.073028,
-    "ast_hash": "661f3185086a6931a87c6e648840c417",
+    "mtime": 1795098800.861316,
+    "seen": 1795108975.510179,
+    "ast_hash": "73ea1995aeef24349e7302c75f107f94",
     "semantic_hash": ""
   },
   "backend/src/modules/rounds/round.validation.js": {
@@ -990,9 +978,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/services/service.service.js": {
-    "mtime": 1793102000.148832,
-    "seen": 1794335275.0730426,
-    "ast_hash": "2b9c635e01ca96697854d8ad01c2f966",
+    "mtime": 1795098987.2228477,
+    "seen": 1795108975.5102155,
+    "ast_hash": "83eb1af7c3e6987b0aeb5efa76c1bf80",
     "semantic_hash": ""
   },
   "backend/src/modules/services/service.validation.js": {
@@ -1098,9 +1086,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/voyages/voyage.controller.js": {
-    "mtime": 1794093078.8464513,
-    "seen": 1794335275.073067,
-    "ast_hash": "113852f264efb9b559969f3127353dac",
+    "mtime": 1795055694.0303187,
+    "seen": 1795057067.4508545,
+    "ast_hash": "9c9613614c71f1f2ff144769cd7110b4",
     "semantic_hash": ""
   },
   "backend/src/modules/voyages/voyage.logic.js": {
@@ -1116,15 +1104,15 @@
     "semantic_hash": ""
   },
   "backend/src/modules/voyages/voyage.routes.js": {
-    "mtime": 1794093078.8546321,
-    "seen": 1794335275.0730708,
-    "ast_hash": "674f7cdb7a0dee56aa435b70b9211e05",
+    "mtime": 1795055694.031317,
+    "seen": 1795057067.4508593,
+    "ast_hash": "8344449d6ebd6e99dbb59324284cc35a",
     "semantic_hash": ""
   },
   "backend/src/modules/voyages/voyage.service.js": {
-    "mtime": 1794329960.9720235,
-    "seen": 1794335275.0730722,
-    "ast_hash": "2890e1afdebba11a12499ad89101bfb6",
+    "mtime": 1795055693.9457848,
+    "seen": 1795057067.4508605,
+    "ast_hash": "371e960194641fa1db5738eb2dd717b5",
     "semantic_hash": ""
   },
   "backend/src/modules/voyages/voyage.validation.js": {
@@ -1134,9 +1122,9 @@
     "semantic_hash": ""
   },
   "backend/src/modules/voyages/voyageRun.logic.js": {
-    "mtime": 1794092978.4845726,
-    "seen": 1794335275.0730746,
-    "ast_hash": "874178d92bd04270ddda102f3de7a15a",
+    "mtime": 1795098250.1824794,
+    "seen": 1795108975.5102885,
+    "ast_hash": "13f59fc8caa75774b34140866a9da1a7",
     "semantic_hash": ""
   },
   "backend/src/server.js": {
@@ -1170,9 +1158,9 @@
     "semantic_hash": ""
   },
   "backend/src/utils/dependents.js": {
-    "mtime": 1794325388.281416,
-    "seen": 1794335275.0730822,
-    "ast_hash": "32a083ded7ceb8b470560956acaaaa07",
+    "mtime": 1795046462.3335054,
+    "seen": 1795057067.450876,
+    "ast_hash": "483856ac4384b9637ff3b646f265724f",
     "semantic_hash": ""
   },
   "backend/src/utils/escapeRegex.js": {
@@ -1296,9 +1284,9 @@
     "semantic_hash": ""
   },
   "backend/test/masterData2.test.js": {
-    "mtime": 1793104503.1207407,
-    "seen": 1794335275.073109,
-    "ast_hash": "5de23036ce746056840b47bfbb216b99",
+    "mtime": 1795048424.1033485,
+    "seen": 1795057067.450913,
+    "ast_hash": "76618613524d4881b4ac576c67dd12a0",
     "semantic_hash": ""
   },
   "backend/test/masterValidators.test.js": {
@@ -1350,9 +1338,9 @@
     "semantic_hash": ""
   },
   "backend/test/voyageRun.logic.test.js": {
-    "mtime": 1794093101.5685499,
-    "seen": 1794335275.0731206,
-    "ast_hash": "e540192631903c3b06ad3156cd68d2c8",
+    "mtime": 1795098274.5492089,
+    "seen": 1795108975.510429,
+    "ast_hash": "7929426880e2a260eb5d28bea32733db",
     "semantic_hash": ""
   },
   "docker-compose.yml": {
@@ -1716,9 +1704,9 @@
     "semantic_hash": ""
   },
   "frontend/src/app/error.jsx": {
-    "mtime": 1794927226.279951,
-    "seen": 1794928763.2757201,
-    "ast_hash": "53b47990349241029ed9823759f7a402",
+    "mtime": 1795096970.6843083,
+    "seen": 1795108975.510624,
+    "ast_hash": "11ea0376c91778830d58d9c4ad54bf4b",
     "semantic_hash": ""
   },
   "frontend/src/app/layout.js": {
@@ -1752,9 +1740,9 @@
     "semantic_hash": ""
   },
   "frontend/src/components/forms/LocationSelect.jsx": {
-    "mtime": 1793104108.3456209,
-    "seen": 1794335275.073207,
-    "ast_hash": "1d74697487bad4929ecd50f7951057c2",
+    "mtime": 1795049243.54618,
+    "seen": 1795057067.4510415,
+    "ast_hash": "d934712716e2001fab515172e6d85433",
     "semantic_hash": ""
   },
   "frontend/src/components/ui/Badge.jsx": {
@@ -1800,9 +1788,9 @@
     "semantic_hash": ""
   },
   "frontend/src/components/ui/ExportButton.jsx": {
-    "mtime": 1784072952.2206323,
-    "seen": 1794335275.073219,
-    "ast_hash": "41c9bb7f7b3ee374a90d4a25efc6d5d8",
+    "mtime": 1795096970.667822,
+    "seen": 1795108975.510679,
+    "ast_hash": "2b1483cd300de5c266ecb71e273f9442",
     "semantic_hash": ""
   },
   "frontend/src/components/ui/Input.jsx": {
@@ -1854,15 +1842,15 @@
     "semantic_hash": ""
   },
   "frontend/src/components/ui/SearchBar.jsx": {
-    "mtime": 1783191542.2030132,
-    "seen": 1794335275.07323,
-    "ast_hash": "072513245c6e20c7633cf2c74d69fee2",
+    "mtime": 1795096970.667822,
+    "seen": 1795108975.51071,
+    "ast_hash": "413762f2f5875dc49d1dc3f47d3eb4c4",
     "semantic_hash": ""
   },
   "frontend/src/components/ui/SearchSelect.jsx": {
-    "mtime": 1794927226.296625,
-    "seen": 1794928763.2757673,
-    "ast_hash": "0d1cc3799e24aefdaba3effa9c95a911",
+    "mtime": 1795049177.3944173,
+    "seen": 1795057067.451075,
+    "ast_hash": "f4bb5d1e9158e7dc9a72c0eddf6fb9ea",
     "semantic_hash": ""
   },
   "frontend/src/components/ui/Select.jsx": {
@@ -1911,12 +1899,6 @@
     "mtime": 1784142739.1588547,
     "seen": 1794335275.0732412,
     "ast_hash": "b25e55541ce3b35fad3404e5d81cae33",
-    "semantic_hash": ""
-  },
-  "frontend/src/hooks/usePorts.js": {
-    "mtime": 1784142745.2147672,
-    "seen": 1794335275.0732427,
-    "ast_hash": "5b23e4b151545bcd78d8a002a478b55e",
     "semantic_hash": ""
   },
   "frontend/src/hooks/useRounds.js": {
@@ -1968,9 +1950,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/agents/AgentForm.jsx": {
-    "mtime": 1793104153.649359,
-    "seen": 1794335275.0732536,
-    "ast_hash": "9555683273795fb3a682c89a0d936eaa",
+    "mtime": 1795049248.0046546,
+    "seen": 1795057067.4511032,
+    "ast_hash": "74b60bddd5c4fb8b9e26b0f9e4cbdb04",
     "semantic_hash": ""
   },
   "frontend/src/modules/agents/AgentList.jsx": {
@@ -2004,9 +1986,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/bookings/BookingForm.jsx": {
-    "mtime": 1794326694.9772193,
-    "seen": 1794335275.0732613,
-    "ast_hash": "07861ee3919f52f0abe6502f3c84db65",
+    "mtime": 1795095228.194638,
+    "seen": 1795108975.5107863,
+    "ast_hash": "78990a5275af5facace433a934580577",
     "semantic_hash": ""
   },
   "frontend/src/modules/bookings/BookingImport.jsx": {
@@ -2016,9 +1998,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/bookings/BookingList.jsx": {
-    "mtime": 1794927226.296625,
-    "seen": 1794928763.275812,
-    "ast_hash": "43aad51f14426bf6b15704c64b3b003d",
+    "mtime": 1795098697.1001172,
+    "seen": 1795108975.5107925,
+    "ast_hash": "86150cd141dc38af533085176e4749e0",
     "semantic_hash": ""
   },
   "frontend/src/modules/bookings/DischargeListExportModal.jsx": {
@@ -2034,15 +2016,15 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/bookings/ManualBookingForm.jsx": {
-    "mtime": 1794326733.1645288,
-    "seen": 1794335275.0732677,
-    "ast_hash": "3968d04cfc8de8a158ba646c488a5d39",
+    "mtime": 1795095247.6973832,
+    "seen": 1795108975.5108073,
+    "ast_hash": "ac1e3df61dc860a0a943d599f5d8e10d",
     "semantic_hash": ""
   },
   "frontend/src/modules/bookings/RoundRoutePicker.jsx": {
-    "mtime": 1794326973.2561133,
-    "seen": 1794335275.0732784,
-    "ast_hash": "a4c8c1cdee96927d220df8a7f0eb9673",
+    "mtime": 1795095213.643644,
+    "seen": 1795108975.5108128,
+    "ast_hash": "ef5e38b3c2ca42551055b2ed1b6c7b1d",
     "semantic_hash": ""
   },
   "frontend/src/modules/containerTypes/ContainerTypeForm.jsx": {
@@ -2052,9 +2034,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/customers/CustomerForm.jsx": {
-    "mtime": 1793104130.489622,
-    "seen": 1794335275.073281,
-    "ast_hash": "2ceb09a13ee327cc4db2126f34885f8d",
+    "mtime": 1795049248.0046546,
+    "seen": 1795057067.4511268,
+    "ast_hash": "76ccb1c95147dfeee0933bdb3cdea8e9",
     "semantic_hash": ""
   },
   "frontend/src/modules/dashboard/DashboardFilterBar.jsx": {
@@ -2226,9 +2208,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/locations/CityTable.jsx": {
-    "mtime": 1783357841.0848143,
-    "seen": 1794335275.0733256,
-    "ast_hash": "0077691aa3620d33b7962d332b3e90f5",
+    "mtime": 1795049211.356894,
+    "seen": 1795057067.4511735,
+    "ast_hash": "7ddedc678be7296622c5b2737d5df3dc",
     "semantic_hash": ""
   },
   "frontend/src/modules/locations/CountryTable.jsx": {
@@ -2238,39 +2220,39 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/locations/LocationForm.jsx": {
-    "mtime": 1793104117.5293887,
-    "seen": 1794335275.073328,
-    "ast_hash": "87572fe50d06e80bedc03bf4b7a2999e",
+    "mtime": 1795049223.4098597,
+    "seen": 1795057067.4511766,
+    "ast_hash": "6cf1e9fc4756f6b5f7650d7953cb92c5",
     "semantic_hash": ""
   },
   "frontend/src/modules/locations/LocationLevelTable.jsx": {
-    "mtime": 1794927226.3133497,
-    "seen": 1794928763.2758765,
-    "ast_hash": "2bc9335eeff5a8a46b30dab4260f96f5",
+    "mtime": 1795049315.5527735,
+    "seen": 1795057067.451178,
+    "ast_hash": "46f29b07e3891559506daea0bc61acd1",
     "semantic_hash": ""
   },
   "frontend/src/modules/locations/PortTable.jsx": {
-    "mtime": 1792937818.5681791,
-    "seen": 1794335275.0733306,
-    "ast_hash": "47a9c8f6f29db74ede5b8c0660bcc876",
+    "mtime": 1795049211.6776524,
+    "seen": 1795057067.4511793,
+    "ast_hash": "033c87151744b6da9b509797a41b34cf",
     "semantic_hash": ""
   },
   "frontend/src/modules/locations/TerminalTable.jsx": {
-    "mtime": 1783357856.2736077,
-    "seen": 1794335275.073332,
-    "ast_hash": "72fe6082039b2f74f064acf739db2504",
+    "mtime": 1795049212.008157,
+    "seen": 1795057067.4511805,
+    "ast_hash": "9907c8512746cd8dd500d993f07949ae",
     "semantic_hash": ""
   },
   "frontend/src/modules/partners/PartnerForm.jsx": {
-    "mtime": 1793104135.8499553,
-    "seen": 1794335275.073333,
-    "ast_hash": "b281ddc272d21d9afb5a3b364495fae5",
+    "mtime": 1795049248.0046546,
+    "seen": 1795057067.4511821,
+    "ast_hash": "81af1cf7d48abf924302ddba1d8fee27",
     "semantic_hash": ""
   },
   "frontend/src/modules/reports/BookingReport.jsx": {
-    "mtime": 1788270917.3078463,
-    "seen": 1794335275.0733345,
-    "ast_hash": "742a97035c84736da9153e2d70b63e8b",
+    "mtime": 1795098080.156573,
+    "seen": 1795108975.5109289,
+    "ast_hash": "bcde434cf3a0bef999be050b224e8783",
     "semantic_hash": ""
   },
   "frontend/src/modules/reports/BookingRevenueDetailsReport.jsx": {
@@ -2334,15 +2316,15 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/roles/PermissionMatrix.jsx": {
-    "mtime": 1794927226.3133497,
-    "seen": 1794928763.275903,
-    "ast_hash": "886f7fd65a3c2f2aec7130c9786e337e",
+    "mtime": 1795098964.685545,
+    "seen": 1795108975.510962,
+    "ast_hash": "b94fea21952bd3b866688bc4b5b4f686",
     "semantic_hash": ""
   },
   "frontend/src/modules/roles/RoleList.jsx": {
-    "mtime": 1794927226.3133497,
-    "seen": 1794928763.2759044,
-    "ast_hash": "06d1745d82fb02f4bdc3c194c58322de",
+    "mtime": 1795098964.6745462,
+    "seen": 1795108975.5109646,
+    "ast_hash": "808cc5cc1914a4813970184c609bdae9",
     "semantic_hash": ""
   },
   "frontend/src/modules/rounds/RoundAccountingPanel.jsx": {
@@ -2358,9 +2340,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/rounds/RoundForm.jsx": {
-    "mtime": 1794093827.486086,
-    "seen": 1794335275.0733545,
-    "ast_hash": "6b752b18972f48f76471016f11e4ec11",
+    "mtime": 1795096970.6848228,
+    "seen": 1795108975.5109742,
+    "ast_hash": "5b2b8ed1075b0672ce513b9b8c49843f",
     "semantic_hash": ""
   },
   "frontend/src/modules/rounds/RoundLegsPanel.jsx": {
@@ -2376,15 +2358,15 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/rounds/RoundVoyageList.jsx": {
-    "mtime": 1794927226.3133497,
-    "seen": 1794928763.275915,
-    "ast_hash": "c848e72bf29aad238087a2f863c01bd3",
+    "mtime": 1795096970.6848228,
+    "seen": 1795108975.5109835,
+    "ast_hash": "e45d86effac0eaa0c095b3c0f8a8c8fb",
     "semantic_hash": ""
   },
   "frontend/src/modules/services/RouteEditor.jsx": {
-    "mtime": 1794093827.486086,
-    "seen": 1794335275.07336,
-    "ast_hash": "af01bae572b805c75adaa646fd44b880",
+    "mtime": 1795096970.667822,
+    "seen": 1795108975.510986,
+    "ast_hash": "0a9fa2dd6f33d9dd8224bbe252b0fb2b",
     "semantic_hash": ""
   },
   "frontend/src/modules/services/ServiceDetail.jsx": {
@@ -2418,9 +2400,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/tracking/TrackingForm.jsx": {
-    "mtime": 1788270917.3138437,
-    "seen": 1794335275.0733676,
-    "ast_hash": "518f029bceca227ad9c86e6b44b4c9a8",
+    "mtime": 1795096970.683277,
+    "seen": 1795108975.511004,
+    "ast_hash": "40284036664ee0bbf8007de93f5c31af",
     "semantic_hash": ""
   },
   "frontend/src/modules/tracking/TrackingHistoryTable.jsx": {
@@ -2448,9 +2430,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/vessels/VesselDetail.jsx": {
-    "mtime": 1794927226.3133497,
-    "seen": 1794928763.2759354,
-    "ast_hash": "56433104467080905aa78621f33499cd",
+    "mtime": 1795096970.667822,
+    "seen": 1795108975.511019,
+    "ast_hash": "40b5b0c1e261e020211319b662d2defc",
     "semantic_hash": ""
   },
   "frontend/src/modules/vessels/VesselForm.jsx": {
@@ -2514,9 +2496,9 @@
     "semantic_hash": ""
   },
   "frontend/src/modules/voyages/VoyageList.jsx": {
-    "mtime": 1794927226.3133497,
-    "seen": 1794928763.275955,
-    "ast_hash": "014ce1cca5a8fa1f5913e2f6ff3d6c01",
+    "mtime": 1795094289.3048866,
+    "seen": 1795108975.5110605,
+    "ast_hash": "ad39fa13d4591fe1e91dc7531bcecb3d",
     "semantic_hash": ""
   },
   "frontend/src/services/accounting.service.js": {
@@ -2556,9 +2538,9 @@
     "semantic_hash": ""
   },
   "frontend/src/services/bookings.service.js": {
-    "mtime": 1794326605.1594188,
-    "seen": 1794335275.0733974,
-    "ast_hash": "8a635e4c33c2363805d3fc6386952c38",
+    "mtime": 1795051283.6200628,
+    "seen": 1795057067.4512606,
+    "ast_hash": "948e0051113526426d2d8890018bc697",
     "semantic_hash": ""
   },
   "frontend/src/services/capacity.service.js": {
@@ -2682,9 +2664,9 @@
     "semantic_hash": ""
   },
   "frontend/src/services/voyages.service.js": {
-    "mtime": 1794093827.486086,
-    "seen": 1794335275.073425,
-    "ast_hash": "3e0af9f37ca87371b8b23be86f29c882",
+    "mtime": 1795094209.948738,
+    "seen": 1795108975.5111527,
+    "ast_hash": "259c3dd24cec474cd916fe8c9a115d09",
     "semantic_hash": ""
   },
   "frontend/src/utils/constants.js": {
@@ -2736,14 +2718,14 @@
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1794928743.081021,
-    "seen": 1794928763.276022,
-    "ast_hash": "4998c84d9e6792ff0c667eba0dc595cc",
+    "mtime": 1795108930.923193,
+    "seen": 1795108975.5111823,
+    "ast_hash": "277c0439eeacfe63b49831956220347c",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1792937818.508662,
-    "seen": 1794335275.0734382,
+    "mtime": 1795046153.0865853,
+    "seen": 1795057067.4513109,
     "ast_hash": "dc7fcc11830c30439ac9f9c29c17804d",
     "semantic_hash": ""
   },
@@ -2754,9 +2736,9 @@
     "semantic_hash": ""
   },
   "docs/01-master-data.md": {
-    "mtime": 1793643917.3977048,
-    "seen": 1794335275.0734408,
-    "ast_hash": "13118a2a2b4b4b2085fdb1f3af045454",
+    "mtime": 1795097237.4351277,
+    "seen": 1795108975.5111914,
+    "ast_hash": "033659c4efbab4076cbf3f17c4b2f06b",
     "semantic_hash": ""
   },
   "docs/02-vessels.md": {
@@ -2766,15 +2748,15 @@
     "semantic_hash": ""
   },
   "docs/03-rounds-voyages.md": {
-    "mtime": 1794331279.0582066,
-    "seen": 1794335275.0734434,
-    "ast_hash": "06a3e0c81572037a47c88e566867b389",
+    "mtime": 1795099609.1564422,
+    "seen": 1795108975.5111969,
+    "ast_hash": "f0c07f6b0989aca5cfebeaf633c927fa",
     "semantic_hash": ""
   },
   "docs/04-bookings.md": {
-    "mtime": 1794331279.0582066,
-    "seen": 1794335275.0734446,
-    "ast_hash": "61df705f2cbcabb211d79f51e8717688",
+    "mtime": 1795099609.1262581,
+    "seen": 1795108975.5111995,
+    "ast_hash": "4071e7935a63df96a9414bb9126172cd",
     "semantic_hash": ""
   },
   "docs/05-expenses.md": {
@@ -2796,9 +2778,9 @@
     "semantic_hash": ""
   },
   "docs/08-reports-dashboard.md": {
-    "mtime": 1792924840.8212202,
-    "seen": 1794335275.0734494,
-    "ast_hash": "df7512b0f60c050a3d8a1cac5d83cdf3",
+    "mtime": 1795095657.572071,
+    "seen": 1795108975.5112143,
+    "ast_hash": "bb9da0640d97201eb8cf642b33cf23ba",
     "semantic_hash": ""
   },
   "docs/09-export.md": {
@@ -3012,9 +2994,9 @@
     "semantic_hash": ""
   },
   "docs/audit/README.md": {
-    "mtime": 1794328264.4812882,
-    "seen": 1794335275.0734968,
-    "ast_hash": "603c6ddd76274f5cda067cc67619898c",
+    "mtime": 1795053127.4365828,
+    "seen": 1795057067.4513867,
+    "ast_hash": "0bac219cb02370bafb6c2d67b2945fab",
     "semantic_hash": ""
   },
   "docs/audit/rounds-voyages-flow-audit-2026-10-26.md": {
@@ -3048,15 +3030,15 @@
     "semantic_hash": ""
   },
   "prompt.txt": {
-    "mtime": 1794322645.0281067,
-    "seen": 1794335275.0735044,
-    "ast_hash": "d3d917239d3232ef248bc648944cf9a3",
+    "mtime": 1795098046.516499,
+    "seen": 1795108975.511346,
+    "ast_hash": "633b0f11fe0afc641f9a5787907ecb62",
     "semantic_hash": ""
   },
   "sprints/STATUS.md": {
-    "mtime": 1794331279.0645592,
-    "seen": 1794335275.0735059,
-    "ast_hash": "40b1521244b4e300571bd55b7dedc288",
+    "mtime": 1795099609.2207887,
+    "seen": 1795108975.511349,
+    "ast_hash": "8d1daac15edbab977bce71171c67ac30",
     "semantic_hash": ""
   },
   "frontend/public/file.svg": {
@@ -3167,16 +3149,304 @@
     "ast_hash": "698cd9b240cb71558c6031caff1f74e3",
     "semantic_hash": ""
   },
+  "backend/scripts/audit-probes/voyage-details-probe.js": {
+    "mtime": 1795095514.745027,
+    "seen": 1795108975.5096276,
+    "ast_hash": "e563bd63d087174494abf51574ac7284",
+    "semantic_hash": ""
+  },
+  "backend/scripts/build-location-data.js": {
+    "mtime": 1795048646.9794972,
+    "seen": 1795057067.4505594,
+    "ast_hash": "07638fd092ea0b1465ad2638413b62f5",
+    "semantic_hash": ""
+  },
+  "backend/scripts/city-coast-distance.js": {
+    "mtime": 1795047993.935368,
+    "seen": 1795057067.450561,
+    "ast_hash": "24edc08eadada485c500c24bcea250f1",
+    "semantic_hash": ""
+  },
+  "backend/scripts/clean-coastal-locations.js": {
+    "mtime": 1795047233.2265778,
+    "seen": 1795057067.4505625,
+    "ast_hash": "3953cf035e40501952314ea406d267ca",
+    "semantic_hash": ""
+  },
+  "backend/src/config/data/coastal-cities.json": {
+    "mtime": 1795048658.3516994,
+    "seen": 1795057067.4505675,
+    "ast_hash": "1b02d5818a8a3b84801540bc895718ec",
+    "semantic_hash": ""
+  },
+  "backend/src/config/data/seaports.json": {
+    "mtime": 1795048658.3683827,
+    "seen": 1795057067.4505687,
+    "ast_hash": "1039b382f9362a7e7c86a03686d25aba",
+    "semantic_hash": ""
+  },
+  "backend/src/config/data/terminals.json": {
+    "mtime": 1795048420.1791701,
+    "seen": 1795057067.4505699,
+    "ast_hash": "afceab612def3a3e063dc734de762dea",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/bookings/bookingSummary.logic.js": {
+    "mtime": 1795055643.0186698,
+    "seen": 1795057067.4506543,
+    "ast_hash": "3f8004069cf123ec0eab1b5889505407",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/bookings/bookingSummary.service.js": {
+    "mtime": 1795095154.9761252,
+    "seen": 1795108975.5098803,
+    "ast_hash": "34fda081dfd46f1f6b0f3fc783390ff8",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/locations/coastal.logic.js": {
+    "mtime": 1795047021.897873,
+    "seen": 1795057067.45075,
+    "ast_hash": "319c9bd9a2dc075865f4e1eb506b59ee",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/locations/paging.logic.js": {
+    "mtime": 1795049106.958937,
+    "seen": 1795057067.4507592,
+    "ast_hash": "5e3841ef5fe843953c1bf3e62cf71675",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/voyages/voyageSummary.logic.js": {
+    "mtime": 1795095154.977128,
+    "seen": 1795108975.510291,
+    "ast_hash": "b5130003e9c28f5d564f44faa7925cc4",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/voyages/voyageSummary.service.js": {
+    "mtime": 1795095154.9778576,
+    "seen": 1795108975.510294,
+    "ast_hash": "a689914000a891e43030e9c86915c467",
+    "semantic_hash": ""
+  },
+  "backend/test/bookingSummary.logic.test.js": {
+    "mtime": 1795055727.1952863,
+    "seen": 1795057067.4508977,
+    "ast_hash": "57e92568df39bfe0d0687578dabfe112",
+    "semantic_hash": ""
+  },
+  "backend/test/coastal.logic.test.js": {
+    "mtime": 1795047064.1544356,
+    "seen": 1795057067.4509008,
+    "ast_hash": "776dde9570146ce8968ac81d388f8e81",
+    "semantic_hash": ""
+  },
+  "backend/test/locationPaging.test.js": {
+    "mtime": 1795049155.3754153,
+    "seen": 1795057067.4509115,
+    "ast_hash": "1ac4d0d19bbe3564ef50a7c05fc13004",
+    "semantic_hash": ""
+  },
+  "backend/test/voyageSummary.logic.test.js": {
+    "mtime": 1795055726.754454,
+    "seen": 1795057067.4509284,
+    "ast_hash": "8e61bb5635110f9e2d839bccd8610b44",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/forms/LocationPicker.jsx": {
+    "mtime": 1795049177.1062288,
+    "seen": 1795057067.4510403,
+    "ast_hash": "62b420884c39390dd69244a713427f5f",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/bookings/BookingVoyageList.jsx": {
+    "mtime": 1795051283.1323326,
+    "seen": 1795057067.4511175,
+    "ast_hash": "a5394d03b8e719bada3a6000b1f0563a",
+    "semantic_hash": ""
+  },
+  "docs/05-voyage-details-plan.md": {
+    "mtime": 1795054798.385489,
+    "seen": 1795057067.4513214,
+    "ast_hash": "5004d0218b690927fe1dbbf3f2a5bfe9",
+    "semantic_hash": ""
+  },
+  "docs/audit/system-audit-2026-11-19.md": {
+    "mtime": 1795099609.0887623,
+    "seen": 1795108975.5113406,
+    "ast_hash": "035ef2054fe368a26d51d17eb2178dfa",
+    "semantic_hash": ""
+  },
+  "backend/scripts/audit-probes/location-delete-probe.js": {
+    "mtime": 1795097088.7095294,
+    "seen": 1795108975.5095983,
+    "ast_hash": "f494bb9b01ceddd49ea44985ee1542cf",
+    "semantic_hash": ""
+  },
+  "backend/scripts/audit-probes/open-items-probe.js": {
+    "mtime": 1795099000.5312822,
+    "seen": 1795108975.5096035,
+    "ast_hash": "e53520ddf9f5cca68722bcca8fa5466b",
+    "semantic_hash": ""
+  },
+  "backend/scripts/drop-old-location-indexes.js": {
+    "mtime": 1795097196.7244742,
+    "seen": 1795108975.5096514,
+    "ast_hash": "4a5b6fe8e80d8383b62d0c3d81a43f32",
+    "semantic_hash": ""
+  },
+  "backend/src/middleware/superAdminOnly.js": {
+    "mtime": 1795098911.1318376,
+    "seen": 1795108975.5097485,
+    "ast_hash": "fb0b4f350d2e495f50feb61a360cbec3",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/bookings/bookingMove.service.js": {
+    "mtime": 1795098349.9616485,
+    "seen": 1795108975.5098739,
+    "ast_hash": "f27dc6f561687e4e72df63ab3835f2f6",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/bookings/cancelRules.logic.js": {
+    "mtime": 1795098598.7109222,
+    "seen": 1795108975.5098863,
+    "ast_hash": "204cf7d52f3d037036f2eedbcd7b47bd",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/bookings/kind.logic.js": {
+    "mtime": 1795095141.834941,
+    "seen": 1795108975.509892,
+    "ast_hash": "94f12d88b64e523fef78d9b41ffeeb80",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/bookings/moveRules.logic.js": {
+    "mtime": 1795098349.6738892,
+    "seen": 1795108975.509907,
+    "ast_hash": "2e198c46de5b4789c67e418ec48d5f3c",
+    "semantic_hash": ""
+  },
+  "backend/src/modules/services/serviceCode.logic.js": {
+    "mtime": 1795098986.5911884,
+    "seen": 1795108975.5102212,
+    "ast_hash": "f5afc9946d50a14b2ada3fb7bbdd97e8",
+    "semantic_hash": ""
+  },
+  "backend/test/cancelRules.logic.test.js": {
+    "mtime": 1795098598.9410655,
+    "seen": 1795108975.5103571,
+    "ast_hash": "2e3a90a00a8eb677445df40d484e2c77",
+    "semantic_hash": ""
+  },
+  "backend/test/kind.logic.test.js": {
+    "mtime": 1795095328.3452775,
+    "seen": 1795108975.5103803,
+    "ast_hash": "1f09736d591bb336fa2b159181ec47a6",
+    "semantic_hash": ""
+  },
+  "backend/test/moveRules.logic.test.js": {
+    "mtime": 1795098418.7513652,
+    "seen": 1795108975.5103996,
+    "ast_hash": "dc7ef99aac8cfff68d75e6f9c3ccff82",
+    "semantic_hash": ""
+  },
+  "backend/test/roundOpenBookings.logic.test.js": {
+    "mtime": 1795098773.4833586,
+    "seen": 1795108975.510405,
+    "ast_hash": "5d8925263d3d2b2c55542b53fafc7133",
+    "semantic_hash": ""
+  },
+  "backend/test/serviceCode.logic.test.js": {
+    "mtime": 1795098986.8148236,
+    "seen": 1795108975.5104113,
+    "ast_hash": "697ec3d2a303a20433a022571146e385",
+    "semantic_hash": ""
+  },
+  "backend/test/superAdminOnly.test.js": {
+    "mtime": 1795098938.0694213,
+    "seen": 1795108975.5104172,
+    "ast_hash": "a22f5e1c802637f6bd620b9b296cbeff",
+    "semantic_hash": ""
+  },
+  "frontend/src/app/(dashboard)/voyages/[id]/page.jsx": {
+    "mtime": 1795094276.9895136,
+    "seen": 1795108975.5106184,
+    "ast_hash": "5521822d52338fee5477467a7c90ed74",
+    "semantic_hash": ""
+  },
+  "frontend/src/hooks/useVoyage.js": {
+    "mtime": 1795094210.0018592,
+    "seen": 1795108975.510747,
+    "ast_hash": "12449c4409894e73ada4b6617443a674",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/bookings/BookingsTable.jsx": {
+    "mtime": 1795098697.088203,
+    "seen": 1795108975.510798,
+    "ast_hash": "3f4996095722910dfb5f1eea02ee6e90",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/bookings/ManualBookingsTable.jsx": {
+    "mtime": 1795095260.9909406,
+    "seen": 1795108975.51081,
+    "ast_hash": "19f9bed7d0165d414595bd7fb0eb563f",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/voyages/VoyageBookingsTab.jsx": {
+    "mtime": 1795095260.9919674,
+    "seen": 1795108975.5110493,
+    "ast_hash": "e58599736830f4d9551bd8688d59fdcf",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/voyages/VoyageDetail.jsx": {
+    "mtime": 1795095294.68987,
+    "seen": 1795108975.5110521,
+    "ast_hash": "516c4d2753642206d968020a0b1f484b",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/voyages/VoyageKpiCards.jsx": {
+    "mtime": 1795095272.6971738,
+    "seen": 1795108975.5110574,
+    "ast_hash": "42a992e0bb1166cc27eef13b2b3a402e",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/voyages/VoyageOverviewTab.jsx": {
+    "mtime": 1795095272.6971738,
+    "seen": 1795108975.511063,
+    "ast_hash": "355fd2ab8f98b5784d267df7b424907c",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/voyages/VoyagePortStrip.jsx": {
+    "mtime": 1795094233.9535408,
+    "seen": 1795108975.5110655,
+    "ast_hash": "244dd0040003964c97c0564ccc0db5eb",
+    "semantic_hash": ""
+  },
+  "frontend/src/modules/voyages/VoyageQuickActions.jsx": {
+    "mtime": 1795095286.3048575,
+    "seen": 1795108975.5110679,
+    "ast_hash": "7e87575367b5992bdd9cb9625d3d5a5c",
+    "semantic_hash": ""
+  },
+  "frontend/src/utils/voyagePortChoices.js": {
+    "mtime": 1795095212.8748693,
+    "seen": 1795108975.5111759,
+    "ast_hash": "a4c875a6fefb2e3e5574c663e78f47bc",
+    "semantic_hash": ""
+  },
+  "docs/audit/open-items-plan-2026-11-19.md": {
+    "mtime": 1795097291.3343518,
+    "seen": 1795108975.5113251,
+    "ast_hash": "9afb7ffeada03f2df4474f9d25ddbdb8",
+    "semantic_hash": ""
+  },
   "backend/package-lock.json": {
-    "mtime": 1793102120.133574,
-    "seen": 1794335275.073524,
-    "ast_hash": "163d38164948f358bd6a1cc0603612e1",
+    "mtime": 1795096430.4448557,
+    "seen": 1795108975.5113938,
+    "ast_hash": "cfa4c4f3aa036d09eab2e4e7eb1211ac",
     "semantic_hash": ""
   },
   "frontend/package-lock.json": {
-    "mtime": 1794927570.1002002,
-    "seen": 1794928763.276143,
-    "ast_hash": "6323232f9f07e21842bcb6d1fe70a095",
+    "mtime": 1795096461.4086185,
+    "seen": 1795108975.5113966,
+    "ast_hash": "7e038536502025ff9618625f7ef12308",
     "semantic_hash": ""
   },
   "package-lock.json": {

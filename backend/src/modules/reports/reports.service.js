@@ -513,11 +513,13 @@ const getBookingReport = async ({ voyageId, agentId, status, dateFrom, dateTo, s
       .populate('voyageId',        'voyageNumber voyageName')
       .populate('agentId',         'agentCode agentName')
       .populate('containerTypeId', 'code size type')
+      .populate('polId', 'name code').populate('podId', 'name code') // BK-03: the booking's OWN ports (the voyage may run further)
       .sort({ createdAt: -1 })
       .lean(),
     ManualBooking.find(l1Match)
       .populate('voyageId', 'voyageNumber voyageName')
       .populate('agentId',  'agentCode agentName')
+      .populate('polId', 'name code').populate('podId', 'name code')
       .sort({ createdAt: -1 })
       .lean(),
   ]);
@@ -528,6 +530,7 @@ const getBookingReport = async ({ voyageId, agentId, status, dateFrom, dateTo, s
     ...l2Docs.map(b => ({
       _id: b._id, layer: 'Operational', bookingNumber: b.bookingNumber,
       voyageId: b.voyageId, agentId: b.agentId,
+      polName: b.polId?.name || '', podName: b.podId?.name || '',
       shipper: b.shipper, consignee: b.consignee,
       containerNumber: b.containerNumber,
       totalFreight: b.totalFreight, status: b.status, createdAt: b.createdAt,
@@ -535,6 +538,7 @@ const getBookingReport = async ({ voyageId, agentId, status, dateFrom, dateTo, s
     ...l1Docs.map(b => ({
       _id: b._id, layer: 'Manual', bookingNumber: b.bookingNumber,
       voyageId: b.voyageId, agentId: b.agentId,
+      polName: b.polId?.name || '', podName: b.podId?.name || '',
       shipper: null, consignee: null,
       containerNumber: null,
       totalFreight: b.totalFreight, status: b.status, createdAt: b.createdAt,

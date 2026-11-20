@@ -125,7 +125,7 @@ export default function RoundVoyageList({ roundId, round }) {
         <div>
           <h2 className="text-sm font-semibold text-gray-700">Voyages</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {voyages.length} voyage{voyages.length !== 1 ? 's' : ''} — each one is a run over the round's legs
+            {voyages.length} voyage{voyages.length !== 1 ? 's' : ''} — each one is a run over the round&apos;s legs
           </p>
         </div>
         {can('voyages', 'create') && (

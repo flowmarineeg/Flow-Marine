@@ -10,6 +10,7 @@ import { MODULES } from '@/utils/constants';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PageHeader from '@/components/ui/PageHeader';
+import { useAuth } from '@/context/AuthContext';
 
 const ACTIONS = ['view', 'read', 'create', 'update', 'delete', 'import', 'export', 'override', 'issue', 'cancel', 'record', 'approve', 'offset', 'commission', 'close', 'closeOverride', 'reopen', 'carryForward', 'useReserve', 'manage', 'hidden'];
 
@@ -61,6 +62,8 @@ const MODULE_GROUPS = {
 
 export default function PermissionMatrix({ roleId }) {
   const router   = useRouter();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.roleId?.isSystem === true; // F-09: only the SuperAdmin saves permissions
   const [perms,  setPerms]   = useState({});
   const [saving, setSaving]  = useState(false);
 
@@ -74,13 +77,14 @@ export default function PermissionMatrix({ roleId }) {
     queryFn:  () => permissionsService.getByRoleId(roleId).then(r => r.data.data),
   });
 
-  useEffect(() => {
-    if (permData) {
-      const map = {};
-      permData.forEach(p => { map[p.module] = { ...p.actions }; });
-      setPerms(map);
-    }
-  }, [permData]);
+  // load the saved matrix when the data arrives (state adjusted during render, no effect)
+  const [loadedPerm, setLoadedPerm] = useState(null);
+  if (permData && permData !== loadedPerm) {
+    setLoadedPerm(permData);
+    const map = {};
+    permData.forEach(p => { map[p.module] = { ...p.actions }; });
+    setPerms(map);
+  }
 
   const handleSave = async () => {
     setSaving(true);
@@ -116,7 +120,7 @@ export default function PermissionMatrix({ roleId }) {
         action={
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="secondary" onClick={() => router.back()}>← Back</Button>
-            {!isSystem && <Button onClick={handleSave} loading={saving}>Save Permissions</Button>}
+            {!isSystem && isSuperAdmin && <Button onClick={handleSave} loading={saving}>Save Permissions</Button>}
           </div>
         }
       />

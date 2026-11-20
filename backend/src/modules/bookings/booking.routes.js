@@ -21,6 +21,7 @@ router.post  ('/manual',     rbac('bookings'), audit('bookings'), validateManual
 router.get   ('/manual/:id', rbac('bookings'),                         manualCtrl.getById);
 router.put   ('/manual/:id', rbac('bookings'), audit('bookings'), validateManualUpdate, manualCtrl.update);
 router.delete('/manual/:id', rbac('bookings'), audit('bookings'),      manualCtrl.remove);
+router.put   ('/manual/:id/move', rbac('bookings', 'update'), audit('bookings'), manualCtrl.move); // BK-05
 
 // ── Import routes — BEFORE /:id to avoid shadowing ───────────────────────────
 // Sprint019: preview + save both require 'import' action on bookings
@@ -75,5 +76,6 @@ router.get('/:id',   rbac('bookings'), ctrl.getById);
 router.post('/',     rbac('bookings'), audit('bookings'), validateCreate, ctrl.create);
 router.put('/:id',   rbac('bookings'), audit('bookings'), validateUpdate, ctrl.update);
 router.delete('/:id',rbac('bookings'), audit('bookings'), ctrl.remove);
+router.put   ('/:id/move', rbac('bookings', 'update'), audit('bookings'), ctrl.move); // BK-05
 
 module.exports = router;

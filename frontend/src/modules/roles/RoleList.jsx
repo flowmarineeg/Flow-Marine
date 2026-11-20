@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { rolesService } from '@/services/roles.service';
 import { usePermission } from '@/context/PermissionContext';
+import { useAuth } from '@/context/AuthContext';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
@@ -20,6 +21,8 @@ export default function RoleList() {
   const qc      = useQueryClient();
   const router  = useRouter();
   const { can } = usePermission();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.roleId?.isSystem === true; // F-09: roles and permissions are written by the SuperAdmin only
 
   const [modal,        setModal]        = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -53,7 +56,7 @@ export default function RoleList() {
       <PageHeader
         title="Roles & Permissions"
         subtitle="Manage roles and configure module-level access"
-        action={can('roles', 'create') && <Button onClick={openCreate}>+ New Role</Button>}
+        action={isSuperAdmin && can('roles', 'create') && <Button onClick={openCreate}>+ New Role</Button>}
       />
 
       <div className="card" style={{ overflow: 'hidden' }}>
@@ -93,13 +96,13 @@ export default function RoleList() {
                         style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--teal)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                         Permissions
                       </button>
-                      {can('roles', 'update') && !r.isSystem && (
+                      {isSuperAdmin && can('roles', 'update') && !r.isSystem && (
                         <button onClick={() => openEdit(r)}
                           style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                           Edit
                         </button>
                       )}
-                      {can('roles', 'delete') && !r.isSystem && (
+                      {isSuperAdmin && can('roles', 'delete') && !r.isSystem && (
                         <button onClick={() => setDeleteTarget(r)}
                           style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                           Delete

@@ -1,6 +1,7 @@
 'use strict';
 
 const voyageService = require('./voyage.service');
+const voyageSummary = require('./voyageSummary.service');
 const rbac = require('../../middleware/rbac');
 const { success, created, error, paginate } = require('../../utils/responseHelper');
 
@@ -13,10 +14,18 @@ const list = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// GET /voyages/:id
+// GET /voyages/:id  (Voyage Details: also the vessel, round dates and named port calls)
 const getById = async (req, res, next) => {
   try {
-    return success(res, await voyageService.getById(req.params.id));
+    return success(res, await voyageService.getDetail(req.params.id));
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+// GET /voyages/:id/summary  — cards for the Voyage Details page (revenue only with invoices:read or reports:read)
+const summary = async (req, res, next) => {
+  try {
+    const canSeeRevenue = (await rbac.hasPermission(req, 'invoices', 'read')) || (await rbac.hasPermission(req, 'reports', 'read'));
+    return success(res, await voyageSummary.getSummary(req.params.id, { canSeeRevenue }), 'Voyage summary retrieved');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
@@ -64,4 +73,4 @@ const remove = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { list, getById, getRoundRoutePorts, create, refreshPortCalls, update, remove };
+module.exports = { list, getById, summary, getRoundRoutePorts, create, refreshPortCalls, update, remove };

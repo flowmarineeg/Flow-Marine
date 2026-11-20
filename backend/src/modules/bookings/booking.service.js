@@ -3,6 +3,7 @@
 const lock = require('../rounds/roundLock');
 const pickFields = require('../../utils/pickFields');
 const mongoose  = require('mongoose');
+const { portFilter } = require('./bookingSummary.logic');
 const Booking   = require('./booking.model');
 const Voyage    = require('../voyages/voyage.model');
 const Port      = require('../locations/port.model');
@@ -12,6 +13,7 @@ const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 const { invalidateRoundCache, computeVoyagePreview } = require('../capacity/capacity.service');
 const { capacityEnforcement } = require('../../config/env');
 const { resolveVoyage } = require('./bookingVoyage.service');
+const { isCancelOnly } = require('./cancelRules.logic');
 const { assertPartner, assertOwn } = require('./partnerScope');
 
 // ─── Status transition map ────────────────────────────────────────────────────
@@ -82,6 +84,7 @@ const list = async ({
   search = '', voyageId = '', agentId = '', roundId = '', partnerId = '',
   status = '', dateFrom = '', dateTo = '',
   dischargeStatus = '', // Sprint 045 — additive: 'Discharged' | 'Remaining'
+  portLegKey = '', portId = '',
 } = {}, scope = null) => {
   const query = {};
   if (roundId) {
@@ -114,6 +117,10 @@ const list = async ({
       { containerNumber: { $regex: rx, $options: 'i' } },
     ];
   }
+
+  // Voyage Details port strip: bookings whose POL or POD is that port call (leg key first, port id for old data).
+  const port = portFilter(portLegKey, portId);
+  if (port) query.$and = [...(query.$and || []), { $or: port }];
 
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
@@ -206,12 +213,38 @@ const create = async (data, createdBy, scope = null) => {
 };
 
 // ─── Update ───────────────────────────────────────────────────────────────────
+// FL-05: refuse while the booking is billed on a live invoice: a locked BookingItem that contains it (V2 invoices), or a
+// non-cancelled legacy invoice line. Read-only: no money code is touched; raise a credit note / cancel the invoice first.
+const assertNotInvoiced = async (booking) => {
+  const { BookingItem } = require('../billing/billing.models');
+  const Invoice = require('../invoices/invoice.model');
+  const [item, legacy] = await Promise.all([
+    BookingItem.exists({ bookingIds: booking._id, locked: true }),
+    Invoice.exists({ 'lineItems.bookingId': booking._id, status: { $ne: 'Cancelled' } }),
+  ]);
+  if (item || legacy) {
+    throw { status: 409, message: 'Cannot cancel: this booking is on a live invoice. Raise a credit note or cancel the invoice first.', code: 'BOOKING_INVOICED' };
+  }
+};
+
 const update = async (id, data, updatedBy, scope = null) => {
   await lock.assertDocRoundOpen('Booking', id);
   const booking = await Booking.findOne({ _id: id });
   if (!booking) throw { status: 404, message: 'Booking not found' };
   assertOwn(booking, scope);
 
+  // FL-05: a Final Loading booking cannot be edited, but it CAN be cancelled (status-only), unless it is on a live invoice
+  if (booking.status === 'Final Loading' && isCancelOnly(data)) {
+    if (scope) throw { status: 403, message: 'Partner users cannot change the status of a booking' };
+    await assertNotInvoiced(booking);
+    booking.status = 'Cancelled';
+    booking.updatedBy = updatedBy;
+    await booking.save();
+    const v = await Voyage.findById(booking.voyageId).select('roundId').lean();
+    if (v) invalidateRoundCache(v.roundId);
+    require('../billing/bookingItem.service').scheduleSync({ voyageIds: [booking.voyageId] }); // the derived invoice item shrinks
+    return getById(booking._id);
+  }
   if (['Cancelled', 'Final Loading'].includes(booking.status)) {
     throw { status: 400, message: `${booking.status} bookings cannot be edited` };
   }

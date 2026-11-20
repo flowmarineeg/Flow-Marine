@@ -64,4 +64,13 @@ const buildEditedLegs = (legs, existingKeys, ports) => {
 /** Statuses a voyage may still be moved to Cancelled from (Arrived/Completed/Cancelled are left alone). */
 const CANCELLABLE_VOYAGE_STATUSES = ['Scheduled', 'Departed', 'In Transit'];
 
-module.exports = { INITIAL_STATUSES, assertInitialStatus, buildRouteSnapshot, buildEditedLegs, newLegKey, CANCELLABLE_VOYAGE_STATUSES };
+/** FL-06: "open" bookings = Pending or Confirmed (Final Loading is on the manifest, Cancelled is history). */
+const OPEN_BOOKING_STATUSES = Object.freeze(['Pending', 'Confirmed']);
+
+/** Message for refusing Completed while open bookings exist; null when there are none. */
+const openBookingsMessage = (roundNumber, layer2, layer1) =>
+  layer2 + layer1 > 0
+    ? `Cannot complete round ${roundNumber}: ${layer2} booking(s) and ${layer1} estimated booking(s) are still Pending or Confirmed. Move them to another voyage, confirm them to Final Loading, or cancel them first.`
+    : null;
+
+module.exports = { OPEN_BOOKING_STATUSES, openBookingsMessage, INITIAL_STATUSES, assertInitialStatus, buildRouteSnapshot, buildEditedLegs, newLegKey, CANCELLABLE_VOYAGE_STATUSES };

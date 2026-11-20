@@ -14,13 +14,84 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { bookingsService } from '@/services/bookings.service';
 import { getVoyageLabel } from '@/utils/voyageLabel';
+import { callIndex, polChoices, podChoices } from '@/utils/voyagePortChoices';
 
 const sc = 'w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-800 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition cursor-pointer disabled:opacity-60';
 const lc = 'block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5';
 
 const portLabel = (p) => `${p.name || '?'}${p.code ? ` (${p.code})` : ''}${p.legs?.length > 1 ? ` — calls ${p.legs.length}×` : ''}`;
 
-export default function RoundRoutePicker({ value, onChange, rounds = [], ports = [], disabled = false, errors = {} }) {
+/**
+ * Fixed-voyage mode (Voyage Details quick actions): `fixed` = { round, voyage, calls, nextIndex }.
+ * Round and voyage are shown, not chosen; POL / POD are picked among THIS voyage's port calls (by leg key, so a port
+ * called twice is told apart); the pinned voyage is never cleared and is always sent as voyageId.
+ * Value = { roundId, voyageId, polId, polLegKey, podId, podLegKey }.
+ */
+function FixedVoyageRoute({ value, onChange, fixed, errors = {} }) {
+  const { round, voyage, calls } = fixed;
+  const pi = callIndex(calls, value?.polLegKey, value?.polId);
+  const di = callIndex(calls, value?.podLegKey, value?.podId);
+  const keyOf = (c) => c.legKey || `i${c.index}`;
+  const find = (list, key) => list.find((c) => keyOf(c) === key);
+  const setPol = (key) => {
+    const c = find(polChoices(calls), key);
+    const next = { ...value, polId: c?.portId || '', polLegKey: c?.legKey || '' };
+    // a POD that is no longer after the new POL is dropped; the voyage stays
+    if (!c || di <= callIndex(calls, c.legKey, c.portId)) { next.podId = ''; next.podLegKey = ''; }
+    onChange(next);
+  };
+  const setPod = (key) => {
+    const c = find(podChoices(calls, pi), key);
+    onChange({ ...value, podId: c?.portId || '', podLegKey: c?.legKey || '' });
+  };
+  const polC = pi >= 0 ? calls[pi] : null;
+  const podC = di >= 0 ? calls[di] : null;
+  const opt = (c) => <option key={keyOf(c)} value={keyOf(c)}>{c.index + 1}. {c.name || '?'}{c.code ? ` (${c.code})` : ''}</option>;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-white border border-gray-200 rounded-lg px-3 py-2">
+          <p className={lc}>Round</p>
+          <p className="text-[13px] font-medium text-gray-700">{round?.roundNumber}{round?.roundName ? ` — ${round.roundName}` : ''}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-lg px-3 py-2">
+          <p className={lc}>Voyage (fixed)</p>
+          <p className="text-[13px] font-medium text-gray-700">
+            <span className="mono font-bold text-teal-600">{getVoyageLabel(voyage)}</span>
+            {voyage?.direction && <span className="ml-2 text-gray-500">{voyage.direction}bound</span>}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className={lc}>POL <span className="text-red-400">*</span></label>
+          <select value={polC ? keyOf(polC) : ''} className={sc} onChange={e => setPol(e.target.value)}>
+            <option value="">Select POL…</option>
+            {polChoices(calls).map(opt)}
+          </select>
+          {errors.polId && <p className="mt-1 text-[11px] text-red-500">{errors.polId}</p>}
+        </div>
+        <div>
+          <label className={lc}>POD <span className="text-red-400">*</span></label>
+          <select value={podC ? keyOf(podC) : ''} disabled={!polC} className={sc} onChange={e => setPod(e.target.value)}>
+            <option value="">{polC ? 'Select POD…' : 'Select a POL first…'}</option>
+            {podChoices(calls, pi).map(opt)}
+          </select>
+          {errors.podId && <p className="mt-1 text-[11px] text-red-500">{errors.podId}</p>}
+        </div>
+      </div>
+      {errors.voyageId && <p className="text-[11px] text-red-500">{errors.voyageId}</p>}
+    </div>
+  );
+}
+
+/** The picker: fixed-voyage mode when `fixed` is given, otherwise the free Round + POL + POD picker. */
+export default function RoundRoutePicker(props) {
+  return props.fixed ? <FixedVoyageRoute {...props} /> : <FreeRoutePicker {...props} />;
+}
+
+function FreeRoutePicker({ value, onChange, rounds = [], ports = [], disabled = false, errors = {} }) {
   const { roundId = '', polId = '', podId = '', voyageId = '' } = value || {};
   const ready = !!roundId && !!polId && !!podId && polId !== podId;
 

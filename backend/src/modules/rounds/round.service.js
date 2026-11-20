@@ -8,9 +8,9 @@ const RouteLeg = require('../routes/routeLeg.model');
 const Service  = require('../services/service.model');
 const Vessel   = require('../vessels/vessel.model');
 const AppError = require('../../utils/AppError');
-const { assertInitialStatus, buildRouteSnapshot, buildEditedLegs, CANCELLABLE_VOYAGE_STATUSES } = require('./round.logic');
+const { assertInitialStatus, buildRouteSnapshot, buildEditedLegs, CANCELLABLE_VOYAGE_STATUSES, OPEN_BOOKING_STATUSES, openBookingsMessage } = require('./round.logic');
 const { validateLegs } = require('../routes/route.service');
-const { legsChangeWarnings } = require('../voyages/voyageRun.logic');
+const { legsChangeWarnings, staleBookingWarnings } = require('../voyages/voyageRun.logic');
 const { assertNoConsecutivePorts } = require('../routes/routeLegs.logic');
 const { nextNumber } = require('../../utils/autoNumber');
 const { invalidateRoundCache } = require('../capacity/capacity.service');
@@ -72,6 +72,19 @@ const assertNoLiveBookings = async (round) => {
       'ROUND_HAS_BOOKINGS'
     );
   }
+};
+
+// FL-06: a round cannot be Completed while Pending or Confirmed bookings (Layer 1 or 2) are still on its voyages.
+// Voyages are read by roundId.
+const assertNoOpenBookings = async (round) => {
+  const voyageIds = await Voyage.find({ roundId: round._id }).distinct('_id');
+  if (!voyageIds.length) return;
+  const Booking = require('../bookings/booking.model');
+  const ManualBooking = require('../bookings/manualBooking.model');
+  const q = { voyageId: { $in: voyageIds }, status: { $in: OPEN_BOOKING_STATUSES } };
+  const [layer2, layer1] = await Promise.all([Booking.countDocuments(q), ManualBooking.countDocuments(q)]);
+  const msg = openBookingsMessage(round.roundNumber, layer2, layer1);
+  if (msg) throw new AppError(409, msg, 'ROUND_HAS_OPEN_BOOKINGS');
 };
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -167,8 +180,9 @@ const create = async (data, createdBy) => {
   }
   assertNoConsecutivePorts(routeLegs.map((l) => ({ portId: l.portId?._id || l.portId })));
 
-  // 2. Validate vessel not in another Active round
-  await assertVesselFree(data.vesselId);
+  // 2. FL-14: one Active round per vessel is enforced when a round is (or becomes) Active; a Planned round may be created
+  //    beside an Active one. The partial unique index one_active_round_per_vessel closes the race between two requests.
+  if (status === 'Active') await assertVesselFree(data.vesselId);
 
   // 3. Validate dates
   if (new Date(data.startDate) >= new Date(data.endDate)) {
@@ -237,6 +251,13 @@ const updateLegs = async (id, legs, updatedBy) => {
     .populate('vesselId',  'vesselCode vesselName')
     .lean();
   out.warnings = legsChangeWarnings(newLegs, voyages);
+  // BK-04: live bookings (both layers) whose leg keys no longer fit the edited legs: warn, never block
+  const Booking = require('../bookings/booking.model');
+  const ManualBooking = require('../bookings/manualBooking.model');
+  const live = { voyageId: { $in: voyages.map((v) => v._id) }, status: { $ne: 'Cancelled' } };
+  const sel = 'voyageId polId podId polLegKey podLegKey';
+  const [l2, l1] = await Promise.all([Booking.find(live).select(sel).lean(), ManualBooking.find(live).select(sel).lean()]);
+  out.warnings.push(...staleBookingWarnings(newLegs, voyages, [...l2, ...l1]));
   return out;
 };
 
@@ -260,6 +281,7 @@ const update = async (id, data, updatedBy) => {
   // Sprint 042 — captured BEFORE round.status is overwritten below.
   const becameActive = data.status === 'Active' && round.status !== 'Active';
   const becameCancelled = statusChanges && data.status === 'Cancelled';
+  const becameCompleted = statusChanges && data.status === 'Completed';
 
   // Date validation
   const startDate = data.startDate ? new Date(data.startDate) : round.startDate;
@@ -278,12 +300,15 @@ const update = async (id, data, updatedBy) => {
 
   // One Active round per vessel: checked on a vessel change AND whenever the round becomes Active (RV-07).
   // The partial unique index closes the race between two concurrent requests (RV-34).
-  if (vesselChanged || becameActive) {
+  // FL-14: only when the round ends up Active (a Planned round may sit beside an Active one on the same vessel).
+  const endsActive = (data.status || round.status) === 'Active';
+  if (endsActive && (vesselChanged || becameActive)) {
     await assertVesselFree(data.vesselId || round.vesselId, id);
   }
 
   // Cancelling is refused while live bookings exist; bookings are never auto-cancelled (RV-25).
   if (becameCancelled) await assertNoLiveBookings(round);
+  if (becameCompleted) await assertNoOpenBookings(round); // FL-06
 
   const allowed = ['vesselId', 'startDate', 'endDate', 'status', 'notes', 'roundName'];
   allowed.forEach(field => { if (data[field] !== undefined) round[field] = data[field]; });

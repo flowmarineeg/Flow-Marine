@@ -83,6 +83,35 @@ const getById = async (id) => {
   return voyage;
 };
 
+// ─── Detail for the Voyage Details page (S-19) ──────────────────────────────────
+// getById stays as it is (the PUT handler stores it as the audit "old doc"). This one adds what the page needs:
+// the vessel (a voyage has none: it is Round.vesselId), the round's dates/status/closeStatus and named port calls.
+const getDetail = async (id) => {
+  if (!mongoose.isValidObjectId(String(id))) throw { status: 400, message: 'Invalid voyage id' };
+  const voyage = await Voyage.findById(id)
+    .populate({ path: 'roundId', select: 'roundNumber roundName startDate endDate status closeStatus vesselId',
+                populate: { path: 'vesselId', select: 'vesselCode vesselName capacity' } })
+    .populate('serviceId', 'serviceCode serviceName')
+    .populate('polId',     'name code')
+    .populate('podId',     'name code')
+    .lean();
+  if (!voyage) throw { status: 404, message: 'Voyage not found' };
+
+  const round = voyage.roundId || null;
+  voyage.vessel = round?.vesselId || null;
+  if (round) round.vesselId = round.vesselId?._id || null;
+  voyage.round = round;
+
+  // snapshot names are stored on the port calls; fill from Port only when one is missing (old data)
+  const missing = (voyage.portCalls || []).filter((c) => !c.portName);
+  if (missing.length) {
+    const ports = await Port.find({ _id: { $in: missing.map((c) => c.portId) } }).select('name code').lean();
+    const byId = new Map(ports.map((p) => [String(p._id), p]));
+    for (const c of missing) { const p = byId.get(String(c.portId)); if (p) { c.portName = p.name; c.portCode = p.code || null; } }
+  }
+  return voyage;
+};
+
 // ─── Legs of a round ──────────────────────────────────────────────────────────
 // The round's own (editable) legs are the source of truth: routeSnapshot.legs, each with a stable legKey.
 const roundRouteLegs = (round) => {
@@ -361,7 +390,7 @@ const deleteVoyage = async (id) => {
 const getAllowedTransitions = (currentStatus) => STATUS_TRANSITIONS[currentStatus] || [];
 
 module.exports = {
-  list, getById, getRoundRoutePorts,
+  list, getById, getDetail, getRoundRoutePorts,
   createVoyage, refreshPortCalls, update, deleteVoyage,
   getAllowedTransitions,
 };

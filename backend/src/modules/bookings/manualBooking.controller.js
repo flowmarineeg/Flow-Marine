@@ -1,6 +1,7 @@
 'use strict';
 
 const manualBookingService = require('./manualBooking.service');
+const mover = require('./bookingMove.service');
 const { scopeOf } = require('./partnerScope');
 const { success, created, error, paginate } = require('../../utils/responseHelper');
 
@@ -8,8 +9,8 @@ const fail = (res, next, err) => (err && err.status ? error(res, err.message, er
 
 const list = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search = '', voyageId = '', agentId = '', roundId = '', partnerId = '', status = '' } = req.query;
-    const { data, total } = await manualBookingService.list({ page, limit, search, voyageId, agentId, roundId, partnerId, status }, scopeOf(req.user));
+    const { page = 1, limit = 20, search = '', voyageId = '', agentId = '', roundId = '', partnerId = '', status = '', portLegKey = '', portId = '', kind = '' } = req.query;
+    const { data, total } = await manualBookingService.list({ page, limit, search, voyageId, agentId, roundId, partnerId, status, portLegKey, portId, kind }, scopeOf(req.user));
     return success(res, data, 'Manual bookings retrieved', 200, paginate(total, page, limit));
   } catch (err) { fail(res, next, err); }
 };
@@ -34,6 +35,16 @@ const update = async (req, res, next) => {
   } catch (err) { fail(res, next, err); }
 };
 
+// PUT /bookings/manual/:id/move {voyageId} (BK-05)
+const move = async (req, res, next) => {
+  try {
+    const isPartnerUser = !!scopeOf(req.user);
+    req.auditOldDoc = await manualBookingService.getById(req.params.id, null);
+    await mover.moveManualBooking(req.params.id, req.body?.voyageId, req.user._id, { isPartnerUser });
+    return success(res, await manualBookingService.getById(req.params.id, null), 'Manual booking moved');
+  } catch (err) { fail(res, next, err); }
+};
+
 const remove = async (req, res, next) => {
   try {
     await manualBookingService.hardDelete(req.params.id, scopeOf(req.user));
@@ -41,4 +52,4 @@ const remove = async (req, res, next) => {
   } catch (err) { fail(res, next, err); }
 };
 
-module.exports = { list, getById, create, update, remove };
+module.exports = { move, list, getById, create, update, remove };

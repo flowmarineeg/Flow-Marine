@@ -115,3 +115,24 @@ test('round snapshot: every leg gets a legKey', () => {
   assert.ok(snap.legs.every((l) => typeof l.legKey === 'string' && l.legKey.length >= 8));
   assert.notEqual(snap.legs[0].legKey, snap.legs[1].legKey);
 });
+
+test('BK-04: live bookings whose leg key was removed or whose leg port changed are warned about per voyage; old data and Cancelled voyages are skipped', () => {
+  const edited = [legs[0], { ...legs[1], portId: id(9) }, legs[3]]; // k3 removed, k2 now another port
+  const voyages = [
+    { _id: 'v1', voyageNumber: 'V0001E', status: 'Scheduled' },
+    { _id: 'v2', voyageNumber: 'V0002W', status: 'Cancelled' },
+    { _id: 'v3', voyageNumber: 'V0003E', status: 'Scheduled' },
+  ];
+  const bookings = [
+    { voyageId: 'v1', polId: legs[0].portId, podId: legs[2].portId, polLegKey: 'k1', podLegKey: 'k3' },  // k3 removed -> stale
+    { voyageId: 'v1', polId: legs[1].portId, podId: legs[3].portId, polLegKey: 'k2', podLegKey: 'k4' },  // k2 port changed -> stale
+    { voyageId: 'v1', polId: legs[0].portId, podId: legs[3].portId, polLegKey: 'k1', podLegKey: 'k4' },  // still fine
+    { voyageId: 'v1', polId: legs[0].portId, podId: legs[3].portId, polLegKey: null, podLegKey: null },  // old data, no keys
+    { voyageId: 'v2', polId: legs[0].portId, podId: legs[2].portId, polLegKey: 'k1', podLegKey: 'k3' },  // Cancelled voyage
+  ];
+  const w = V.staleBookingWarnings(edited, voyages, bookings);
+  assert.equal(w.length, 1);
+  assert.match(w[0], /V0001E has 2 live booking/);
+  assert.deepEqual(V.staleBookingWarnings(legs, voyages, bookings), []); // unchanged legs: nothing stale
+  assert.deepEqual(V.staleBookingWarnings(edited, voyages, []), []);
+});

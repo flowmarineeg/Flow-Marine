@@ -9,6 +9,7 @@ import { bookingsService }       from '@/services/bookings.service';
 import { customersService } from '@/services/customers.service';
 import { useBookingLookups }     from '@/hooks/useBookingLookups';
 import RoundRoutePicker, { validateRoute } from './RoundRoutePicker';
+import { fixedRouteStart, validateFixedRoute } from '@/utils/voyagePortChoices';
 import { BOOKING_STATUS }        from '@/utils/constants';
 import { getVoyageLabel }        from '@/utils/voyageLabel';
 
@@ -41,13 +42,20 @@ const SectionCard = ({ title, children }) => (
   </div>
 );
 
-export default function BookingForm({ item, onSuccess, onCancel }) {
+/**
+ * `presets` (optional, Voyage Details quick actions): { fixed: { round, voyage, calls, nextIndex } }.
+ * With it the route is fixed to that voyage (see RoundRoutePicker) and the voyage is always sent as voyageId.
+ */
+export default function BookingForm({ item, onSuccess, onCancel, presets = null }) {
   const qc        = useQueryClient();
   const isEditing = !!item;
   const isLocked  = ['Cancelled', 'Final Loading'].includes(item?.status);
+  const fixed     = !isEditing ? presets?.fixed || null : null;
   const [capacityWarning, setCapacityWarning] = useState(null);
   // Bookings sprint 2026-11-10: round + the booking's own POL/POD; the voyage is assigned by the server
-  const [route, setRoute] = useState({ roundId: '', polId: '', podId: '', voyageId: '' });
+  const [route, setRoute] = useState(() => fixed
+    ? fixedRouteStart({ roundId: fixed.round._id, voyageId: fixed.voyage._id, calls: fixed.calls, nextIndex: fixed.nextIndex })
+    : { roundId: '', polId: '', podId: '', voyageId: '' });
   const [routeErrors, setRouteErrors] = useState({});
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
@@ -119,11 +127,12 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
       mutation.mutate({ ...payload, customerId: payload.customerId || null, ...(isPartnerUser ? {} : { partnerId: partnerId || null }) });
       return;
     }
-    const errs = validateRoute(route);
+    const errs = fixed ? validateFixedRoute(route, fixed.calls) : validateRoute(route);
     setRouteErrors(errs);
     if (Object.keys(errs).length) return;
     mutation.mutate({
       ...payload, ...route, voyageId: route.voyageId || undefined,
+      polLegKey: route.polLegKey || undefined, podLegKey: route.podLegKey || undefined,
       customerId: payload.customerId || null,
       ...(isPartnerUser ? {} : { partnerId: partnerId || undefined }),
     });
@@ -193,7 +202,7 @@ export default function BookingForm({ item, onSuccess, onCancel }) {
             <p className="col-span-full text-[11px] text-amber-500">Round, ports and voyage cannot be changed on an existing booking — create a new one for a different route</p>
           </div>
         ) : (
-          <RoundRoutePicker value={route} onChange={setRoute} rounds={rounds} ports={ports} errors={routeErrors} />
+          <RoundRoutePicker value={route} onChange={setRoute} rounds={rounds} ports={ports} errors={routeErrors} fixed={fixed} />
         )}
       </SectionCard>
 

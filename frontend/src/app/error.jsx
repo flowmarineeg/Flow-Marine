@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 export default function GlobalError({ error, reset }) {
   return (
     <html>
@@ -40,13 +42,13 @@ export default function GlobalError({ error, reset }) {
             }}>
               Try again
             </button>
-            <a href="/" style={{
+            <Link href="/" style={{
               padding: '10px 20px', borderRadius: 8, border: '1px solid #E5E7EB',
               background: '#fff', color: '#374151', fontWeight: 600,
               fontSize: 14, textDecoration: 'none', display: 'inline-block',
             }}>
               Go home
-            </a>
+            </Link>
           </div>
         </div>
       </body>

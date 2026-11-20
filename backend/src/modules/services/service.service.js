@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const pickFields = require('../../utils/pickFields');
 const Service = require('./service.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
+const { codeChanged, lockedMessage } = require('./serviceCode.logic');
 const { DEFAULT_PAGE, DEFAULT_LIMIT } = require('../../config/constants');
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -83,6 +84,13 @@ const create = async (data, createdBy) => {
 const update = async (id, data, updatedBy) => {
   const service = await Service.findOne({ _id: id });
   if (!service) throw { status: 404, message: 'Service not found' };
+
+  // RV-40: the code is locked once a round uses the service (the name and other fields stay editable)
+  if (codeChanged(service.serviceCode, data.serviceCode)) {
+    const rounds = await require('../rounds/round.model').countDocuments({ serviceId: id });
+    const msg = lockedMessage(service.serviceCode, rounds);
+    if (msg) throw { status: 409, message: msg };
+  }
 
   if (data.serviceCode) {
     const code = data.serviceCode.toUpperCase();

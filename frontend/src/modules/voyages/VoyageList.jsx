@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
@@ -46,6 +47,7 @@ const groupByRound = (voyages) => {
 
 export default function VoyageList() {
   const qc = useQueryClient();
+  const router = useRouter();
   const { can } = usePermission();
 
   const [page, setPage] = useState(1);
@@ -61,9 +63,11 @@ export default function VoyageList() {
     queryFn: () => voyagesService.list({ page, limit: 20, status, serviceId }).then(r => r.data),
   });
 
+  const canFilterByService = can('services', 'read');
   const { data: servicesData } = useQuery({
     queryKey: ['services-active-dropdown'],
     queryFn: () => servicesService.listActive().then(r => r.data.data),
+    enabled: canFilterByService,
   });
   const services = servicesData || [];
 
@@ -151,10 +155,12 @@ export default function VoyageList() {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2.5 mb-4">
-        <select value={serviceId} onChange={e => { setServiceId(e.target.value); setPage(1); }} className={selectCls}>
-          <option value="">All Services</option>
-          {services.map(s => <option key={s._id} value={s._id}>{s.serviceCode}</option>)}
-        </select>
+        {canFilterByService && (
+          <select value={serviceId} onChange={e => { setServiceId(e.target.value); setPage(1); }} className={selectCls}>
+            <option value="">All Services</option>
+            {services.map(s => <option key={s._id} value={s._id}>{s.serviceCode}</option>)}
+          </select>
+        )}
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Statuses</option>
           {VOYAGE_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -218,8 +224,8 @@ export default function VoyageList() {
                     </thead>
                     <tbody>
                       {displayVoyages.map(v => (
-                        <tr key={v._id} className="table-row">
-                          <td className="px-4">
+                        <tr key={v._id} className="table-row cursor-pointer" onClick={() => router.push(`/voyages/${v._id}`)}>
+                          <td className="px-4" onClick={e => e.stopPropagation()}>
                             <input type="checkbox" checked={selected.includes(v._id)} onChange={() => toggleSelect(v._id)} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
                           </td>
                           <td>
@@ -236,11 +242,11 @@ export default function VoyageList() {
                             {v.podId?.code && <span className="ml-1 mono text-[10px] text-gray-400">{v.podId.code}</span>}
                           </td>
                           <td className={`text-xs ${v.etd ? 'text-gray-600' : 'text-gray-300'}`}>{fmt(v.etd)}</td>
-                          <td className={`text-xs ${v.atd ? 'text-blue-600 font-medium' : 'text-gray-300'}`}>{fmt(v.atd)}</td>
                           <td className={`text-xs ${v.eta ? 'text-gray-600' : 'text-gray-300'}`}>{fmt(v.eta)}</td>
+                          <td className={`text-xs ${v.atd ? 'text-blue-600 font-medium' : 'text-gray-300'}`}>{fmt(v.atd)}</td>
                           <td className={`text-xs ${v.ata ? 'text-blue-600 font-medium' : 'text-gray-300'}`}>{fmt(v.ata)}</td>
                           <td><Badge label={v.status} /></td>
-                          <td>
+                          <td onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-3">
                               {can('voyages', 'update') && (
                                 <button

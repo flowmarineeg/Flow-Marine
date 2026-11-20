@@ -7,11 +7,14 @@ const ContainerType = require('../containerTypes/containerType.model');
 const { nextNumber }         = require('../../utils/autoNumber');
 const { resolveTEU }         = require('../../utils/teuResolver');
 const { escapeRegex }        = require('../../utils/escapeRegex');
+const { portFilter }         = require('./bookingSummary.logic');
+const { withKind, kindFilter, kindForCreate } = require('./kind.logic');
 const { invalidateRoundCache, computeRoutePreview } = require('../capacity/capacity.service');
 const { capacityEnforcement } = require('../../config/env');
 const logger = require('../../utils/logger');
 const Port = require('../locations/port.model');
 const { resolveVoyage } = require('./bookingVoyage.service');
+const { isCancelOnly } = require('./cancelRules.logic');
 const { assertPartner, assertOwn } = require('./partnerScope');
 const { DEFAULT_PAGE, DEFAULT_LIMIT, BOOKING_STATUS } = require('../../config/constants');
 
@@ -100,6 +103,7 @@ const fetchSizeMap = async (containerTypeIds) => {
 const list = async ({
   page = DEFAULT_PAGE, limit = DEFAULT_LIMIT,
   search = '', voyageId = '', agentId = '', roundId = '', partnerId = '', status = '',
+  portLegKey = '', portId = '', kind = '',
 } = {}, scope = null) => {
   const query = {};
   if (roundId) query.voyageId = { $in: await Voyage.find({ roundId }).distinct('_id') };
@@ -116,13 +120,20 @@ const list = async ({
     query.$or = [{ bookingNumber: { $regex: escapeRegex(search), $options: 'i' } }];
   }
 
+  // Voyage Details port strip: bookings whose POL or POD is that port call (leg key first, port id for old data).
+  const port = portFilter(portLegKey, portId);
+  if (port) query.$and = [...(query.$and || []), { $or: port }];
+  // kind filter: Estimate = kind != Allocation, so old documents without a kind are estimates
+  const kindQ = kindFilter(kind);
+  if (kindQ) query.$and = [...(query.$and || []), kindQ];
+
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     populate(ManualBooking.find(query)).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
     ManualBooking.countDocuments(query),
   ]);
 
-  return { data, total };
+  return { data: data.map(withKind), total };
 };
 
 // ── Get by ID ─────────────────────────────────────────────────────────────────
@@ -130,7 +141,7 @@ const getById = async (id, scope = null) => {
   const doc = await populate(ManualBooking.findOne({ _id: id })).lean();
   if (!doc) throw { status: 404, message: 'Manual booking not found' };
   if (scope && String(doc.partnerId?._id || doc.partnerId || '') !== scope) throw { status: 404, message: 'Manual booking not found' };
-  return doc;
+  return withKind(doc);
 };
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -181,6 +192,7 @@ const create = async (data, createdBy, scope = null) => {
     polLegKey, podLegKey,
     partnerId:    scope || await assertPartner(data.partnerId),
     source:       scope ? 'PartnerUser' : 'Staff',
+    kind:         kindForCreate(data.kind, { isPartnerUser: !!scope }),
     cargoRows:    computed,
     totalFreight,
     totalTEU,
@@ -210,6 +222,16 @@ const update = async (id, data, updatedBy, scope = null) => {
     throw { status: 403, message: 'Partner users cannot change the status of a booking' };
   }
 
+  // FL-05: a Final Loading estimate cannot be edited, but it can be cancelled (status-only). Layer 1 is never invoiced.
+  if (doc.status === 'Final Loading' && isCancelOnly(data)) {
+    if (scope) throw { status: 403, message: 'Partner users cannot change the status of a booking' };
+    doc.status = 'Cancelled';
+    doc.updatedBy = updatedBy;
+    await doc.save();
+    const v = await Voyage.findById(doc.voyageId).select('roundId').lean();
+    if (v) invalidateRoundCache(v.roundId);
+    return getById(doc._id);
+  }
   if (['Cancelled', 'Final Loading'].includes(doc.status)) {
     throw { status: 400, message: `${doc.status} bookings cannot be edited` };
   }

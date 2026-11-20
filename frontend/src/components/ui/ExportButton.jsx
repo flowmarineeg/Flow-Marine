@@ -22,15 +22,15 @@ export default function ExportButton({ module, filters = {}, selectedIds = [], o
   const [loading,   setLoading]   = useState('');   // 'all' | 'selected' | ''
   const menuRef = useRef(null);
 
-  // Hide entirely if user lacks export permission
-  if (!can('export', 'read') || !can(module, 'export')) return null;
-
-  // Close menu on outside click
+  // Close menu on outside click (hooks stay above any early return)
   useEffect(() => {
     const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Hide entirely if user lacks export permission
+  if (!can('export', 'read') || !can(module, 'export')) return null;
 
   const run = async (mode) => {
     setOpen(false);

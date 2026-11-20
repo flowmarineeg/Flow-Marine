@@ -63,14 +63,15 @@ export default function TrackingForm({ onEntryAdded }) {
   });
   const voyages = voyageData || [];
 
-  // Auto-fill vessel when round changes
-  useEffect(() => {
-    if (!roundId) { setVesselId(''); return; }
-    const round = rounds.find(r => r._id === roundId);
-    if (round?.vesselId?._id || round?.vesselId) {
-      setVesselId(round.vesselId?._id || round.vesselId);
-    }
-  }, [roundId, rounds]);
+  // Auto-fill vessel when the round changes (adjusted while rendering; the first render applies it too)
+  const roundVessel = roundId ? (() => { const r = rounds.find(x => x._id === roundId); return r?.vesselId?._id || r?.vesselId || ''; })() : '';
+  const [appliedVessel, setAppliedVessel] = useState(null);
+  const vesselKey = `${roundId}|${roundVessel}`;
+  if (vesselKey !== appliedVessel) {
+    setAppliedVessel(vesselKey);
+    if (!roundId) setVesselId('');
+    else if (roundVessel) setVesselId(roundVessel);
+  }
 
   // Reset downstream when service changes
   const handleServiceChange = (id) => {

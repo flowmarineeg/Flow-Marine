@@ -3,6 +3,7 @@
 const bookingService = require('./booking.service');
 const voyageService  = require('./bookingVoyage.service');
 const lookups        = require('./bookingLookups.service');
+const mover          = require('./bookingMove.service');
 const summary        = require('./bookingSummary.service');
 const { scopeOf }    = require('./partnerScope');
 const { success, created, error, paginate } = require('../../utils/responseHelper');
@@ -12,8 +13,8 @@ const fail = (res, next, err) => (err && err.status ? error(res, err.message, er
 
 const list = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search = '', voyageId = '', agentId = '', roundId = '', partnerId = '', status = '', dateFrom = '', dateTo = '', dischargeStatus = '' } = req.query;
-    const { data, total } = await bookingService.list({ page, limit, search, voyageId, agentId, roundId, partnerId, status, dateFrom, dateTo, dischargeStatus }, scopeOf(req.user));
+    const { page = 1, limit = 20, search = '', voyageId = '', agentId = '', roundId = '', partnerId = '', status = '', dateFrom = '', dateTo = '', dischargeStatus = '', portLegKey = '', portId = '' } = req.query;
+    const { data, total } = await bookingService.list({ page, limit, search, voyageId, agentId, roundId, partnerId, status, dateFrom, dateTo, dischargeStatus, portLegKey, portId }, scopeOf(req.user));
     return success(res, data, 'Bookings retrieved', 200, paginate(total, page, limit));
   } catch (err) { fail(res, next, err); }
 };
@@ -50,6 +51,16 @@ const update = async (req, res, next) => {
     const scope = scopeOf(req.user);
     req.auditOldDoc = await bookingService.getById(req.params.id, scope);
     return success(res, await bookingService.update(req.params.id, req.body, req.user._id, scope), 'Booking updated');
+  } catch (err) { fail(res, next, err); }
+};
+
+// PUT /bookings/:id/move {voyageId}: another voyage of the same round (BK-05, Pending/Confirmed only, staff only)
+const move = async (req, res, next) => {
+  try {
+    const isPartnerUser = !!scopeOf(req.user);
+    req.auditOldDoc = await bookingService.getById(req.params.id, null);
+    await mover.moveBooking(req.params.id, req.body?.voyageId, req.user._id, { isPartnerUser });
+    return success(res, await bookingService.getById(req.params.id, null), 'Booking moved');
   } catch (err) { fail(res, next, err); }
 };
 
@@ -100,4 +111,4 @@ const exportDischargeList = async (req, res, next) => {
   } catch (err) { fail(res, next, err); }
 };
 
-module.exports = { list, voyageSummary, getById, getVoyagePorts, create, update, remove, resolveVoyage, getLookups, dischargeList, exportDischargeList };
+module.exports = { move, list, voyageSummary, getById, getVoyagePorts, create, update, remove, resolveVoyage, getLookups, dischargeList, exportDischargeList };

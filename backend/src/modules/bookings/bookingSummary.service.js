@@ -10,7 +10,7 @@ const Voyage = require('../voyages/voyage.model');
 const ContainerType = require('../containerTypes/containerType.model');
 const { escapeRegex } = require('../../utils/escapeRegex');
 const { parsePaging } = require('../locations/paging.logic');
-const { TABS, summariseEstimated, summariseOperational, sortRows } = require('./bookingSummary.logic');
+const { TABS, summariseEstimated, summariseOperational, summariseByStatus, sortRows } = require('./bookingSummary.logic');
 
 const idOrNull = (v, label) => {
   if (v === undefined || v === null || v === '') return null;
@@ -77,4 +77,31 @@ const voyageSummary = async (params = {}, scope = null) => {
   return { data: rows.slice(skip, skip + limit), total: rows.length, page, limit };
 };
 
-module.exports = { voyageSummary };
+/**
+ * One voyage, both layers, per status: { estimated: {Pending:{bookings,freight,teu},...}, operational: {...}, allocation: {...} }.
+ * `allocation` = the Layer 1 rows of kind Allocation (a part of `estimated`, never added to it): the "of which allocation" line.
+ * Same collections and TEU rule as voyageSummary (Layer 1 stored totalTEU; Layer 2 container size through teuResolver).
+ */
+const voyageStatusTotals = async (voyageId) => {
+  const vid = new mongoose.Types.ObjectId(String(voyageId));
+  const l1 = await ManualBooking.aggregate([
+    { $match: { voyageId: vid } },
+    { $group: { _id: '$status', bookings: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' }, totalTEU: { $sum: '$totalTEU' } } },
+  ]);
+  const alloc = await ManualBooking.aggregate([
+    { $match: { voyageId: vid, kind: 'Allocation' } },
+    { $group: { _id: '$status', bookings: { $sum: 1 }, totalFreight: { $sum: '$totalFreight' }, totalTEU: { $sum: '$totalTEU' } } },
+  ]);
+  const l2 = (await Booking.aggregate([
+    { $match: { voyageId: vid } },
+    { $group: { _id: { status: '$status', containerTypeId: '$containerTypeId' }, count: { $sum: 1 }, freight: { $sum: '$totalFreight' } } },
+  ])).map((g) => ({ status: g._id.status, containerTypeId: g._id.containerTypeId, count: g.count, freight: g.freight }));
+  const types = await ContainerType.find({ _id: { $in: [...new Set(l2.map((g) => String(g.containerTypeId)))] } }).select('size').lean();
+  return {
+    estimated: summariseByStatus(l1, 1),
+    allocation: summariseByStatus(alloc, 1),
+    operational: summariseByStatus(l2, 2, new Map(types.map((t) => [String(t._id), t.size]))),
+  };
+};
+
+module.exports = { voyageSummary, voyageStatusTotals };

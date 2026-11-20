@@ -6,6 +6,7 @@ const ctrl    = require('./permission.controller');
 const auth    = require('../../middleware/auth');
 const rbac    = require('../../middleware/rbac');
 const audit   = require('../../middleware/auditLogger');
+const superAdminOnly = require('../../middleware/superAdminOnly');
 const { forbidden } = require('../../utils/responseHelper');
 
 const ownRoleId = (req) => String(req.user?.roleId?._id || req.user?.roleId);
@@ -32,6 +33,7 @@ const notOwnRole = (req, res, next) => {
 
 router.use(auth);
 router.get('/:roleId',  ownRoleOrRoles, ctrl.getByRoleId);
-router.put('/:roleId',  rbac('roles'), notOwnRole, audit('permissions'), ctrl.saveByRoleId);
+// F-09: only the SuperAdmin writes permissions (a roles:update holder can no longer grant anything)
+router.put('/:roleId',  rbac('roles'), superAdminOnly, notOwnRole, audit('permissions'), ctrl.saveByRoleId);
 
 module.exports = router;

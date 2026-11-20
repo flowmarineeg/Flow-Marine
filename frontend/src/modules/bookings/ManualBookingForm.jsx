@@ -10,6 +10,7 @@ import { bookingsService }       from '@/services/bookings.service';
 import { customersService } from '@/services/customers.service';
 import { useBookingLookups }     from '@/hooks/useBookingLookups';
 import RoundRoutePicker, { validateRoute } from './RoundRoutePicker';
+import { fixedRouteStart, validateFixedRoute } from '@/utils/voyagePortChoices';
 import { BOOKING_STATUS }        from '@/utils/constants';
 import { getVoyageLabel }        from '@/utils/voyageLabel';
 
@@ -52,12 +53,22 @@ const EMPTY_ROW = {
   vgm:             '',
 };
 
-export default function ManualBookingForm({ item, onSuccess, onCancel }) {
+/**
+ * `presets` (optional, Voyage Details quick actions): { fixed: { round, voyage, calls, nextIndex }, kind: 'Estimate' | 'Allocation' }.
+ * `fixed` pins the route to that voyage (always sent as voyageId); `kind` is the starting value of the Estimate / Allocation toggle.
+ */
+export default function ManualBookingForm({ item, onSuccess, onCancel, presets = null }) {
   const qc        = useQueryClient();
   const isEditing = !!item;
   const isLocked  = ['Cancelled', 'Final Loading'].includes(item?.status);
+  const fixed     = !isEditing ? presets?.fixed || null : null;
+  // Estimate (default) or Allocation = a slot reserved for the agent. Set at creation, not changeable afterwards.
+  const [kind, setKind] = useState(item?.kind || presets?.kind || 'Estimate');
+  const isAllocation = kind === 'Allocation';
   // Bookings sprint 2026-11-10: round + the booking's own POL/POD; the voyage is assigned by the server
-  const [route, setRoute] = useState({ roundId: '', polId: '', podId: '', voyageId: '' });
+  const [route, setRoute] = useState(() => fixed
+    ? fixedRouteStart({ roundId: fixed.round._id, voyageId: fixed.voyage._id, calls: fixed.calls, nextIndex: fixed.nextIndex })
+    : { roundId: '', polId: '', podId: '', voyageId: '' });
   const [routeErrors, setRouteErrors] = useState({});
 
   const { register, handleSubmit, watch, setValue, control, formState: { errors } } = useForm({
@@ -107,7 +118,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
         ? bookingsService.updateManual(item._id, data)
         : bookingsService.createManual(data),
     onSuccess: (res) => {
-      toast.success(isEditing ? 'Estimated booking updated' : 'Estimated booking created');
+      toast.success(`${isAllocation ? 'Allocation' : 'Estimated booking'} ${isEditing ? 'updated' : 'created'}`);
       qc.invalidateQueries(['manual-bookings']);
       onSuccess?.(res.data.data);
     },
@@ -118,12 +129,13 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
     // Strip server-only / UI-only fields and coerce types.
     // New booking: round + own POL/POD (the voyage is found by the server). Existing: those are fixed.
     if (!isEditing) {
-      const errs = validateRoute(route);
+      const errs = fixed ? validateFixedRoute(route, fixed.calls) : validateRoute(route);
       setRouteErrors(errs);
       if (Object.keys(errs).length) return;
     }
     const payload = {
-      ...(isEditing ? {} : { ...route, voyageId: route.voyageId || undefined }),
+      ...(isEditing ? {} : { ...route, voyageId: route.voyageId || undefined, polLegKey: route.polLegKey || undefined, podLegKey: route.podLegKey || undefined }),
+      ...(isEditing || isPartnerUser ? {} : { kind }),
       agentId:  data.agentId,
       customerId: data.customerId || null,
       remarks:  data.remarks || null,
@@ -176,9 +188,33 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
             <p className="col-span-full text-[11px] text-amber-500">Round, ports and voyage cannot be changed on an existing estimate</p>
           </div>
         ) : (
-          <RoundRoutePicker value={route} onChange={setRoute} rounds={rounds} ports={ports} errors={routeErrors} />
+          <RoundRoutePicker value={route} onChange={setRoute} rounds={rounds} ports={ports} errors={routeErrors} fixed={fixed} />
         )}
       </SectionCard>
+
+      {/* ── Kind: Estimate or Allocation ─────────────────────────── */}
+      {(!isPartnerUser || isEditing) && (
+        <SectionCard title="Type">
+          {isEditing ? (
+            <p className="text-[13px] text-gray-700">
+              <span className="font-semibold">{isAllocation ? 'Allocation' : 'Estimate'}</span>
+              <span className="text-gray-400"> — {isEditing ? 'the type cannot be changed on an existing booking' : ''}</span>
+            </p>
+          ) : (
+            <div className="flex gap-2">
+              {['Estimate', 'Allocation'].map(k => (
+                <button
+                  key={k} type="button" onClick={() => setKind(k)}
+                  className={`px-4 py-1.5 rounded-lg text-[13px] font-semibold border transition ${kind === k ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:text-gray-800'}`}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+          )}
+          {isAllocation && <p className="text-[11px] text-gray-400">An allocation reserves space for the agent and counts in Estimated TEU and in capacity. It is not released automatically when real bookings arrive: lower or cancel it by hand.</p>}
+        </SectionCard>
+      )}
 
       {/* ── Agent ───────────────────────────────────────────────── */}
       <SectionCard title="Agent">
@@ -402,7 +438,7 @@ export default function ManualBookingForm({ item, onSuccess, onCancel }) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
             </svg>Saving…</>
-          ) : isEditing ? 'Save Changes' : 'Create Estimated Booking'}
+          ) : isEditing ? 'Save Changes' : isAllocation ? 'Create Allocation' : 'Create Estimated Booking'}
         </button>
       </div>
     </form>

@@ -271,5 +271,8 @@ const box = () => `ZBU${RUN}${String(++cn).padStart(4, '0')}`;
   for (const fn of cleanup) { try { await fn(); } catch { /* best effort */ } }
   const bad = out.filter((o) => !o.ok);
   console.log(`\n${out.length} probes, ${bad.length} defects: ${bad.map((b) => b.key).join(', ')}`);
-  require('fs').writeFileSync(require('path').join(__dirname, 'bookings-probe.result.json'), JSON.stringify(out, null, 2));
+  // S-16: results go OUTSIDE backend/ (a file written under backend/ restarts nodemon and dirties git)
+  const outDir = require('path').join(__dirname, '..', '..', '..', 'probe-results');
+  require('fs').mkdirSync(outDir, { recursive: true });
+  require('fs').writeFileSync(require('path').join(outDir, 'bookings-probe.result.json'), JSON.stringify(out, null, 2));
 })().catch((e) => { console.error('probe aborted:', e); process.exit(2); });

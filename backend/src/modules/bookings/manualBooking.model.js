@@ -32,6 +32,9 @@ const manualBookingSchema = new mongoose.Schema(
     podLegKey: { type: String, trim: true, default: null },
     partnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', default: null },  // reference label only
     source:    { type: String, enum: ['Staff', 'PartnerUser'], default: 'Staff' },
+    // Estimate (default) or Allocation = a slot reserved for the agent. Old documents have no value and read as Estimate
+    // (no migration): queries use kind != 'Allocation', never kind == 'Estimate'. See kind.logic.js.
+    kind:      { type: String, enum: ['Estimate', 'Allocation'], default: 'Estimate' },
 
     // ── Cargo rows ────────────────────────────────────────────────────────────
     // Each row = one commercial cargo line (one container type block)

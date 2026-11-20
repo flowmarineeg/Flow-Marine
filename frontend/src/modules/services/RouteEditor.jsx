@@ -133,11 +133,13 @@ export default function RouteEditor({ serviceId, serviceName, serviceCode }) {
     queryFn:  () => routesService.getRoute(serviceId).then(r => r.data.data),
   });
 
-  // React Query v5 removed onSuccess — populate legs via useEffect instead
-  useEffect(() => {
-    if (routeData?.legs && routeData.legs.length >= 2) {
-      setLegs(routeData.legs.map(l => ({
-        _key:       l._id || Math.random().toString(36).slice(2),
+  // React Query v5 removed onSuccess — populate legs while rendering when the route arrives (no effect)
+  const [loadedRoute, setLoadedRoute] = useState(null);
+  if (routeData && routeData !== loadedRoute) {
+    setLoadedRoute(routeData);
+    if (routeData.legs && routeData.legs.length >= 2) {
+      setLegs(routeData.legs.map((l, i) => ({
+        _key:       l._id || `leg-${i}`,
         countryId:  (typeof l.countryId  === 'object' ? l.countryId?._id  : l.countryId)  || '',
         cityId:     (typeof l.cityId     === 'object' ? l.cityId?._id     : l.cityId)     || '',
         portId:     (typeof l.portId     === 'object' ? l.portId?._id     : l.portId)     || '',
@@ -145,7 +147,7 @@ export default function RouteEditor({ serviceId, serviceName, serviceCode }) {
         agentId:    (typeof l.agentId    === 'object' ? l.agentId?._id    : l.agentId)    || '',
       })));
     }
-  }, [routeData]);
+  }
 
   const saveMutation = useMutation({
     mutationFn: (payload) => routesService.saveRoute(serviceId, payload),

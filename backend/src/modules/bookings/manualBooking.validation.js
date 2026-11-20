@@ -35,6 +35,7 @@ const validateCreate = [
   body('voyageId').optional({ nullable: true, checkFalsy: true }).isMongoId().withMessage('Valid voyage is required'),
   body('partnerId').optional({ nullable: true, checkFalsy: true }).isMongoId().withMessage('Valid partner is required'),
   body('agentId').notEmpty().isMongoId().withMessage('Valid agent is required'),
+  body('kind').optional({ nullable: true, checkFalsy: true }).isIn(['Estimate', 'Allocation']).withMessage('kind must be Estimate or Allocation'),
   ...rowValidators,
   body('status').optional().isIn(BOOKING_STATUS).withMessage(`Must be one of: ${BOOKING_STATUS.join(', ')}`),
   body('remarks').optional({ nullable: true, checkFalsy: true }).trim(),
@@ -48,6 +49,7 @@ const validateCreate = [
 
 const validateUpdate = [
   body('agentId').optional().isMongoId(),
+  body('kind').not().exists().withMessage('The kind of a booking cannot be changed'),
   // POL/POD, leg keys and the voyage are fixed at creation: a different route is a new booking
   body('partnerId').optional({ nullable: true }).custom((v) => v === null || v === '' || /^[0-9a-fA-F]{24}$/.test(String(v))).withMessage('Valid partner is required'),
   body('cargoRows').optional().isArray({ min: 1 }).withMessage('cargoRows must have at least one row if provided'),

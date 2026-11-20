@@ -13,7 +13,6 @@ import { BOOKING_STATUS }   from '@/utils/constants';
 import { getVoyageLabel }   from '@/utils/voyageLabel';
 import PageHeader    from '@/components/ui/PageHeader';
 import Button        from '@/components/ui/Button';
-import Badge         from '@/components/ui/Badge';
 import SearchBar     from '@/components/ui/SearchBar';
 import Pagination    from '@/components/ui/Pagination';
 import EmptyState    from '@/components/ui/EmptyState';
@@ -23,10 +22,11 @@ import FormPage         from '@/components/ui/FormPage';
 import ExportButton  from '@/components/ui/ExportButton';
 import BookingForm   from '@/modules/bookings/BookingForm';
 import BookingVoyageList from '@/modules/bookings/BookingVoyageList';
+import BookingsTable from '@/modules/bookings/BookingsTable';
+import ManualBookingsTable from '@/modules/bookings/ManualBookingsTable';
 import DischargeListExportModal from '@/modules/bookings/DischargeListExportModal';
 
 const fmt      = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-const fmtMoney = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
 
 /** "← Voyages / round / voyage" bar shown above the bookings of an opened voyage. */
 function VoyageCrumb({ drill, onBack }) {
@@ -57,6 +57,7 @@ export default function BookingList() {
   const [selected,     setSelected]     = useState([]);
   const [modal,        setModal]        = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null); // FL-05: a Final Loading booking to cancel
   const [manualDeleteTarget, setManualDeleteTarget] = useState(null);
   const [dischargeOpen, setDischargeOpen] = useState(false); // Sprint 027
   const [bulkConfirm,   setBulkConfirm]   = useState(false); // Sprint 047 — Delete Selected
@@ -97,10 +98,11 @@ export default function BookingList() {
   const [manualStatus,   setManualStatus]   = useState('');
   const [manualRoundId,  setManualRoundId]  = useState(''); // Sprint 030
   const [manualAgentId,  setManualAgentId]  = useState('');
+  const [manualKind,     setManualKind]     = useState(''); // '' | Estimate | Allocation
 
   const { data: manualData, isLoading: manualLoading } = useQuery({
-    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, drillId, manualAgentId, partnerId],
-    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, voyageId: drillId, agentId: manualAgentId, partnerId }).then(r => r.data),
+    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, drillId, manualAgentId, partnerId, manualKind],
+    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, voyageId: drillId, agentId: manualAgentId, partnerId, kind: manualKind }).then(r => r.data),
     enabled:  activeTab === 'manual' && !!drillId,
   });
 
@@ -113,6 +115,12 @@ export default function BookingList() {
   const rounds = isPartnerUser ? lookups.rounds : staffRounds;
   const agents        = lookups.agents;
   const partners      = lookups.partners;
+
+  const cancelMutation = useMutation({
+    mutationFn: (id) => bookingsService.update(id, { status: 'Cancelled' }),
+    onSuccess: () => { toast.success('Booking cancelled'); qc.invalidateQueries(['bookings']); setCancelTarget(null); },
+    onError:   (e)  => { showErrorToast(e, 'update'); setCancelTarget(null); },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => bookingsService.remove(id),
@@ -324,70 +332,14 @@ export default function BookingList() {
               }
             />
           ) : (
-            <div className="overflow-x-auto">
-              {/* minWidth ensures the table scrolls internally rather than expanding the page */}
-              <table className="w-full border-collapse" style={{ minWidth: 1000 }}>
-                <thead>
-                  <tr className="table-header">
-                    <th className="w-10 px-4 py-2.5">
-                      <input type="checkbox" checked={selected.length === bookings.length && bookings.length > 0} onChange={toggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
-                    </th>
-                    {['Booking No','Voyage','POL → POD','Agent','Partner','Shipper / Consignee','Container','Total Freight','Status','Discharge','Actions'].map(h => <th key={h}>{h}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {bookings.map(b => (
-                    <tr key={b._id} className="table-row">
-                      <td className="px-4">
-                        <input type="checkbox" checked={selected.includes(b._id)} onChange={() => toggleSelect(b._id)} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
-                      </td>
-                      <td>
-                        <button onClick={() => router.push(`/bookings/${b._id}`)} className="mono text-xs font-bold text-teal-600 hover:text-teal-800 transition whitespace-nowrap">
-                          {b.bookingNumber}
-                        </button>
-                      </td>
-                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{getVoyageLabel(b.voyageId)}</span></td>
-                      <td><span className="text-xs text-gray-600 whitespace-nowrap">{b.polId?.code || b.polId?.name || '—'} → {b.podId?.code || b.podId?.name || '—'}</span></td>
-                      <td><span className="text-xs text-gray-600">{b.agentId?.agentName}</span></td>
-                      <td>{b.partnerId ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 whitespace-nowrap">{b.partnerId.code || b.partnerId.name}</span> : <span className="text-[11px] text-gray-300">—</span>}</td>
-                      <td>
-                        <p className="text-xs font-medium text-gray-700 truncate max-w-[140px]">{b.shipper || '—'}</p>
-                        <p className="text-xs text-gray-400 truncate max-w-[140px]">{b.consignee || '—'}</p>
-                      </td>
-                      <td>
-                        <span className="mono text-xs text-gray-600 whitespace-nowrap">
-                          {b.containerTypeId?.code}<span className="text-gray-400 ml-1">{b.containerTypeId?.size}</span>
-                        </span>
-                      </td>
-                      <td><span className="mono text-xs font-semibold text-teal-700 whitespace-nowrap">{fmtMoney(b.totalFreight)}</span></td>
-                      <td><Badge label={b.status} /></td>
-                      <td>
-                        {b.dischargeStatus ? (
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
-                            b.dischargeStatus === 'Discharged' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                          }`}>
-                            {b.dischargeStatus}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => router.push(`/bookings/${b._id}`)} className="text-xs font-medium text-teal-600 hover:text-teal-800 transition whitespace-nowrap">View</button>
-                          {can('bookings', 'update') && !['Cancelled','Final Loading'].includes(b.status) && (
-                            <button onClick={() => setModal({ edit: b })} className="text-xs font-medium text-gray-500 hover:text-gray-800 transition">Edit</button>
-                          )}
-                          {can('bookings', 'delete') && (
-                            <button onClick={() => setDeleteTarget(b)} className="text-xs font-medium text-red-400 hover:text-red-600 transition">Delete</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <BookingsTable
+              rows={bookings}
+              onView={(b) => router.push(`/bookings/${b._id}`)}
+              selection={{ selected, onToggle: toggleSelect, onToggleAll: toggleAll }}
+              onEdit={can('bookings', 'update') ? (b) => setModal({ edit: b }) : undefined}
+              onDelete={can('bookings', 'delete') ? setDeleteTarget : undefined}
+              onCancelLoaded={can('bookings', 'update') ? setCancelTarget : undefined}
+            />
           )}
         </div>
 
@@ -422,6 +374,11 @@ export default function BookingList() {
             <option value="">All Agents</option>
             {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode}</option>)}
           </select>
+          <select value={manualKind} onChange={e => { setManualKind(e.target.value); setManualPage(1); }} className={sc}>
+            <option value="">All Types</option>
+            <option value="Estimate">Estimates</option>
+            <option value="Allocation">Allocations</option>
+          </select>
           <select value={manualStatus} onChange={e => { setManualStatus(e.target.value); setManualPage(1); }} className={sc}>
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -451,50 +408,12 @@ export default function BookingList() {
           ) : !manualBookings.length ? (
             <EmptyState title="No estimated bookings found" message="Create an estimated booking to record commercial cargo reservations before container numbers are available." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse" style={{ minWidth: 900 }}>
-                <thead>
-                  <tr className="table-header">
-                    <th className="w-10 px-4 py-2.5">
-                      <input type="checkbox" checked={manualSelected.length === manualBookings.length && manualBookings.length > 0} onChange={manualToggleAll} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
-                    </th>
-                    {['Booking No','Voyage','Agent','Partner','POL → POD','Rows','Total TEU','Total Freight','Status','Actions'].map(h => <th key={h}>{h}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {manualBookings.map(m => (
-                    <tr key={m._id} className="table-row">
-                      <td className="px-4">
-                        <input type="checkbox" checked={manualSelected.includes(m._id)} onChange={() => manualToggleSelect(m._id)} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
-                      </td>
-                      <td>
-                        <button onClick={() => router.push(`/bookings/manual/${m._id}`)} className="mono text-xs font-bold text-purple-600 hover:text-purple-800 transition whitespace-nowrap">
-                          {m.bookingNumber}
-                        </button>
-                      </td>
-                      <td><span className="mono text-xs font-semibold text-gray-600 whitespace-nowrap">{getVoyageLabel(m.voyageId)}</span></td>
-                      <td><span className="text-xs text-gray-600">{m.agentId?.agentName}</span></td>
-                      <td>{m.partnerId ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 whitespace-nowrap">{m.partnerId.code || m.partnerId.name}</span> : <span className="text-[11px] text-gray-300">—</span>}</td>
-                      <td className="text-xs text-gray-600 whitespace-nowrap">
-                        {m.polId?.code || m.polId?.name || '—'} → {m.podId?.code || m.podId?.name || '—'}
-                      </td>
-                      <td className="text-xs text-gray-600">{m.cargoRows?.length || 0}</td>
-                      <td className="mono text-xs text-gray-600">{m.totalTEU?.toLocaleString() || '—'}</td>
-                      <td><span className="mono text-xs font-semibold text-teal-700 whitespace-nowrap">{fmtMoney(m.totalFreight)}</span></td>
-                      <td><Badge label={m.status} /></td>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => router.push(`/bookings/manual/${m._id}`)} className="text-xs font-medium text-teal-600 hover:text-teal-800 transition whitespace-nowrap">View</button>
-                          {can('bookings', 'delete') && (
-                            <button onClick={() => setManualDeleteTarget(m)} className="text-xs font-medium text-red-400 hover:text-red-600 transition">Delete</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ManualBookingsTable
+              rows={manualBookings}
+              onView={(m) => router.push(`/bookings/manual/${m._id}`)}
+              selection={{ selected: manualSelected, onToggle: manualToggleSelect, onToggleAll: manualToggleAll }}
+              onDelete={can('bookings', 'delete') ? setManualDeleteTarget : undefined}
+            />
           )}
         </div>
 
@@ -522,6 +441,17 @@ export default function BookingList() {
       </FormPage>
 
       {/* ── Delete confirm ──────────────────────────────────────────── */}
+      {/* ── Cancel a Final Loading booking (FL-05) ──────────────────── */}
+      <ConfirmDialog
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={() => cancelMutation.mutate(cancelTarget._id)}
+        loading={cancelMutation.isPending}
+        title="Cancel Booking"
+        message={`Cancel booking "${cancelTarget?.bookingNumber}"? It is already on the Final Loading list. This is refused if it is on a live invoice.`}
+        confirmLabel="Cancel Booking"
+      />
+
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

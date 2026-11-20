@@ -121,6 +121,15 @@ function BookingDoughnut({ items }) {
 function ActiveRoundCapacity({ activeRound, vessel }) {
   const cap = vessel?.capacity ?? null;
 
+  // Sprint 043 — display order by physical vessel flow, not raw `sequence`. (Hook kept above the early return.)
+  const roundId = activeRound?.round?._id;
+  const { data: routeLegs = [] } = useQuery({
+    queryKey: ['round-route-ports', roundId],
+    queryFn:  () => voyagesService.getRoundRoutePorts(roundId).then(r => r.data.data),
+    enabled: !!roundId,
+    staleTime: 5 * 60 * 1000,
+  });
+
   if (!activeRound) {
     return (
       <div className="card p-6 flex flex-col items-center justify-center gap-3 py-10 text-center">
@@ -139,13 +148,6 @@ function ActiveRoundCapacity({ activeRound, vessel }) {
 
   const { round, service, voyages: voyageRows = [], totals = {}, warnings = [] } = activeRound;
 
-  // Sprint 043 — display order by physical vessel flow, not raw `sequence`.
-  const { data: routeLegs = [] } = useQuery({
-    queryKey: ['round-route-ports', round?._id],
-    queryFn:  () => voyagesService.getRoundRoutePorts(round._id).then(r => r.data.data),
-    enabled: !!round?._id,
-    staleTime: 5 * 60 * 1000,
-  });
   const displayVoyageRows = sortVoyagesForDisplay(voyageRows, routeLegs, { getPol: getCapacityRowPol, getPod: getCapacityRowPod });
 
   const peakPct = cap && totals.peakOnboardTEU != null ? Math.round((totals.peakOnboardTEU / cap) * 100) : null;

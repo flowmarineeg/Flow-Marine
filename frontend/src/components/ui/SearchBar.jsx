@@ -9,7 +9,9 @@ export default function SearchBar({ value, onChange, placeholder = 'Search…', 
     return () => clearTimeout(t);
   }, [local]);
 
-  useEffect(() => { setLocal(value || ''); }, [value]);
+  // follow the parent's value (e.g. when a filter is cleared) without an effect
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) { setSeen(value); setLocal(value || ''); }
 
   return (
     <div style={{ position: 'relative' }}>

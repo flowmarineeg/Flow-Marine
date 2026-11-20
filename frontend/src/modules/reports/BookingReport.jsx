@@ -95,7 +95,7 @@ export default function BookingReport() {
       {isLoading ? <LoadingSpinner fullPage /> :
        !run ? (
         <div className="card flex items-center justify-center py-16 text-gray-400">
-          <p className="text-sm">Set filters and click "Run Report".</p>
+          <p className="text-sm">Set filters and click &quot;Run Report&quot;.</p>
         </div>
        ) : rows.length === 0 ? <ReportEmptyState /> : (
         <div className="card overflow-hidden">
@@ -103,7 +103,7 @@ export default function BookingReport() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="table-header">
-                  {['Layer','Booking No','Voyage','Agent','Shipper','Consignee','Container','Freight','Status','Date'].map(h => <th key={h}>{h}</th>)}
+                  {['Layer','Booking No','Voyage','POL → POD','Agent','Shipper','Consignee','Container','Freight','Status','Date'].map(h => <th key={h}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -122,6 +122,7 @@ export default function BookingReport() {
                       </span>
                     </td>
                     <td><span className="mono text-xs text-gray-500">{getVoyageLabel(b.voyageId)}</span></td>
+                    <td className="text-xs text-gray-600 whitespace-nowrap">{b.polName || '—'} → {b.podName || '—'}</td>
                     <td className="text-xs text-gray-500">{b.agentId?.agentName}</td>
                     <td className="text-xs text-gray-700 max-w-[120px] truncate">{b.shipper || '—'}</td>
                     <td className="text-xs text-gray-500 max-w-[120px] truncate">{b.consignee || '—'}</td>

@@ -90,6 +90,28 @@ const legsChangeWarnings = (newLegs, voyages) => {
 };
 
 /**
+ * BK-04: warnings about live bookings whose stored leg key no longer fits the edited legs, grouped per voyage.
+ * A booking is stale when its polLegKey / podLegKey is no longer a leg of the round, or that leg now has another port
+ * than the booking's own POL / POD. Bookings without keys (old data) and Cancelled voyages are skipped; nothing is
+ * changed or blocked, it is only a warning. `bookings` = [{ voyageId, polId, podId, polLegKey, podLegKey }] (live, both layers).
+ */
+const staleBookingWarnings = (newLegs, voyages, bookings) => {
+  const byKey = new Map((newLegs || []).map((l) => [l.legKey, l]));
+  const bad = (key, portId) => !!key && (!byKey.has(key) || String(byKey.get(key).portId) !== String(portId));
+  const count = new Map();
+  for (const b of bookings || []) {
+    if (bad(b.polLegKey, b.polId) || bad(b.podLegKey, b.podId)) count.set(String(b.voyageId), (count.get(String(b.voyageId)) || 0) + 1);
+  }
+  const out = [];
+  for (const v of voyages || []) {
+    const n = count.get(String(v._id));
+    if (v.status === 'Cancelled' || !n) continue;
+    out.push(`Voyage ${v.voyageNumber} has ${n} live booking(s) whose loading or discharge leg no longer matches the edited legs — check them (move or cancel and re-create)`);
+  }
+  return out;
+};
+
+/**
  * Per-port dates sent by the client: [{ legKey, eta, etd }] merged onto the voyage's portCalls by legKey.
  * An arrival cannot be after its own departure. Unknown keys are an error.
  */
@@ -115,5 +137,5 @@ const mergePortCallDates = (portCalls, patch) => {
 
 module.exports = {
   DIRECTION_LETTER, directionLetter, formatVoyageNumber, buildPortCalls, legRange,
-  overlapWarnings, legsChangeWarnings, mergePortCallDates,
+  overlapWarnings, legsChangeWarnings, staleBookingWarnings, mergePortCallDates,
 };

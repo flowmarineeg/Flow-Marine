@@ -173,7 +173,7 @@ export default function RoundForm({ item, onSuccess, onCancel }) {
             <path strokeLinecap="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
           <p className="text-[12.5px] text-teal-700 leading-relaxed">
-            The service's route legs are copied into the round (you can edit them on the round afterwards). Voyages are not created automatically — add each voyage from the round page, e.g. East from leg 1 to leg 4, then West from leg 4 to leg 1.
+            The service&apos;s route legs are copied into the round (you can edit them on the round afterwards). Voyages are not created automatically — add each voyage from the round page, e.g. East from leg 1 to leg 4, then West from leg 4 to leg 1.
           </p>
         </div>
       )}

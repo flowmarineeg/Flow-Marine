@@ -1,36 +1,36 @@
-# Graph Report - logistics  (2026-11-17)
+# Graph Report - logistics  (2026-11-19)
 
 ## Corpus Check
-- 509 files · ~368,421 words
+- 554 files · ~443,424 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 14 file(s) not represented in the graph (top: (none) 11, .stackdump 1, .ico 1)
 
 ## Summary
-- 3322 nodes · 8594 edges · 164 communities (155 shown, 9 thin omitted)
-- Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 884 edges (avg confidence: 0.89)
+- 3697 nodes · 9492 edges · 159 communities (149 shown, 10 thin omitted)
+- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 1037 edges (avg confidence: 0.89)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `390492cd`
+- Built from commit: `bb810417`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- error
+- success
 - getVoyageLabel
-- auth.js
+- rbac
 - PermissionContext.jsx
-- utils/constants.js
+- getVoyageLabel
 - dashboard/page.jsx
-- expenseType.routes.js
-- react
+- bookingSummary.service.js
+- PageGuard
 - agentAccounts/agentAccounts.service.js
 - LoadingSpinner
-- react
+- AgentForm.jsx
 - backend/package.json
-- escapeRegex
+- escapeRegex.js
 - partner.routes.js
-- ServiceDetail.jsx
+- react
 - config/constants.js
 - 6. CRITICAL TECHNICAL RULES
 - backend
@@ -40,52 +40,52 @@
 - frontend/package.json
 - seed-test-data.js
 - partnerSettlement.service.js
-- PermissionMatrix.jsx
+- BookingImport.jsx
 - capacity/capacity.service.js
-- expense.service.js
+- backend/src/utils/money.js
 - invoiceV2.service.js
 - voyage.service.js
 - auth.controller.js
 - permission.model.js
-- seed.js
-- backend/src/utils/money.js
+- server.js
+- partnerSettlement.logic.js
 - vessel.service.js
 - mongoose
 - reports/reports.service.js
-- Providers.jsx
-- VesselForm.jsx
+- open-items-probe.js
+- CharterHistory.jsx
 - bookingImport.service.js
 - pickFields
 - export/export.service.js
-- roundsVoyages.logic.test.js
+- route.service.js
 - round.service.js
 - ref_node_assert
 - mailer.js
 - booking.service.js
-- partner.service.js
-- react-hot-toast
-- user.service.js
+- AppError
+- showErrorToast
+- VoyageOverviewTab.jsx
 - location.routes.js
 - roundLock.js
 - api.int.test.js
 - e2e-masterdata.js
-- badRequest
+- responseHelper.js
 - masterData2.test.js
 - audit-fixes.int.test.js
 - v2.int.test.js
 - ManualBookingForm.jsx
 - scripts
-- migrate-masterdata.js
+- expenseType.logic.js
 - accounting.routes.js
 - vessel.routes.js
 - Capacity Engine — Audit Report (Version 2: Final Verification)
-- rbac
+- System audit — 2026-11-19
 - expense-module-analysis.md
 - invoicePdfGenerator.js
 - bookingItem.service.js
-- Booking Selection Workflow — Voyage vs POL/POD Conflict Analysis
-- success
-- round.routes.js
+- paging.logic.js
+- clean-coastal-locations.js
+- Open items: decisions needed (plan only, 2026-11-19)
 - reports-analysis.md
 - scripts
 - TtlCache
@@ -95,100 +95,95 @@
 - voyageRun.logic.test.js
 - CodingRules.jsx
 - 4. Findings
-- vessel.model.test.js
-- agentAccounts.models.js
+- build-location-data.js
+- expense.service.js
 - compilerOptions
 - next.config.mjs
 - postcss.config.mjs
+- next
 - rolling-pnl-analysis.md
-- Findings
+- invoice.model.js
 - Logistics & Shipping SaaS — MERN Stack MVP
 - booking.controller.js
 - status
-- expenseType.controller.js
+- TrackingList.jsx
 - Logistics & Shipping SaaS — MERN Stack MVP
-- invoiceService.routes.js
-- partnerSettlement.test.js
-- paginate
-- Hard rules (never break)
+- seed-locations.js
+- 11 — Accounting: Ledger, Agent Accounts, Round Close & Partner Settlement
+- 05 — Voyage Details page: plan (phase 1)
+- voyage-details-probe.js
 - Findings
 - 03 — Rounds, Voyages & Capacity
 - System Audit — 2026-08-03
 - vessel.logic.js
 - bookings-probe.js
-- docs/README.md
 - 00 — Architecture & Cross-cutting Rules
 - Logistics & Shipping SaaS — MERN Stack MVP
 - Logistics & Shipping SaaS — MERN Stack MVP
 - 3. Findings
 - | See §6 "Version 2" and sprints/v2-code-audit-2026-10-21.md before touching any money code
 - Status — 2026-11-10
-- deleteVoyage
-- server.js
-- Hard rules (never break)
-- backend/src/utils/money.js
+- city-coast-distance.js
+- bookingVoyage.service.js
+- 10 — Users, Auth, Roles, Permissions (RBAC) & Audit Logs
+- AuditLogDetail.jsx
 - 04 — Bookings
 - Logistics & Shipping SaaS — MERN Stack MVP
 - System Audit — 2026-09-01
-- Full audit — Routes → Rounds → Voyages → Bookings (data flow + current status) — 2026-11-05
+- service.service.js
 - containerType.service.js
-- auth.routes.js
+- RoundRoutePicker.jsx
 - voyageMatch.logic.js
-- MEDIUM
+- location-delete-probe.js
 - Logistics & Shipping SaaS — MERN Stack MVP
 - Logistics & Shipping SaaS — MERN Stack MVP
-- agentCommission.model.js
+- voyage.model.js
 - Logistics & Shipping SaaS — MERN Stack MVP
-- InvoiceList.jsx
+- expenseType.routes.js
 - Logistics & Shipping SaaS
 - probes-2.js
-- voyage.routes.js
-- Booking Selection Workflow — Voyage vs POL/POD Conflict Analysis
-- user.routes.js
+- coastal.logic.js
+- getVoyagePortIds
+- 5. FRONTEND STRUCTURE
 - FLOW Maritime ERP - Version 2 FINAL AUDIT
-- Audit — Service → Route legs → Round → Voyages (up to "set booking") — 2026-10-26
-- partnerSettlement.models.js
-- agentAccounts.logic.js
-- 7. IMPACT SURVEY
-- auditLogger
-- billing.models.js
+- voyageSummary.logic.test.js
+- CLAUDE.md — Logistics & Shipping Operations SaaS (MERN)
+- voyageSummary.logic.js
+- RoundRoutePicker
+- partnerSettlement.test.js
+- probes-1.js
 - voyageMatch.logic.test.js
 - Logistics & Shipping SaaS — MERN Stack MVP
 - CLAUDE-full-reference.md
-- 7. IMPACT SURVEY
-- getVoyagePortIds
-- vessel.controller.js
+- server.js
+- kind.logic.test.js
+- 05 — Expenses
 - 07 — Tracking
-- role.controller.js
-- System Audit — 2026-10-20
-- agent.controller.js
-- bookingImport.controller.js
+- vessel.logic.test.js
+- 08 — Reports & Dashboard
+- Addendum 2026-10-31 — re-read of the working tree (code only, nothing probed)
+- VoyagePortStrip.jsx
 - capacityLegs.logic.test.js
-- deleteVoyage
+- city.model.js
 - 4. BACKEND STRUCTURE
 - 7. BUSINESS RULES
-- Request pipeline
+- Documentation Index
 - 02 — Vessels
-- 4. CONFLICTS, INVALID COMBINATIONS, AND UX PROBLEMS
 - BookingsSummaryCard
-- 4. CONFLICTS, INVALID COMBINATIONS, AND UX PROBLEMS
-- Addendum 2026-10-31 — re-read of the working tree (code only, nothing probed)
 - frontend/README.md
 - 2026-10-24/audit/README.md
-- 08 — Reports & Dashboard
-- 09 — Export
 
 ## God Nodes (most connected - your core abstractions)
 1. `success()` - 140 edges
-2. `showErrorToast()` - 107 edges
-3. `AppError` - 105 edges
-4. `react` - 103 edges
-5. `error()` - 100 edges
-6. `PageGuard()` - 95 edges
+2. `react` - 109 edges
+3. `showErrorToast()` - 107 edges
+4. `AppError` - 106 edges
+5. `error()` - 101 edges
+6. `PageGuard()` - 97 edges
 7. `@tanstack/react-query` - 92 edges
-8. `LoadingSpinner()` - 85 edges
-9. `Button()` - 82 edges
-10. `usePermission()` - 81 edges
+8. `LoadingSpinner()` - 92 edges
+9. `usePermission()` - 85 edges
+10. `Button()` - 82 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Schema `Round`` --references--> `status()`  [INFERRED]
@@ -205,71 +200,71 @@
 ## Import Cycles
 - 2-file cycle: `backend/src/modules/agentAccounts/agentAccounts.service.js -> backend/src/modules/billing/invoiceV2.service.js -> backend/src/modules/agentAccounts/agentAccounts.service.js`
 
-## Communities (164 total, 9 thin omitted)
+## Communities (159 total, 10 thin omitted)
 
-### Community 0 - "error"
-Cohesion: 0.10
-Nodes (31): wrap(), getBookingReport(), getBookingRevenueDetails(), getExpenseReport(), getRevenueReport(), getRoundCapacityReport(), getRoundPnL(), getVoyagePerformance() (+23 more)
+### Community 0 - "success"
+Cohesion: 0.04
+Nodes (113): create(), getById(), list(), remove(), update(), ALLOWED_CAPACITY_STATUSES, getRoundCapacity(), getVesselActiveCapacity() (+105 more)
 
 ### Community 1 - "getVoyageLabel"
-Cohesion: 0.07
-Nodes (66): 1. Locate the Current Booking Report — Complete Flow, BookingReportPage(), RevenueReportPage(), RoundCapacityPage(), VesselDetailPage(), BookingReport(), fmt(), BookingRevenueDetailsReport() (+58 more)
+Cohesion: 0.06
+Nodes (43): 4.1 Voyages list page today (`/voyages`) — *code*, 4.2 Is there a voyage details page or route? — *code*, 4.3 Voyage model — every field (`voyage.model.js`) — *code*, 4.4 Booking models — every field — *code*, 4.5 Existing per-voyage totals — which collections — *code, probed*, 4.6 Revenue sources and currencies — *code, docs*, 4.7 Is the capacity engine safe to use for totals? — *code, unit, probed*, 4.8 Who can see voyages and revenue today — *code* (+35 more)
 
-### Community 2 - "auth.js"
-Cohesion: 0.08
-Nodes (33): authMiddleware(), jwt, methodToAction, express, router, validateCreate, validateUpdate, express (+25 more)
+### Community 2 - "rbac"
+Cohesion: 0.04
+Nodes (84): auditLogger(), authMiddleware(), jwt, hasPermission(), methodToAction, rbac(), superAdminOnly(), agreementRules (+76 more)
 
 ### Community 3 - "PermissionContext.jsx"
-Cohesion: 0.10
-Nodes (39): Known gaps / gotchas, Button(), Modal(), useAgents(), useRounds(), useVoyages(), AgentV2Panel(), AgreementsTab() (+31 more)
+Cohesion: 0.09
+Nodes (42): Known gaps / gotchas, MEDIUM, EditInvoiceContent(), EditInvoicePage(), Can(), Modal(), PermissionContext, usePermission() (+34 more)
 
-### Community 4 - "utils/constants.js"
-Cohesion: 0.05
-Nodes (54): ForgotPasswordPage(), COLUMNS, ContainerTypesPage(), FILTERS, CATEGORY_STYLES, COLUMNS, ExpenseTypesPage(), FILTERS (+46 more)
+### Community 4 - "getVoyageLabel"
+Cohesion: 0.18
+Nodes (29): 1. Locate the Current Booking Report — Complete Flow, BookingRevenueDetailsPage(), BookingReport(), fmt(), BookingRevenueDetailsReport(), ExpenseReport(), fmt(), fmtAmt() (+21 more)
 
 ### Community 5 - "dashboard/page.jsx"
 Cohesion: 0.10
 Nodes (51): ADR-0005, 3.6 Dashboard `TopAgentsWidget`/`TopRoutesWidget` fire an unbounded query unconditionally, DashboardPage(), DashboardFilterBar(), DashboardFilterContext, DashboardFilterProvider(), EMPTY_FILTERS, useDashboardFilters() (+43 more)
 
-### Community 6 - "expenseType.routes.js"
-Cohesion: 0.22
-Nodes (8): { body, validationResult }, express, router, { body, validationResult }, handle(), mapping, validateCreate, validateUpdate
+### Community 6 - "bookingSummary.service.js"
+Cohesion: 0.24
+Nodes (16): emptyByStatus(), money(), portFilter(), portMatch(), sortRows(), STATUSES, summariseByStatus(), summariseEstimated() (+8 more)
 
-### Community 7 - "react"
-Cohesion: 0.04
-Nodes (69): AcceptInviteInner(), AcceptInvitePage(), LoginPage(), ResetPasswordInner(), ResetPasswordPage(), AgentDetailContent(), AgentDetailPage(), AgentsPage() (+61 more)
+### Community 7 - "PageGuard"
+Cohesion: 0.05
+Nodes (49): NewAgentPage(), AgentsPage(), AuditLogsPage(), BookingsPage(), EditExpenseContent(), EditExpensePage(), NewExpenseContent(), NewExpensePage() (+41 more)
 
 ### Community 8 - "agentAccounts/agentAccounts.service.js"
-Cohesion: 0.13
-Nodes (32): accountIds(), advance(), agentLedgerLines(), agreeStatement(), bankCode(), bankOf(), buildStatement(), computeStatement() (+24 more)
+Cohesion: 0.09
+Nodes (44): errorHandler(), accountIds(), advance(), agentLedgerLines(), bankCode(), bankOf(), buildStatement(), cancelCommission() (+36 more)
 
 ### Community 9 - "LoadingSpinner"
-Cohesion: 0.10
-Nodes (73): Frontend Analysis, 2. Status of the 9-1 Findings, AuditLogsPage(), ExpensesPage(), Badge(), BADGE_STYLES, TONE, Can() (+65 more)
+Cohesion: 0.09
+Nodes (74): 4.1 Layout sketch, 4.2 States, 4.3 Tables reuse, 4.4 Quick actions, 4. UI, Frontend Analysis, 2. Status of the 9-1 Findings, InvoicesPage() (+66 more)
 
-### Community 10 - "react"
-Cohesion: 0.07
-Nodes (43): NewAgentPage(), COLUMNS, CustomersPage(), FILTERS, TYPE_STYLES, LocationsContent(), LocationsPage(), TABS (+35 more)
+### Community 10 - "AgentForm.jsx"
+Cohesion: 0.09
+Nodes (36): 2. What changed since 2026-11-10, AgentDetailContent(), AgentDetailPage(), COLUMNS, CustomersPage(), FILTERS, TYPE_STYLES, BankAccountsRows() (+28 more)
 
 ### Community 11 - "backend/package.json"
 Cohesion: 0.06
-Nodes (44): author, dependencies, archiver@^7.0.1, compression@^1.7.4, cookie-parser@^1.4.6, cors@^2.8.5, country-state-city@^3.2.1, dotenv@^16.4.5 (+36 more)
+Nodes (44): author, dependencies, archiver@^7.0.1, bcryptjs@^2.4.3, compression@^1.7.4, cookie-parser@^1.4.6, cors@^2.8.5, dotenv@^16.4.5 (+36 more)
 
-### Community 12 - "escapeRegex"
-Cohesion: 0.10
-Nodes (22): list(), buildListQuery(), TYPES, list(), missingMappings(), assertMappings(), create(), createCategory() (+14 more)
+### Community 12 - "escapeRegex.js"
+Cohesion: 0.13
+Nodes (12): USER_STATUS, list(), list(), remove(), update(), createEntry(), getHistory(), getLatestPositions() (+4 more)
 
 ### Community 13 - "partner.routes.js"
-Cohesion: 0.05
-Nodes (47): AGENT_STATUS, agentSchema, contactSchema, mongoose, { body, validationResult }, handle(), masterFields, nn (+39 more)
+Cohesion: 0.07
+Nodes (36): express, router, { body, validationResult }, handle(), masterFields, nn, validateCreate, validateUpdate (+28 more)
 
-### Community 14 - "ServiceDetail.jsx"
-Cohesion: 0.23
-Nodes (12): idOf(), RoundLegsPanel(), emptyLeg(), LegRow(), RouteEditor(), Row(), ServiceDetailPage(), tabs (+4 more)
+### Community 14 - "react"
+Cohesion: 0.07
+Nodes (38): AcceptInviteInner(), AcceptInvitePage(), ForgotPasswordPage(), LoginPage(), ResetPasswordInner(), ResetPasswordPage(), DashboardLayout(), FALLBACK_NAV (+30 more)
 
 ### Community 15 - "config/constants.js"
-Cohesion: 0.06
-Nodes (40): CONTAINER_SIZES, CONTAINER_TYPES, EXPENSE_CATEGORIES, EXPENSE_COST_CLASSIFICATIONS, INVOICE_STATUS, INVOICE_TYPES, OWNERSHIP_TYPES, PAYMENT_METHODS (+32 more)
+Cohesion: 0.05
+Nodes (43): AGENT_STATUS, AUDIT_ACTIONS, CONTAINER_SIZES, CONTAINER_TYPES, EXPENSE_CATEGORIES, EXPENSE_COST_CLASSIFICATIONS, PAYMENT_METHODS, SERVICE_APPLICABILITY (+35 more)
 
 ### Community 16 - "6. CRITICAL TECHNICAL RULES"
 Cohesion: 0.04
@@ -284,12 +279,12 @@ Cohesion: 0.19
 Nodes (13): compressImage(), compressUpload(), fs, MAGIC_BYTES, matchesDeclaredType(), maxSizeMB, multer, multerBase (+5 more)
 
 ### Community 19 - "rounds-voyages-probe.js"
-Cohesion: 0.17
-Nodes (4): cleanup, Client, out, RUN
+Cohesion: 0.11
+Nodes (9): cleanup, Client, out, RUN, mongoose, routeSchema, mongoose, routeLegSchema (+1 more)
 
 ### Community 20 - "AppError"
 Cohesion: 0.11
-Nodes (25): assertBookingSource(), create(), getAll(), list(), NOT_WRITABLE, update(), assertCodeFree(), create() (+17 more)
+Nodes (25): create(), getAll(), list(), NOT_WRITABLE, update(), missingMappings(), assertMappings(), create() (+17 more)
 
 ### Community 21 - "frontend/package.json"
 Cohesion: 0.06
@@ -300,128 +295,132 @@ Cohesion: 0.15
 Nodes (31): assertSafeTarget(), BOX_PREFIX, boxNo(), COMMODITIES, daysAgo(), daysAhead(), expense(), fullExpense() (+23 more)
 
 ### Community 23 - "partnerSettlement.service.js"
-Cohesion: 0.10
-Nodes (31): accrueCommission(), cancel(), issue(), mongoose, vesselPartnerSchema, calculate(), calculateInner(), directMovements() (+23 more)
+Cohesion: 0.08
+Nodes (36): cancel(), expenseSchema, mongoose, hardDelete(), mongoose, vesselPartnerSchema, jvReserveMovementSchema, mongoose (+28 more)
 
-### Community 24 - "PermissionMatrix.jsx"
-Cohesion: 0.28
-Nodes (7): ACTION_COLORS, ACTIONS, MODULE_GROUPS, MODULE_LABELS, permissionsService, rolesService, MODULES
+### Community 24 - "BookingImport.jsx"
+Cohesion: 0.15
+Nodes (19): 6. Frontend Correctness & Consistency, BookingImportPage(), ExportPage(), useBookingLookups(), BookingImport(), EditableCell(), EXCEL_COLUMN_MAP, parseExcel() (+11 more)
 
 ### Community 25 - "capacity/capacity.service.js"
-Cohesion: 0.08
-Nodes (36): capacityEnforcement(), run(), bookingSchema, mongoose, cargoRowSchema, manualBookingSchema, mongoose, ALLOWED_CAPACITY_STATUSES (+28 more)
+Cohesion: 0.18
+Nodes (18): cargoRowSchema, manualBookingSchema, mongoose, ALLOWED_CAPACITY_STATUSES, cacheKey(), computeRoundCapacity(), computeRoutePreview(), computeVesselActiveCapacity() (+10 more)
 
-### Community 26 - "expense.service.js"
-Cohesion: 0.08
-Nodes (35): expenseAccountCode(), expenseSchema, mongoose, assertTypeFitsScope(), create(), deleteFile(), deriveScope(), fs (+27 more)
+### Community 26 - "backend/src/utils/money.js"
+Cohesion: 0.12
+Nodes (22): buildStatementRows(), categorizeLines(), expenseAccountCode(), positionDelta(), checkPaidBy(), convertToFda(), inTransaction(), isDup() (+14 more)
 
 ### Community 27 - "invoiceV2.service.js"
-Cohesion: 0.11
-Nodes (29): agentAgreementSchema, handlingFeeSchema, mongoose, buildLine(), assertInvoiceCurrency(), bankAccountCode(), buildLineItemSnapshot(), createDraft() (+21 more)
+Cohesion: 0.06
+Nodes (50): balanceMinor(), buildLine(), deriveStatus(), groupBookingsIntoItems(), bookingItemSchema, invoiceLineSchema, invoiceSettlementSchema, mongoose (+42 more)
 
 ### Community 28 - "voyage.service.js"
 Cohesion: 0.14
-Nodes (24): bad(), scheduleWarnings(), toTime(), validateVoyageState(), allocateSequence(), cancelVoyageBookings(), createVoyage(), getRoundRoutePorts() (+16 more)
+Nodes (25): bad(), scheduleWarnings(), toTime(), validateVoyageState(), allocateSequence(), cancelVoyageBookings(), createVoyage(), getRoundRoutePorts() (+17 more)
 
 ### Community 29 - "auth.controller.js"
-Cohesion: 0.18
-Nodes (13): crypto, csrfProtection(), csrfTokenFor(), EXEMPT_PATHS, SAFE_METHODS, changePassword(), cookieOptions(), forgotPassword() (+5 more)
+Cohesion: 0.10
+Nodes (23): crypto, csrfProtection(), csrfTokenFor(), EXEMPT_PATHS, SAFE_METHODS, changePassword(), cookieOptions(), forgotPassword() (+15 more)
 
 ### Community 30 - "permission.model.js"
-Cohesion: 0.24
+Cohesion: 0.28
 Nodes (7): MODULES, actionSchema, mongoose, permissionSchema, ACTION_KEYS, getByRoleId(), saveByRoleId()
 
-### Community 31 - "seed.js"
+### Community 31 - "server.js"
 Cohesion: 0.11
 Nodes (20): connectDB(), mongoose, migrate(), MODELS, mongoose, DRY, ALL, bcrypt (+12 more)
 
-### Community 32 - "backend/src/utils/money.js"
-Cohesion: 0.16
-Nodes (17): computePositions(), computeProfit(), settleRound(), shareProfit(), suggestTransfers(), postClosingEntry(), getRoundPnL(), allocate() (+9 more)
+### Community 32 - "partnerSettlement.logic.js"
+Cohesion: 0.21
+Nodes (14): computePositions(), computeProfit(), settleRound(), shareProfit(), suggestTransfers(), postClosingEntry(), getRoundPnL(), voyageDurationDays() (+6 more)
 
 ### Community 33 - "vessel.service.js"
-Cohesion: 0.10
-Nodes (28): assertSharesUnlocked(), clearShares(), create(), getById(), getShares(), list(), mongoose, setShares() (+20 more)
+Cohesion: 0.16
+Nodes (16): assertMasterRules(), checkShares(), clearParticulars(), create(), deleteParticularsFile(), fs, getAll(), list() (+8 more)
 
 ### Community 34 - "mongoose"
-Cohesion: 0.06
-Nodes (28): counterSchema, mongoose, exchangeRateSchema, mongoose, journalEntrySchema, mongoose, SOURCE_TYPES, journalEntryLineSchema (+20 more)
+Cohesion: 0.05
+Nodes (37): ALLOW_PROD, APPLY, argv, ci, mongoose, TARGETS, handlingChargeSchema, mongoose (+29 more)
 
 ### Community 35 - "reports/reports.service.js"
-Cohesion: 0.22
-Nodes (15): classifyRevenueSizeBucket(), dateRange(), getBookingReport(), getBookingRevenueDetails(), getExpenseReport(), getRevenueReport(), getVoyagePerformance(), ADR-0001 (+7 more)
+Cohesion: 0.24
+Nodes (14): classifyRevenueSizeBucket(), dateRange(), getBookingReport(), getBookingRevenueDetails(), getExpenseReport(), getRevenueReport(), getVoyagePerformance(), ADR-0001 (+6 more)
 
-### Community 36 - "Providers.jsx"
-Cohesion: 0.39
-Nodes (5): metadata, RootLayout(), Providers(), AuthProvider(), PermissionProvider()
+### Community 36 - "open-items-probe.js"
+Cohesion: 0.15
+Nodes (7): Client, freeVessel(), idOf(), mongoose, results, roundFixture(), steps
 
-### Community 37 - "VesselForm.jsx"
-Cohesion: 0.19
-Nodes (15): EditVesselPage(), NewVesselPage(), charterEntryError(), CharterHistory(), day(), EMPTY, money(), bpToPct() (+7 more)
+### Community 37 - "CharterHistory.jsx"
+Cohesion: 0.53
+Nodes (5): charterEntryError(), CharterHistory(), day(), EMPTY, money()
 
 ### Community 38 - "bookingImport.service.js"
-Cohesion: 0.09
-Nodes (43): analyseDischarge(), analyseRows(), assertImportAllowed(), ExcelJS, inTransaction(), loadExisting(), mongoose, norm() (+35 more)
+Cohesion: 0.13
+Nodes (28): analyseDischarge(), analyseRows(), assertImportAllowed(), ExcelJS, inTransaction(), loadExisting(), mongoose, norm() (+20 more)
 
 ### Community 39 - "pickFields"
-Cohesion: 0.11
-Nodes (16): createCity(), createCountry(), createPort(), createTerminal(), listCities(), listCountries(), listPorts(), updateCity() (+8 more)
+Cohesion: 0.17
+Nodes (18): coastalCountryError(), assertCoastal(), assertLocationUnused(), countRouteLegsReferencing(), createCity(), createCountry(), createPort(), createTerminal() (+10 more)
 
 ### Community 40 - "export/export.service.js"
-Cohesion: 0.29
-Nodes (9): addMetadataSheet(), ALLOWED_MODULES, buildExcelBuffer(), COLUMNS, ExcelJS, exportSingle(), flattenDoc(), fmtDate() (+1 more)
+Cohesion: 0.08
+Nodes (29): exportZip(), addMetadataSheet(), ALLOWED_MODULES, archiver, buildExcelBuffer(), buildZipStream(), COLUMNS, ExcelJS (+21 more)
+
+### Community 41 - "route.service.js"
+Cohesion: 0.19
+Nodes (10): mongoose, validateLegs(), assertLegShape(), assertNoConsecutivePorts(), bad(), checkLegReferences(), collectRefIds(), isId() (+2 more)
 
 ### Community 42 - "round.service.js"
 Cohesion: 0.11
-Nodes (28): assertInitialStatus(), buildEditedLegs(), buildRouteSnapshot(), CANCELLABLE_VOYAGE_STATUSES, crypto, INITIAL_STATUSES, newLegKey(), assertNoLiveBookings() (+20 more)
+Nodes (26): bookingSchema, mongoose, hardDelete(), assertInitialStatus(), buildEditedLegs(), buildRouteSnapshot(), CANCELLABLE_VOYAGE_STATUSES, crypto (+18 more)
 
 ### Community 43 - "ref_node_assert"
-Cohesion: 0.11
-Nodes (11): assert, test, assert, test, assert, test, assert, test (+3 more)
+Cohesion: 0.07
+Nodes (20): assert, test, assert, test, assert, test, assert, test (+12 more)
 
 ### Community 44 - "mailer.js"
 Cohesion: 0.18
 Nodes (18): bcrypt, changePassword(), crypto, forgotPassword(), getMe(), jwt, login(), resetPassword() (+10 more)
 
 ### Community 45 - "booking.service.js"
-Cohesion: 0.12
-Nodes (31): required, validate(), create(), DISCHARGE_COLUMNS, dischargeFilter(), exportDischargeList(), getById(), hardDelete() (+23 more)
+Cohesion: 0.10
+Nodes (38): required, validate(), create(), DISCHARGE_COLUMNS, dischargeFilter(), exportDischargeList(), getById(), hardDelete() (+30 more)
 
-### Community 46 - "partner.service.js"
+### Community 46 - "AppError"
 Cohesion: 0.09
-Nodes (25): create(), descendantIds(), FIELDS, HEADER_FIELDS, list(), prefixOf(), remove(), update() (+17 more)
+Nodes (41): create(), descendantIds(), FIELDS, HEADER_FIELDS, list(), prefixOf(), remove(), update() (+33 more)
 
-### Community 47 - "react-hot-toast"
-Cohesion: 0.31
-Nodes (9): AccountingRoute(), AccountForm(), AccountingPage(), buildTree(), ChartTab(), TYPES, ExchangeRates(), accountingService (+1 more)
+### Community 47 - "showErrorToast"
+Cohesion: 0.05
+Nodes (72): AccountingRoute(), COLUMNS, ContainerTypesPage(), FILTERS, CATEGORY_STYLES, COLUMNS, ExpenseTypesPage(), FILTERS (+64 more)
 
-### Community 48 - "user.service.js"
-Cohesion: 0.27
-Nodes (12): bcryptjs@^2.4.3, acceptInvite(), bcrypt, create(), crypto, getById(), invalidateUser(), inviteUser() (+4 more)
+### Community 48 - "VoyageOverviewTab.jsx"
+Cohesion: 0.22
+Nodes (14): Card(), fmt(), NEXT_NOTE, num(), STATUS_ORDER, StatusChips(), usd(), VoyageKpiCards() (+6 more)
 
 ### Community 49 - "location.routes.js"
-Cohesion: 0.10
-Nodes (23): express, router, { body, validationResult }, currency, portCode, validateCityCreate, validateCityUpdate, validateCountryCreate (+15 more)
+Cohesion: 0.19
+Nodes (14): express, router, { body, validationResult }, currency, handle(), portCode, validateCityCreate, validateCityUpdate (+6 more)
 
 ### Community 50 - "roundLock.js"
-Cohesion: 0.17
-Nodes (25): assertBookingsRoundOpen(), assertDocRoundOpen(), assertExpenseRoundOpen(), assertInvoiceRoundOpen(), assertItemsRoundOpen(), assertRoundBookable(), assertRoundOpen(), assertRoundOpenTx() (+17 more)
+Cohesion: 0.20
+Nodes (22): assertBookingsRoundOpen(), assertDocRoundOpen(), assertExpenseRoundOpen(), assertInvoiceRoundOpen(), assertItemsRoundOpen(), assertRoundOpen(), assertRoundOpenTx(), assertRoundsOpen() (+14 more)
 
 ### Community 51 - "api.int.test.js"
-Cohesion: 0.12
+Cohesion: 0.13
 Nodes (6): assert, bcrypt, { describe, it, before, after }, mongoose, path, { spawn }
 
 ### Community 52 - "e2e-masterdata.js"
 Cohesion: 0.19
 Nodes (6): brief(), check(), Client, expectStatus(), results, RUN
 
-### Community 53 - "badRequest"
-Cohesion: 0.08
-Nodes (28): BOOKING_STATUS, { body, validationResult }, express, handle(), noteValidators, router, express, router (+20 more)
+### Community 53 - "responseHelper.js"
+Cohesion: 0.05
+Nodes (48): BOOKING_STATUS, ROUND_STATUS, express, router, { body, validationResult }, handle(), validateCreate, validateUpdate (+40 more)
 
 ### Community 54 - "masterData2.test.js"
-Cohesion: 0.17
-Nodes (14): ALL_CITIES, CITY_COUNTRIES, COUNTRIES_ONLY, { Country: LibCountry, City: LibCity }, DRY, lc(), run(), uniqueCityNames() (+6 more)
+Cohesion: 0.36
+Nodes (6): toAccountFields(), TYPE_MAP, validateChart(), seedChart(), assert, test
 
 ### Community 55 - "audit-fixes.int.test.js"
 Cohesion: 0.19
@@ -432,32 +431,32 @@ Cohesion: 0.16
 Nodes (8): assert, { describe, it, before, after }, mkBookings(), mkRound(), mongoose, uniq(), USER, USER_ID
 
 ### Community 57 - "ManualBookingForm.jsx"
-Cohesion: 0.09
-Nodes (33): BookingImportPage(), NewManualBookingPage(), ExportPage(), useBookingLookups(), BookingForm(), FieldLabel(), fmtMoney(), ic() (+25 more)
+Cohesion: 0.08
+Nodes (37): BookingDetailContent(), BookingDetailPage(), ManualBookingDetailPage(), NewManualBookingPage(), VoyageDetailPage(), useVoyage(), useVoyageSummary(), BookingDetailCard() (+29 more)
 
 ### Community 58 - "scripts"
 Cohesion: 0.15
 Nodes (13): scripts, dev, migrate:hard-delete-cleanup, migrate:masterdata, migrate:rounds-voyages, migrate:seed-accounts, seed, seed:chart (+5 more)
 
-### Community 59 - "migrate-masterdata.js"
-Cohesion: 0.10
-Nodes (17): contactFromLegacy(), DRY, expenseAccountCodeFor(), reports, steps, ALLOWED_SCOPES, LEVEL_LABEL, levelFromScopes() (+9 more)
+### Community 59 - "expenseType.logic.js"
+Cohesion: 0.12
+Nodes (15): contactFromLegacy(), DRY, expenseAccountCodeFor(), reports, steps, ALLOWED_SCOPES, LEVEL_LABEL, levelFromScopes() (+7 more)
 
 ### Community 60 - "accounting.routes.js"
 Cohesion: 0.21
 Nodes (11): { body, validationResult }, express, handle(), router, shared, ACCOUNT_TYPES, accountSchema, ALLOCATION_LEVELS (+3 more)
 
 ### Community 61 - "vessel.routes.js"
-Cohesion: 0.22
-Nodes (9): validateShares, express, router, { body, validationResult }, handle(), masterFields, nn, validateCreate (+1 more)
+Cohesion: 0.20
+Nodes (10): OWNERSHIP_TYPES, validateShares, express, router, { body, validationResult }, handle(), masterFields, nn (+2 more)
 
 ### Community 62 - "Capacity Engine — Audit Report (Version 2: Final Verification)"
-Cohesion: 0.05
-Nodes (48): computeVoyagePreview(), resolveTEU(), BUG-003 — L1 Fallback Creates Phantom Load/Discharge Events Instead of Excluding, BUG-005 — previewCapacity API Endpoint Calls Non-Existent computeSegmentPreview, BUG-006 — Voyage Sorting Relies on sequence Without a Unique Compound Index, BUG-007 — utilisationPct Uses Math.round, Can Show 100% When Vessel Has Remaining Capacity, BUG-008 — L1 totalTEU Is Pre-Computed at Save Time, Not Refreshed If resolveTEU Changes, BUG-009 — Vessel Starts Every Round at 0 TEU With No Residual Cargo Check (+40 more)
+Cohesion: 0.04
+Nodes (52): capacityEnforcement(), computeVoyagePreview(), resolveTEU(), BUG-003 — L1 Fallback Creates Phantom Load/Discharge Events Instead of Excluding, BUG-004 — computeVoyagePreview Only Checks the Load Voyage, Not Transited Voyages, BUG-005 — previewCapacity API Endpoint Calls Non-Existent computeSegmentPreview, BUG-006 — Voyage Sorting Relies on sequence Without a Unique Compound Index, BUG-007 — utilisationPct Uses Math.round, Can Show 100% When Vessel Has Remaining Capacity (+44 more)
 
-### Community 63 - "rbac"
-Cohesion: 0.07
-Nodes (37): hasPermission(), rbac(), express, ADR-0001, notOwnRole(), ownRoleId(), ownRoleOrRoles(), router (+29 more)
+### Community 63 - "System audit — 2026-11-19"
+Cohesion: 0.05
+Nodes (32): Audit folder, 1. Verification status (be careful with this), 2.1 Overview, 2.2 Step by step, 2.3 Voyage assignment (the new core rule), 2.4 Who can do what, 2.5 Capacity (unchanged, R10), 2. The current flow (+24 more)
 
 ### Community 64 - "expense-module-analysis.md"
 Cohesion: 0.05
@@ -468,20 +467,20 @@ Cohesion: 0.35
 Nodes (11): C, fillBox(), fmtDate(), fmtMoney(), fmtNum(), generateInvoicePdf(), hLine(), PDFDocument (+3 more)
 
 ### Community 66 - "bookingItem.service.js"
-Cohesion: 0.12
-Nodes (18): balanceMinor(), computeCommission(), deriveStatus(), groupBookingsIntoItems(), listEligible(), scheduleSync(), syncForVoyages(), 06 — Invoices (V2 billing) (+10 more)
+Cohesion: 0.17
+Nodes (12): computeCommission(), 06 — Invoices (V2 billing), `BookingItem` (`billing.models.js`) — derived pricing group, Commission rules (`computeCommission`), Data model, `Invoice` (shared collection, `invoice.model.js`), `InvoiceLine`, `InvoiceSettlement` (+4 more)
 
-### Community 67 - "Booking Selection Workflow — Voyage vs POL/POD Conflict Analysis"
-Cohesion: 0.25
-Nodes (7): 1. HOW THE VOYAGE SELECTOR CURRENTLY WORKS, 3. WHETHER VOYAGE AND POL/POD DUPLICATE THE SAME RESPONSIBILITY, 5. SHOULD THE SELECTOR ACTUALLY REPRESENT THE ROUND?, 6. HOW VOYAGE/SEGMENT SHOULD BE RESOLVED FROM POL/POD (CONCEPTUAL — NOT A PROPOSAL), 8. MIGRATION RISKS AND BACKWARD COMPATIBILITY, Booking Selection Workflow — Voyage vs POL/POD Conflict Analysis, SUMMARY
+### Community 67 - "paging.logic.js"
+Cohesion: 0.22
+Nodes (11): listCities(), listCountries(), listPorts(), listTerminals(), paged(), idParam(), mongoose, searchFilter() (+3 more)
 
-### Community 68 - "success"
-Cohesion: 0.11
-Nodes (27): ALLOWED_CAPACITY_STATUSES, getRoundCapacity(), getVesselActiveCapacity(), previewCapacity(), getFleetUtilisation(), getStats(), deleteCity, deleteCountry (+19 more)
+### Community 68 - "clean-coastal-locations.js"
+Cohesion: 0.16
+Nodes (16): ALLOW_PROD, APPLY, applyRemovals(), argv, assertMayApply(), childCount(), CONFIRM_DB, countBy() (+8 more)
 
-### Community 69 - "round.routes.js"
-Cohesion: 0.27
-Nodes (8): ROUND_STATUS, express, router, { body, validationResult }, handle(), validateCreate, validateLegs, validateUpdate
+### Community 69 - "Open items: decisions needed (plan only, 2026-11-19)"
+Cohesion: 0.15
+Nodes (12): BK-03: reports and invoice snapshots vs the booking's own POL/POD, BK-04: round leg edits do not warn about bookings with stale leg keys, BK-05: a booking cannot be moved to another voyage, Decisions I need from you, F-09: a `roles:update` holder can grant any permission, FL-05: Final Loading -> Cancelled is unreachable through the API/UI, Open items: decisions needed (plan only, 2026-11-19), RV-40: service code editable once rounds exist (+4 more)
 
 ### Community 70 - "reports-analysis.md"
 Cohesion: 0.06
@@ -492,8 +491,8 @@ Cohesion: 0.22
 Nodes (9): devDependencies, concurrently@^9.2.4, scripts, build, dev, dev:backend, dev:frontend, start (+1 more)
 
 ### Community 72 - "TtlCache"
-Cohesion: 0.18
-Nodes (5): softDelete(), TtlCache, Cache (`utils/cache.js`), BUG-001 — Stale Cache Served After Failed invalidateRoundCache Call, BUG-001 — Stale Cache Served After Failed invalidateRoundCache Call
+Cohesion: 0.13
+Nodes (15): acceptInvite(), bcrypt, create(), crypto, getById(), invalidateUser(), inviteUser(), list() (+7 more)
 
 ### Community 74 - "5.3 Schema Definitions"
 Cohesion: 0.07
@@ -512,68 +511,72 @@ Cohesion: 0.40
 Nodes (5): Card(), CodingRules(), DIMENSIONS, LEVELS, RULES
 
 ### Community 78 - "4. Findings"
-Cohesion: 0.22
-Nodes (9): 4. Findings, FL-01 (High) — Capacity: onboard is always 0 for the bookings the system can create  *(observed + code)*, FL-04 (High) — Final Loading import cancels bookings it failed to save  *(code)*, FL-05 (Medium) — Final Loading → Cancelled is unreachable  *(code)*, FL-08 (Low) — Voyage-port lookup uses the live route, FL-09 (Low) — Duplicate containers, FL-10 (Low) — Layer 1 details, FL-11 (Low) — Manual voyage order (+1 more)
+Cohesion: 0.14
+Nodes (15): assertBookingSource(), assertRoundBookable(), Invariants (enforced in the services, not only the UI), FL-06: a round can be Completed with live bookings, 4. Findings, FL-02 (High) — Import save skips the bookable checks  *(code)*, FL-04 (High) — Final Loading import cancels bookings it failed to save  *(code)*, FL-05 (Medium) — Final Loading → Cancelled is unreachable  *(code)* (+7 more)
 
-### Community 79 - "vessel.model.test.js"
-Cohesion: 0.40
-Nodes (3): assert, base, test
+### Community 79 - "build-location-data.js"
+Cohesion: 0.08
+Nodes (20): argv, cells, cityIndex, cityNames, COAST, coastKm(), { Country: LibCountry, City: LibCity }, distSeg() (+12 more)
 
-### Community 81 - "agentAccounts.models.js"
-Cohesion: 0.33
-Nodes (4): handlingChargeSchema, mongoose, offsetBatchSchema, statementSchema
+### Community 81 - "expense.service.js"
+Cohesion: 0.16
+Nodes (18): assertTypeFitsScope(), create(), deleteFile(), deriveScope(), fs, getById(), hardDelete(), ADR-0002 (+10 more)
+
+### Community 85 - "next"
+Cohesion: 0.17
+Nodes (9): ServiceDetailContent(), ServiceDetailPage(), Row(), ServiceDetailPage(), tabs, ServiceForm(), fmt(), ServiceRounds() (+1 more)
 
 ### Community 87 - "rolling-pnl-analysis.md"
 Cohesion: 0.08
 Nodes (25): Calculation Analysis — Every KPI, Combined, Current Business Purpose, Current expense assumptions, Current expense relationships, Current Filtering Options, Current Grouping Logic, Current limitations (Expense side) (+17 more)
 
-### Community 88 - "Findings"
-Cohesion: 0.12
-Nodes (16): overdueMatch(), Dashboard (`/dashboard`), Carried forward from the previous audit (not re-verified here), F-01 (High) — FIXED 2026-10-25 — Shares lock can deadlock round closing (lock now only on a Final settlement), F-02 (High) — FIXED 2026-10-25 (as a guard) — Multi-currency rounds are only partly settled (close now blocked by ROUND_HAS_OTHER_CURRENCY; real multi-currency settlement not built), F-04 (Medium) — FIXED 2026-10-25 (non-base expenses excluded and reported separately) — Mixed-currency expense totals in Voyage Profitability, F-05 (Medium) — FIXED 2026-10-25 — Posted expense can change its partner payer, F-07 (Medium) — FIXED 2026-10-25 (blocks; no preview warning yet) — Final Loading import vs issued invoices (+8 more)
+### Community 88 - "invoice.model.js"
+Cohesion: 0.10
+Nodes (14): INVOICE_STATUS, INVOICE_TYPES, billToSchema, invoiceSchema, lineItemSchema, mongoose, exchangeRateSchema, mongoose (+6 more)
 
 ### Community 89 - "Logistics & Shipping SaaS — MERN Stack MVP"
 Cohesion: 0.08
 Nodes (23): 03 — Business Rules, 3.10 Deletion Rules, 3.11 Status Transition Rules, 3.1 Master Data Rules, 3.2 Route Rules, 3.3 Round Rules, 3.4 Voyage Auto-Generation Rules, 3.5 Booking Rules (+15 more)
 
 ### Community 90 - "booking.controller.js"
-Cohesion: 0.23
-Nodes (19): create(), dischargeList(), exportDischargeList(), fail(), getById(), getLookups(), getVoyagePorts(), list() (+11 more)
+Cohesion: 0.15
+Nodes (28): create(), dischargeList(), exportDischargeList(), fail(), getById(), getLookups(), getVoyagePorts(), list() (+20 more)
 
 ### Community 91 - "status"
 Cohesion: 0.08
-Nodes (31): status(), 01 — Master Data, Agent agreements (`modules/agreements`), Agents/Customers (`modules/customers`, `/customers`, perm `customers`) — the Customers tab, renamed 2026-10-27, Container types (`modules/containerTypes`, `/container-types`), Expense types and categories (`modules/expenseTypes`, `/expense-types`), Invoice Services (`modules/invoiceServices`, `/invoice-services`, perm `invoiceServices`) — Masters → Services, Locations (`modules/locations`, `/locations`, perm module `locations`) (+23 more)
+Nodes (30): status(), 01 — Master Data, Agent agreements (`modules/agreements`), Agents/Customers (`modules/customers`, `/customers`, perm `customers`) — the Customers tab, renamed 2026-10-27, Container types (`modules/containerTypes`, `/container-types`), Expense types and categories (`modules/expenseTypes`, `/expense-types`), Invoice Services (`modules/invoiceServices`, `/invoice-services`, perm `invoiceServices`) — Masters → Services, Partners (`modules/partners`, `/partners`) (+22 more)
 
-### Community 92 - "expenseType.controller.js"
-Cohesion: 0.20
-Nodes (9): create(), createCategory(), deleteCategory(), getById(), getCategories(), list(), remove(), update() (+1 more)
+### Community 92 - "TrackingList.jsx"
+Cohesion: 0.18
+Nodes (13): TrackingPage(), fmtDT(), InfoRow(), TRACKING_COLORS, TrackingDetailModal(), fmt(), STATUS_COLORS, TrackingHistoryTable() (+5 more)
 
 ### Community 93 - "Logistics & Shipping SaaS — MERN Stack MVP"
 Cohesion: 0.10
 Nodes (20): 06 — API Planning, 6.10 Rounds, 6.11 Voyages, 6.12 Bookings, 6.13 Expenses, 6.14 Invoices, 6.15 Tracking, 6.16 Reports (+12 more)
 
-### Community 94 - "invoiceService.routes.js"
-Cohesion: 0.16
-Nodes (12): SERVICE_APPLICABILITY, SERVICE_STATUS, invoiceServiceSchema, mongoose, express, router, { body, validationResult }, handle() (+4 more)
+### Community 94 - "seed-locations.js"
+Cohesion: 0.13
+Nodes (12): country-state-city@^3.2.1, { Country: LibCountry }, DRY, insert(), lc(), norm(), run(), countrySchema (+4 more)
 
-### Community 95 - "partnerSettlement.test.js"
-Cohesion: 0.14
-Nodes (14): assert, coll, ledger(), M(), paid, shares, test, Accounting (Masters → Accounting, `/accounting`, module `accounting`) and chart of accounts (+6 more)
+### Community 95 - "11 — Accounting: Ledger, Agent Accounts, Round Close & Partner Settlement"
+Cohesion: 0.15
+Nodes (13): 11 — Accounting: Ledger, Agent Accounts, Round Close & Partner Settlement, 1. Ledger (`modules/ledger`), 3. Round close and partner settlement (`/round-accounting`), 4. Tests, 6-digit master chart (2026-10-27), Chart of accounts (seeded by `accounts.seed.js`, idempotent), Close checklist, FX (`fx.service.js`) (+5 more)
 
-### Community 96 - "paginate"
-Cohesion: 0.09
-Nodes (28): create(), getById(), list(), remove(), update(), create(), getAttachment(), getById() (+20 more)
+### Community 96 - "05 — Voyage Details page: plan (phase 1)"
+Cohesion: 0.12
+Nodes (19): voyageStatusTotals(), getDetail(), 05 — Voyage Details page: plan (phase 1), 10. Later phases (not planned, not built), 11. Decisions for the owner, 12. What I checked vs what I assumed, 2. Definitions: every number on the page, 3.1 Endpoints (+11 more)
 
-### Community 97 - "Hard rules (never break)"
-Cohesion: 0.20
-Nodes (9): Architecture map, Before coding, CLAUDE.md — Logistics & Shipping Operations SaaS (MERN), Commands, Docs & history, Env & demo, Module docs (`docs/`), Project (+1 more)
+### Community 97 - "voyage-details-probe.js"
+Cohesion: 0.15
+Nodes (4): Client, mongoose, results, STATUSES
 
 ### Community 98 - "Findings"
-Cohesion: 0.14
-Nodes (14): Findings, RV-00 (High) — FIXED 2026-10-26 — vessel without reefer plugs could not be created, RV-01 (High) — Round created with a vessel that does not exist  *(probed)*, RV-02 / RV-03 (Low) — Inactive service / vessel accepted by the API  *(probed)*, RV-04 / RV-05 (Medium) — Rounds created as Completed / Cancelled  *(probed)*, RV-07 (High) — Two Active rounds on one vessel  *(probed)*, RV-13 (High) — Route changed under existing Planned rounds  *(probed)*, RV-17 (Low) — Generated voyages are bare  *(probed)* (+6 more)
+Cohesion: 0.08
+Nodes (26): saveLegs(), Audit — Service → Route legs → Round → Voyages (up to "set booking") — 2026-10-26, Design questions for the owner (Route ↔ Service), Findings, Proposed fix sprint (no code written yet beyond RV-00), Remediation status (2026-10-26, same day — sprint `sprints/rounds-voyages-2026-10-26-sprint.md`), Reproduce, RV-00 (High) — FIXED 2026-10-26 — vessel without reefer plugs could not be created (+18 more)
 
 ### Community 99 - "03 — Rounds, Voyages & Capacity"
 Cohesion: 0.11
-Nodes (18): 03 — Rounds, Voyages & Capacity, Capacity engine (per leg, rewritten 2026-11-10 — fixes FL-01 / BK-02), Concepts, Creating a voyage (`voyage.service.createVoyage`), Database changes / deployment, Deleting, Known limitations, Related modules (+10 more)
+Nodes (19): 03 — Rounds, Voyages & Capacity, Capacity engine (per leg, rewritten 2026-11-10 — fixes FL-01 / BK-02), Concepts, Creating a voyage (`voyage.service.createVoyage`), Database changes / deployment, Deleting, Known limitations, Related modules (+11 more)
 
 ### Community 100 - "System Audit — 2026-08-03"
 Cohesion: 0.11
@@ -587,13 +590,9 @@ Nodes (12): blank(), CHARTER_TYPES, charterDateError(), hireRateFromMinor(), hir
 Cohesion: 0.16
 Nodes (4): cleanup, Client, out, RUN
 
-### Community 103 - "docs/README.md"
-Cohesion: 0.33
-Nodes (3): Conventions used in these docs, Documentation Index, Reading order
-
 ### Community 104 - "00 — Architecture & Cross-cutting Rules"
-Cohesion: 0.18
-Nodes (11): 00 — Architecture & Cross-cutting Rules, Backend layout, Commands, Data flow at a glance, Delete guards (`utils/dependents.js`), Environment, Frontend conventions, Numbering (`utils/autoNumber.js`) (+3 more)
+Cohesion: 0.12
+Nodes (17): 00 — Architecture & Cross-cutting Rules, Audit logger (`middleware/auditLogger.js`), Authentication (`middleware/auth.js`), Backend layout, Commands, CSRF (`middleware/csrf.js`), Data flow at a glance, Delete guards (`utils/dependents.js`) (+9 more)
 
 ### Community 105 - "Logistics & Shipping SaaS — MERN Stack MVP"
 Cohesion: 0.12
@@ -608,60 +607,60 @@ Cohesion: 0.13
 Nodes (14): 1. Verdict, 3. Findings, 5. Not audited today, 6. Suggested order of work, 7. Release gates, A-1 (High) V2 code is entirely uncommitted, A-2 (High) Money paths unverified against a database, A-3 (Medium) Frontend lint is red (22 errors) (+6 more)
 
 ### Community 108 - "| See §6 "Version 2" and sprints/v2-code-audit-2026-10-21.md before touching any money code"
-Cohesion: 0.07
-Nodes (29): 10. AUTO-NUMBER FORMATS, 11. RBAC — CURRENT STATE, 12. API QUICK REFERENCE, 13. ENVIRONMENT, 14. DEMO CREDENTIALS, 15. VPS DEPLOYMENT, 16. KNOWN ISSUES / GOTCHAS, 17. AI AGENT WORKFLOW (+21 more)
+Cohesion: 0.09
+Nodes (22): 10. AUTO-NUMBER FORMATS, 11. RBAC — CURRENT STATE, 12. API QUICK REFERENCE, 13. ENVIRONMENT, 14. DEMO CREDENTIALS, 15. VPS DEPLOYMENT, 16. KNOWN ISSUES / GOTCHAS, 17. AI AGENT WORKFLOW (+14 more)
 
 ### Community 109 - "Status — 2026-11-10"
-Cohesion: 0.13
-Nodes (14): 2026-11-02 — Accounting chart CRUD, Audit (2026-10-26), Audit 2026-11-10, Bookings rework (2026-11-10), Docs sync (2026-10-31), Follow-up 2026-11-10 (after the audit), How to use, Master data rework (2026-10-25) (+6 more)
+Cohesion: 0.12
+Nodes (16): 2026-11-02 — Accounting chart CRUD, Audit (2026-10-26), Audit 2026-11-10, Audit open items, part 1 (2026-11-19, nothing committed), Docs sync (2026-10-31), Follow-up 2026-11-10 (after the audit), How to use, Locations: sea / coastal only (2026-11-19) (+8 more)
 
-### Community 110 - "deleteVoyage"
+### Community 110 - "city-coast-distance.js"
+Cohesion: 0.16
+Nodes (14): argv, buildIndex(), COAST, { Country: LibCountry, City: LibCity }, CUTOFFS, distanceToCoast(), distSegKm(), fs (+6 more)
+
+### Community 111 - "bookingVoyage.service.js"
+Cohesion: 0.22
+Nodes (15): mongoose, move(), moveBooking(), moveManualBooking(), bad(), describe(), loadBookableRound(), loadRoundVoyages() (+7 more)
+
+### Community 112 - "10 — Users, Auth, Roles, Permissions (RBAC) & Audit Logs"
 Cohesion: 0.25
-Nodes (8): 3. NEW findings from the final audit, F-2 (High for deployment, OPEN) - `seed.js` is broken and not in git, F-3 (High for governance, OPEN) - planning and audit documents are ignored by git again, F-4 (Low) - integration harness readiness timeout, F-5 (Info) - dependency advisories unchanged, F-6 (Info) - frontend lint baseline, F-7 (Info) - documentation accuracy, F-8 (Info) - Docker test container
+Nodes (8): 10 — Users, Auth, Roles, Permissions (RBAC) & Audit Logs, Audit logs (`/audit-logs`, perm `auditLogs`), Authentication flow (`/auth`), Frontend, Roles (`/roles`, perm `roles`), Schemas, Seeded roles (`npm run seed`), Users (`/users`, perm `users`)
 
-### Community 111 - "server.js"
-Cohesion: 0.18
-Nodes (10): errorHandler(), app, compression, cookieParser, cors, express, helmet, morgan (+2 more)
-
-### Community 112 - "Hard rules (never break)"
-Cohesion: 0.20
-Nodes (9): exportZip(), archiver, buildZipStream(), Hard rules (never break), Output, 1. PROJECT IDENTITY, Known open gaps, System Summary (+1 more)
-
-### Community 113 - "backend/src/utils/money.js"
-Cohesion: 0.36
-Nodes (10): add(), assertMinor(), CURRENCY_DECIMALS, decimalsOf(), format(), fromMinor(), numberToPlainString(), sub() (+2 more)
+### Community 113 - "AuditLogDetail.jsx"
+Cohesion: 0.27
+Nodes (9): AuditLogDetailPage(), ACTION_STYLE, AuditLogDetail(), fmt(), getDiff(), MODULE_ROUTES, renderValue(), ValueDisplay() (+1 more)
 
 ### Community 114 - "04 — Bookings"
-Cohesion: 0.15
-Nodes (13): 04 — Bookings, Create / update / delete rules, Discharge list (screen + Excel), `discharge` — match-only (reworked), Excel import (`bookingImport.service.js`, `importRules.logic.js`), Partner label and partner users, Routes, Schema `Booking` (+5 more)
+Cohesion: 0.13
+Nodes (15): 04 — Bookings, Create / update / delete rules, Discharge list (screen + Excel), `discharge` — match-only (reworked), Excel import (`bookingImport.service.js`, `importRules.logic.js`), Layer 1 `kind`: Estimate or Allocation (2026-11-19), Moving a booking, cancelling a loaded one, report ports (2026-11-19), Partner label and partner users (+7 more)
 
 ### Community 115 - "Logistics & Shipping SaaS — MERN Stack MVP"
 Cohesion: 0.15
 Nodes (12): 01 — Project Overview, 1.1 System Description, 1.2 System Purpose, 1.3 Technology Stack, 1.4 Architecture Type, 1.5 Users of the System, 1.6 Key Business Entities, 1.7 MVP Deliverables (+4 more)
 
 ### Community 116 - "System Audit — 2026-09-01"
-Cohesion: 0.22
-Nodes (8): 1. Executive Summary, 2.1 Backend module inventory (23), 2.2 Frontend feature modules (18) / App Router routes (42 segments), 2.3 The core domain model (condensed — see `CLAUDE.md` for full detail), 2. System Architecture, 3. The Uncommitted Working-Tree Change (WIP, not yet in `CLAUDE.md`), 7. Performance, Caching & Dependencies, System Audit — 2026-09-01
+Cohesion: 0.17
+Nodes (11): 2.1 Backend module inventory (23), 2.2 Frontend feature modules (18) / App Router routes (42 segments), 2.3 The core domain model (condensed — see `CLAUDE.md` for full detail), 2. System Architecture, 3. The Uncommitted Working-Tree Change (WIP, not yet in `CLAUDE.md`), 4. Security & RBAC, 7. Performance, Caching & Dependencies, 8. Audit Findings — Ranked High → Medium → Low (+3 more)
 
-### Community 117 - "Full audit — Routes → Rounds → Voyages → Bookings (data flow + current status) — 2026-11-05"
-Cohesion: 0.15
-Nodes (9): Audit folder, 1.1 Code and verification state, 1.2 Test DB snapshot (Atlas `test` DB, read-only query 2026-11-05), 1. Current system status, 3. What works (verified in code today), 5. Carried forward (not re-probed), 6. Suggested order of work, 7. Files read (+1 more)
+### Community 117 - "service.service.js"
+Cohesion: 0.26
+Nodes (7): create(), mongoose, update(), codeChanged(), lockedMessage(), assert, test
 
 ### Community 118 - "containerType.service.js"
-Cohesion: 0.33
-Nodes (8): assertIsoFree(), clean(), create(), getAll(), hardDelete(), list(), update(), teuFactorForSize()
+Cohesion: 0.39
+Nodes (7): assertIsoFree(), clean(), create(), getAll(), list(), update(), teuFactorForSize()
 
-### Community 119 - "auth.routes.js"
-Cohesion: 0.23
-Nodes (10): authLimiter, express, { rateLimit }, router, { body, validationResult }, handleValidation(), validateChangePassword, validateForgotPassword (+2 more)
+### Community 119 - "RoundRoutePicker.jsx"
+Cohesion: 0.35
+Nodes (10): FixedVoyageRoute(), FreeRoutePicker(), portLabel(), callIndex(), defaultPolIndex(), fixedRouteStart(), podChoices(), polChoices() (+2 more)
 
 ### Community 120 - "voyageMatch.logic.js"
 Cohesion: 0.32
 Nodes (11): bad(), checkChosenVoyage(), compare(), DEAD_STATUS, DEPARTED_STATUS, findVoyageForBooking(), matchRun(), notDeparted() (+3 more)
 
-### Community 121 - "MEDIUM"
-Cohesion: 0.20
-Nodes (10): 6. Frontend Correctness & Consistency, 8. Audit Findings — Ranked High → Medium → Low, HIGH, LOW, MEDIUM, useContainerTypes(), usePorts(), useServices() (+2 more)
+### Community 121 - "location-delete-probe.js"
+Cohesion: 0.24
+Nodes (3): Client, mongoose, results
 
 ### Community 122 - "Logistics & Shipping SaaS — MERN Stack MVP"
 Cohesion: 0.17
@@ -671,65 +670,61 @@ Nodes (11): 02 — System Workflow, 2.1 Main Business Flow, 2.2 Master Data Work
 Cohesion: 0.17
 Nodes (11): 09 — Security Rules, 9.1 Authentication, 9.2 Authorization (RBAC), 9.3 Input Validation, 9.4 Data Protection, 9.5 API Security, 9.6 File Upload Security, 9.7 Error Handling & Information Disclosure (+3 more)
 
-### Community 124 - "agentCommission.model.js"
-Cohesion: 0.25
-Nodes (7): cancelCommission(), cancelCommissionTx(), deleteAgreement(), listCommissions(), agentCommissionSchema, mongoose, Routes
+### Community 124 - "voyage.model.js"
+Cohesion: 0.20
+Nodes (9): VOYAGE_DIRECTION, VOYAGE_STATUS, mongoose, portCallSchema, voyageSchema, { body, validationResult }, handle(), validateCreate (+1 more)
 
 ### Community 125 - "Logistics & Shipping SaaS — MERN Stack MVP"
 Cohesion: 0.18
 Nodes (10): 04 — Module Relationships, 4.1 Entity Relationship Overview, 4.2 Detailed Relationship Table, 4.3 One-to-One Relationships, 4.4 One-to-Many Relationships, 4.5 Many-to-One Relationships, 4.6 Reference Directions, 4.7 Cascade / Deletion Strategy (+2 more)
 
-### Community 126 - "InvoiceList.jsx"
-Cohesion: 0.36
-Nodes (7): InvoicesPage(), downloadBlob(), fmt(), fmtMoney(), InvoiceList(), INVOICE_STATUS, INVOICE_TYPES
+### Community 126 - "expenseType.routes.js"
+Cohesion: 0.22
+Nodes (8): { body, validationResult }, express, router, { body, validationResult }, handle(), mapping, validateCreate, validateUpdate
 
 ### Community 127 - "Logistics & Shipping SaaS"
 Cohesion: 0.18
 Nodes (10): Backend (`backend/.env`), Development Notes, Environment Variables, Frontend (`frontend/.env.local`), Logistics & Shipping SaaS, Prerequisites, Project Structure, Setup — Backend (+2 more)
 
 ### Community 128 - "probes-2.js"
-Cohesion: 0.11
-Nodes (8): mongoose, out, path, U, mongoose, out, path, U
+Cohesion: 0.20
+Nodes (4): mongoose, out, path, U
 
-### Community 129 - "voyage.routes.js"
-Cohesion: 0.24
-Nodes (8): VOYAGE_DIRECTION, VOYAGE_STATUS, express, router, { body, validationResult }, handle(), validateCreate, validateUpdate
-
-### Community 130 - "Booking Selection Workflow — Voyage vs POL/POD Conflict Analysis"
-Cohesion: 0.25
-Nodes (7): 1. HOW THE VOYAGE SELECTOR CURRENTLY WORKS, 2. HOW POL/POD ARE POPULATED — THE ROOT ISSUE, 3. WHETHER VOYAGE AND POL/POD DUPLICATE THE SAME RESPONSIBILITY, 5. SHOULD THE SELECTOR ACTUALLY REPRESENT THE ROUND?, 8. MIGRATION RISKS AND BACKWARD COMPATIBILITY, Booking Selection Workflow — Voyage vs POL/POD Conflict Analysis, SUMMARY
-
-### Community 131 - "user.routes.js"
+### Community 129 - "coastal.logic.js"
 Cohesion: 0.29
-Nodes (8): express, router, { body, validationResult }, handle(), validateAcceptInvite, validateCreate, validateInvite, validateUpdate
+Nodes (9): ESTUARY_PORT_CODES, isLandlockedCountry(), KNOWN_LOCODE_FIXES, LANDLOCKED, LANDLOCKED_COUNTRY_CODES, norm(), portReviewFlags(), assert (+1 more)
+
+### Community 130 - "getVoyagePortIds"
+Cohesion: 0.04
+Nodes (52): getVoyagePortIds(), getVoyagePorts(), previewImport(), BUG-002 — portAsFrom/portAsTo Maps Overwrite Repeated Ports in Circular Routes, BUG-002 — portAsFrom/portAsTo Maps Overwrite Repeated Ports in Circular Routes, 1. HOW THE VOYAGE SELECTOR CURRENTLY WORKS, 1. HOW THE VOYAGE SELECTOR CURRENTLY WORKS, 2. HOW POL/POD ARE POPULATED — THE ROOT ISSUE (+44 more)
+
+### Community 131 - "5. FRONTEND STRUCTURE"
+Cohesion: 0.29
+Nodes (7): 5. FRONTEND STRUCTURE, Key frontend files changed, Sprints 042-046, Key frontend files — current state, New files added in Sprint 020, New files added in Sprint 048, New files added in Sprints 035-041, New files added in Sprints 042-046
 
 ### Community 132 - "FLOW Maritime ERP - Version 2 FINAL AUDIT"
-Cohesion: 0.20
-Nodes (9): 10. Revision history, 1. Verdict, 2. Evidence ledger (everything below was run today), 5. What is solid (verified, not assumed), 6. Residual risk register, 7. Release readiness checklist, 8. How to repeat this audit, 9. Sign-off (+1 more)
+Cohesion: 0.11
+Nodes (18): 10. Revision history, 1. Verdict, 2. Evidence ledger (everything below was run today), 3. NEW findings from the final audit, 5. What is solid (verified, not assumed), 6. Residual risk register, 7. Release readiness checklist, 8. How to repeat this audit (+10 more)
 
-### Community 133 - "Audit — Service → Route legs → Round → Voyages (up to "set booking") — 2026-10-26"
+### Community 134 - "CLAUDE.md — Logistics & Shipping Operations SaaS (MERN)"
+Cohesion: 0.18
+Nodes (10): Architecture map, Before coding, CLAUDE.md — Logistics & Shipping Operations SaaS (MERN), Commands, Docs & history, Env & demo, Locations (2026-11-19), Module docs (`docs/`) (+2 more)
+
+### Community 135 - "voyageSummary.logic.js"
 Cohesion: 0.22
-Nodes (9): saveLegs(), Audit — Service → Route legs → Round → Voyages (up to "set booking") — 2026-10-26, Design questions for the owner (Route ↔ Service), Proposed fix sprint (no code written yet beyond RV-00), Remediation status (2026-10-26, same day — sprint `sprints/rounds-voyages-2026-10-26-sprint.md`), Reproduce, RV-08 / RV-09 (Medium) — Same port on consecutive legs  *(probed)*, RV-10 / RV-11 / RV-12 (Medium) — Route legs are not validated against the master data  *(probed)* (+1 more)
+Nodes (5): AT_PORT, LIVE, nextPort(), revenueCard(), view()
 
-### Community 134 - "partnerSettlement.models.js"
-Cohesion: 0.29
-Nodes (5): jvReserveMovementSchema, mongoose, partnerLine, partnerSettlementSchema, partnerTransferSchema
+### Community 136 - "RoundRoutePicker"
+Cohesion: 0.22
+Nodes (10): canBook(), Voyage Details (2026-11-19, Sprints A, B and C done; browser pass not done), Voyage Details page (`/voyages/[id]`, 2026-11-19; plan `docs/05-voyage-details-plan.md`), 1. Current state (checked), 6.1 Unit tests (`npm test`, pure logic) — `backend/test/voyageSummary.logic.test.js` and additions to `bookingSummary.logic.test.js`, 6.2 HTTP probe — new `backend/scripts/audit-probes/voyage-details-probe.js` (test DB, dev server; prints results, **does not write a result file under `backend/`**, see S-16), 6.3 Manual browser checklist (for you; I have no browser), 6. Tests (+2 more)
 
-### Community 135 - "agentAccounts.logic.js"
-Cohesion: 0.32
-Nodes (3): buildStatementRows(), categorizeLines(), positionDelta()
+### Community 137 - "partnerSettlement.test.js"
+Cohesion: 0.22
+Nodes (9): assert, coll, ledger(), M(), paid, shares, test, Accounting (Masters → Accounting, `/accounting`, module `accounting`) and chart of accounts (+1 more)
 
-### Community 136 - "7. IMPACT SURVEY"
-Cohesion: 0.29
-Nodes (7): 7. IMPACT SURVEY, Backend validation (`booking.service.js`, `manualBooking.service.js`), Booking creation (Layer 1 & Layer 2), Business rules (`claude.md` §6 "Layer 2 Import Architecture — Sprint 026"), Capacity engine (`capacity.service.js`), Final Loading Import reconciliation, Reports (`reports.service.js`) and Invoices (`invoice.service.js`)
-
-### Community 137 - "auditLogger"
-Cohesion: 0.10
-Nodes (16): AUDIT_ACTIONS, auditLogger(), agreementRules, { body, query, validationResult }, express, handle(), money, router (+8 more)
-
-### Community 138 - "billing.models.js"
-Cohesion: 0.33
-Nodes (4): bookingItemSchema, invoiceLineSchema, invoiceSettlementSchema, mongoose
+### Community 138 - "probes-1.js"
+Cohesion: 0.22
+Nodes (4): mongoose, out, path, U
 
 ### Community 139 - "voyageMatch.logic.test.js"
 Cohesion: 0.39
@@ -743,45 +738,41 @@ Nodes (7): 07 — Folder Architecture, 7.1 Root Structure, 7.2 Backend Folder St
 Cohesion: 0.25
 Nodes (7): CLAUDE.MD — AI Agent Master Reference, Current Sprint: 001-048 shipped | V2 049-053 + audit High fixes + "V2-only conversion" (2026-10-23): implemented in the, Last Updated: 2026-10-23 — Version 2 is now THE system (no feature flags, no V1 invoicing). Implemented, NOT committed, Logistics & Shipping SaaS — MERN Stack, | NEXT: run npm run test:int on a replica set, V2 Medium audit findings, Sprint 054 (migration, deliberately skipped), | NOT verified against a database: integration tests need a replica set (Docker was unavailable), working tree. Feature flags and the V1 invoice/payment/agent-financial-account code are REMOVED.
 
-### Community 142 - "7. IMPACT SURVEY"
-Cohesion: 0.29
-Nodes (7): 7. IMPACT SURVEY, Backend validation (`booking.service.js`, `manualBooking.service.js`), Booking creation (Layer 1 & Layer 2), Business rules (`claude.md` §6 "Layer 2 Import Architecture — Sprint 026"), Capacity engine (`capacity.service.js`), Final Loading Import reconciliation, Reports (`reports.service.js`) and Invoices (`invoice.service.js`)
+### Community 142 - "server.js"
+Cohesion: 0.22
+Nodes (8): app, compression, cookieParser, cors, express, helmet, morgan, shutdown()
 
-### Community 143 - "getVoyagePortIds"
-Cohesion: 0.33
-Nodes (6): getVoyagePortIds(), getVoyagePorts(), BUG-002 — portAsFrom/portAsTo Maps Overwrite Repeated Ports in Circular Routes, BUG-002 — portAsFrom/portAsTo Maps Overwrite Repeated Ports in Circular Routes, 6. HOW VOYAGE/SEGMENT SHOULD BE RESOLVED FROM POL/POD (CONCEPTUAL — NOT A PROPOSAL), 2. HOW POL/POD ARE POPULATED — THE ROOT ISSUE
+### Community 143 - "kind.logic.test.js"
+Cohesion: 0.22
+Nodes (5): assert, calls, path, { pathToFileURL }, test
 
-### Community 144 - "vessel.controller.js"
+### Community 144 - "05 — Expenses"
 Cohesion: 0.29
-Nodes (6): create(), getById(), getStats(), list(), remove(), update()
+Nodes (7): 05 — Expenses, Attachments, Freeze rules, How expenses are used elsewhere, Routes, Schema `Expense`, Scope (derived, never stored)
 
 ### Community 145 - "07 — Tracking"
 Cohesion: 0.29
 Nodes (7): 07 — Tracking, Create rules (`tracking.service.createEntry`), Principle, Relationship to voyage status, Routes, Schema `TrackingHistory`, Used by
 
-### Community 146 - "role.controller.js"
-Cohesion: 0.33
-Nodes (5): create(), getById(), list(), remove(), update()
+### Community 146 - "vessel.logic.test.js"
+Cohesion: 0.40
+Nodes (3): assert, NOW, test
 
-### Community 147 - "System Audit — 2026-10-20"
-Cohesion: 0.29
-Nodes (6): 1. Executive Summary, 3. CRITICAL, 4. HIGH, 6. Dependencies — fresh `npm audit`, 2026-10-20, 9. Recommended Order of Work, System Audit — 2026-10-20
+### Community 147 - "08 — Reports & Dashboard"
+Cohesion: 0.40
+Nodes (5): 08 — Reports & Dashboard, Dashboard (`/dashboard`), Export of report data, Frontend, Revenue definition (system-wide)
 
-### Community 148 - "agent.controller.js"
-Cohesion: 0.33
-Nodes (5): create(), getById(), list(), remove(), update()
+### Community 148 - "Addendum 2026-10-31 — re-read of the working tree (code only, nothing probed)"
+Cohesion: 0.40
+Nodes (5): Addendum 2026-10-31 — re-read of the working tree (code only, nothing probed), RV-38 (Medium) — Voyage delete does not look at Layer 1 bookings, tracking or unposted expenses, RV-39 (Low) — Voyage and round status are loosely coupled, RV-40 (Low) — Service code / status edits are unguarded once rounds exist, RV-41 (Info) — Route ports for manual voyages
 
-### Community 149 - "bookingImport.controller.js"
-Cohesion: 0.60
-Nodes (5): downloadTemplate(), fail(), preview(), save(), templateColumns()
+### Community 149 - "VoyagePortStrip.jsx"
+Cohesion: 0.67
+Nodes (3): fmt(), STATE_LABEL, VoyagePortStrip()
 
 ### Community 150 - "capacityLegs.logic.test.js"
 Cohesion: 0.33
 Nodes (3): assert, east, test
-
-### Community 151 - "deleteVoyage"
-Cohesion: 0.33
-Nodes (6): deleteVoyage(), F-1 (High, FIXED) - the H5 fix broke every voyage deletion, RV-21 / RV-23 (Medium) — Capacity cache not invalidated  *(probed + code)*, RV-22 (Medium) — Deleting a middle voyage breaks the chain  *(probed)*, Summary, FL-06 (Medium) — Voyage Cancelled / Round Completed ignore live bookings  *(code, extends RV-39)*
 
 ### Community 152 - "4. BACKEND STRUCTURE"
 Cohesion: 0.33
@@ -791,61 +782,41 @@ Nodes (6): 4. BACKEND STRUCTURE, `/backend/src/`, New/changed files, Sprint 048,
 Cohesion: 0.33
 Nodes (6): 7. BUSINESS RULES, Booking Workflow, Dashboard — SuperAdmin Only, Expense File Serving — Authenticated, Final Loading Import, Tracking — Append-only
 
-### Community 154 - "Request pipeline"
-Cohesion: 0.33
-Nodes (6): Audit logger (`middleware/auditLogger.js`), Authentication (`middleware/auth.js`), CSRF (`middleware/csrf.js`), RBAC (`middleware/rbac.js`), Request pipeline, Response shape
+### Community 154 - "Documentation Index"
+Cohesion: 0.67
+Nodes (3): Conventions used in these docs, Documentation Index, Reading order
 
 ### Community 155 - "02 — Vessels"
-Cohesion: 0.33
-Nodes (6): 02 — Vessels, Capacity endpoints (module `capacity`), Related, Routes, Rules, Stats (`GET /vessels/:id/stats`, `getVesselStats`)
-
-### Community 156 - "4. CONFLICTS, INVALID COMBINATIONS, AND UX PROBLEMS"
-Cohesion: 0.33
-Nodes (6): 4.1 Silent semantic mismatch (the core defect), 4.2 Downstream effect on the capacity engine (direct link to Sprint 029), 4.4 Final Loading Import reconciliation scope compounds the risk, 4.5 UX friction, 4.6 Editing constraint adds to the confusion, 4. CONFLICTS, INVALID COMBINATIONS, AND UX PROBLEMS
+Cohesion: 0.29
+Nodes (7): 02 — Vessels, Capacity endpoints (module `capacity`), Partner shares (`modules/partners/vesselPartner.model.js`, `vesselShares.js`), Related, Routes, Rules, Stats (`GET /vessels/:id/stats`, `getVesselStats`)
 
 ### Community 157 - "BookingsSummaryCard"
 Cohesion: 0.50
 Nodes (4): 3. SPRINT STATUS, Invoice Booking Selection UX + Agent/Invoice Booking Summaries (Sprint 044), BookingsSummaryCard(), fmtMoney()
 
-### Community 158 - "4. CONFLICTS, INVALID COMBINATIONS, AND UX PROBLEMS"
-Cohesion: 0.33
-Nodes (6): 4.1 Silent semantic mismatch (the core defect), 4.2 Downstream effect on the capacity engine (direct link to Sprint 029), 4.4 Final Loading Import reconciliation scope compounds the risk, 4.5 UX friction, 4.6 Editing constraint adds to the confusion, 4. CONFLICTS, INVALID COMBINATIONS, AND UX PROBLEMS
-
-### Community 159 - "Addendum 2026-10-31 — re-read of the working tree (code only, nothing probed)"
-Cohesion: 0.40
-Nodes (5): Addendum 2026-10-31 — re-read of the working tree (code only, nothing probed), RV-38 (Medium) — Voyage delete does not look at Layer 1 bookings, tracking or unposted expenses, RV-39 (Low) — Voyage and round status are loosely coupled, RV-40 (Low) — Service code / status edits are unguarded once rounds exist, RV-41 (Info) — Route ports for manual voyages
-
 ### Community 160 - "frontend/README.md"
 Cohesion: 0.50
 Nodes (3): Deploy on Vercel, Getting Started, Learn More
 
-### Community 162 - "08 — Reports & Dashboard"
-Cohesion: 0.50
-Nodes (4): 08 — Reports & Dashboard, Export of report data, Frontend, Revenue definition (system-wide)
-
-### Community 163 - "09 — Export"
-Cohesion: 0.50
-Nodes (4): 09 — Export, Adding an exportable module, Endpoints, Exportable modules (`ALLOWED_MODULES` = keys of `COLUMNS`)
-
 ## Knowledge Gaps
 - **14 isolated node(s):** `ADR-0002`, `ADR-0002`, `ADR-0001`, `ADR-0001`, `ADR-0004` (+9 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1268 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **9 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1423 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **10 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `showErrorToast()` connect `LoadingSpinner` to `PermissionContext.jsx`, `System Audit — 2026-08-03`, `utils/constants.js`, `VesselForm.jsx`, `react`, `00 — Architecture & Cross-cutting Rules`, `react`, `ServiceDetail.jsx`, `react-hot-toast`, `Hard rules (never break)`, `PermissionMatrix.jsx`, `MEDIUM`, `ManualBookingForm.jsx`, `BookingsSummaryCard`, `InvoiceList.jsx`, `rbac`?**
-  _High betweenness centrality (0.152) - this node is a cross-community bridge._
+- **Why does `mongoose` connect `mongoose` to `bookingSummary.service.js`, `agentAccounts/agentAccounts.service.js`, `backend/package.json`, `escapeRegex.js`, `partner.routes.js`, `server.js`, `config/constants.js`, `rounds-voyages-probe.js`, `seed-test-data.js`, `partnerSettlement.service.js`, `city.model.js`, `capacity/capacity.service.js`, `backend/src/utils/money.js`, `invoiceV2.service.js`, `voyage.service.js`, `permission.model.js`, `server.js`, `vessel.service.js`, `reports/reports.service.js`, `open-items-probe.js`, `bookingImport.service.js`, `route.service.js`, `round.service.js`, `booking.service.js`, `AppError`, `api.int.test.js`, `audit-fixes.int.test.js`, `v2.int.test.js`, `accounting.routes.js`, `paging.logic.js`, `clean-coastal-locations.js`, `expense.service.js`, `invoice.model.js`, `booking.controller.js`, `seed-locations.js`, `voyage-details-probe.js`, `city-coast-distance.js`, `bookingVoyage.service.js`, `service.service.js`, `location-delete-probe.js`, `voyage.model.js`?**
+  _High betweenness centrality (0.131) - this node is a cross-community bridge._
 - **Are the 9 inferred relationships involving `showErrorToast()` (e.g. with `Hard rules (never break)` and `Frontend conventions`) actually correct?**
   _`showErrorToast()` has 9 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `ADR-0002`, `ADR-0002`, `ADR-0001` to the rest of the system?**
   _14 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `error` be split into smaller, more focused modules?**
-  _Cohesion score 0.10252100840336134 - nodes in this community are weakly interconnected._
-- **Why does `Hard rules (never break)` connect `Hard rules (never break)` to `backend/src/utils/money.js`, `Hard rules (never break)`, `agentAccounts/agentAccounts.service.js`, `LoadingSpinner`, `partner.service.js`, `upload.js`, `roundLock.js`, `status`, `rbac`?**
-  _High betweenness centrality (0.126) - this node is a cross-community bridge._
+- **Should `success` be split into smaller, more focused modules?**
+  _Cohesion score 0.041621943947525344 - nodes in this community are weakly interconnected._
+- **Why does `showErrorToast()` connect `showErrorToast` to `PermissionContext.jsx`, `System Audit — 2026-08-03`, `PageGuard`, `export/export.service.js`, `00 — Architecture & Cross-cutting Rules`, `LoadingSpinner`, `AgentForm.jsx`, `react`, `10 — Users, Auth, Roles, Permissions (RBAC) & Audit Logs`, `System Audit — 2026-09-01`, `next`, `BookingImport.jsx`, `ManualBookingForm.jsx`, `BookingsSummaryCard`?**
+  _High betweenness centrality (0.128) - this node is a cross-community bridge._
 - **Should `getVoyageLabel` be split into smaller, more focused modules?**
-  _Cohesion score 0.06841448189762797 - nodes in this community are weakly interconnected._
-- **Why does `mongoose` connect `mongoose` to `partnerSettlement.models.js`, `agentAccounts/agentAccounts.service.js`, `auditLogger`, `billing.models.js`, `backend/package.json`, `partner.routes.js`, `config/constants.js`, `rounds-voyages-probe.js`, `seed-test-data.js`, `partnerSettlement.service.js`, `capacity/capacity.service.js`, `expense.service.js`, `invoiceV2.service.js`, `voyage.service.js`, `permission.model.js`, `seed.js`, `vessel.service.js`, `reports/reports.service.js`, `bookingImport.service.js`, `pickFields`, `round.service.js`, `booking.service.js`, `partner.service.js`, `api.int.test.js`, `audit-fixes.int.test.js`, `v2.int.test.js`, `migrate-masterdata.js`, `accounting.routes.js`, `agentAccounts.models.js`, `invoiceService.routes.js`, `server.js`, `agentCommission.model.js`?**
-  _High betweenness centrality (0.119) - this node is a cross-community bridge._
+  _Cohesion score 0.0641025641025641 - nodes in this community are weakly interconnected._
+- **Why does `rbac()` connect `rbac` to `success`, `getVoyageLabel`, `export/export.service.js`, `RoundRoutePicker`, `LoadingSpinner`, `partner.routes.js`, `10 — Users, Auth, Roles, Permissions (RBAC) & Audit Logs`, `location.routes.js`, `04 — Bookings`, `System Audit — 2026-09-01`, `responseHelper.js`, `partnerSettlement.service.js`, `accounting.routes.js`, `vessel.routes.js`, `expenseType.routes.js`, `System audit — 2026-11-19`?**
+  _High betweenness centrality (0.096) - this node is a cross-community bridge._
