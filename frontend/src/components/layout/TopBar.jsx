@@ -13,7 +13,6 @@ const NAV = [
   {
     label: 'Operations',
     items: [
-      { label: 'Routes',   href: '/routes',   module: 'services' },
       { label: 'Rounds',   href: '/rounds',   module: 'rounds' },
       { label: 'Voyages',  href: '/voyages',  module: 'voyages' },
       { label: 'Bookings', href: '/bookings', module: 'bookings' },
@@ -33,6 +32,7 @@ const NAV = [
     items: [
       { label: 'Vessels',           href: '/vessels',         module: 'vessels' },
       { label: 'Vessels/Agents',    href: '/agents',          module: 'agents' },
+      { label: 'Routes',            href: '/routes',          module: 'services' },
       { label: 'Agents/Customers',  href: '/customers',       module: 'customers' },
       { label: 'Partners',          href: '/partners',        module: 'partners' },
       { label: 'Locations',         href: '/locations',       module: 'locations' },

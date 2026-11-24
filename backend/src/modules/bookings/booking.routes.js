@@ -59,6 +59,9 @@ router.post('/import/save',    rbac('bookings', 'import'), audit('bookings'), as
 
 // Voyage-level summary for the Bookings tabs. MUST be before /:id so 'voyage-summary' is not read as an id.
 router.get('/voyage-summary', rbac('bookings'), ctrl.voyageSummary);
+// Vessel -> round summaries (vessel-first navigation). Same rule: before /:id.
+router.get('/vessel-summary', rbac('bookings'), ctrl.vesselSummary);
+router.get('/round-summary',  rbac('bookings'), ctrl.roundSummary);
 
 // Voyage port lookup (legacy, by voyage)
 router.get('/voyage-ports/:voyageId', rbac('bookings'), ctrl.getVoyagePorts);

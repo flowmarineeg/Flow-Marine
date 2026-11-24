@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useVoyage, useVoyageSummary } from '@/hooks/useVoyage';
 import { usePermission } from '@/context/PermissionContext';
 import { getVoyageLabel } from '@/utils/voyageLabel';
@@ -46,6 +46,7 @@ function Message({ title, text, onBack, onRetry }) {
 /** Voyage Details page: header, quick actions, port strip, four cards, three tabs (the tables are read-only). */
 export default function VoyageDetail({ voyageId }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { can } = usePermission();
   const [tab, setTab]   = useState('overview');
   const [port, setPort] = useState(null); // { legKey, portId, name } → filters the two booking tabs only
@@ -54,7 +55,9 @@ export default function VoyageDetail({ voyageId }) {
   const summaryQ = useVoyageSummary(voyageId);
   const voyage   = voyageQ.data;
   const summary  = summaryQ.data;
-  const back = () => router.push('/voyages');
+  // Opened from a vessel's page (`?from=<vesselId>`): go back there, else to the vessel list.
+  const from = searchParams.get('from');
+  const back = () => router.push(from && /^[a-f0-9]{24}$/i.test(from) ? `/voyages/vessel/${from}` : '/voyages');
 
   if (voyageQ.isLoading) return <LoadingSpinner fullPage />;
   if (voyageQ.isError || !voyage) {

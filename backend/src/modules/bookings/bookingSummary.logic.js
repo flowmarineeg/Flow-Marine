@@ -86,4 +86,85 @@ const portFilter = (legKey, portId) => {
   return portMatch(legKey, portId);
 };
 
-module.exports = { TABS, STATUSES, portFilter, summariseEstimated, summariseOperational, summariseByStatus, portMatch, sortRows, money };
+// ── Vessel -> round roll-ups (sprint vessel-first-navigation, Sprint C1) ─────────────────────────────────────────
+// Level 1 = vessels, level 2 = rounds, both built from the SAME per-voyage totals as the voyage summary, so every
+// number adds up to the rows one level down. Pure: the service fetches, this file only assembles.
+
+/** Rounds shown: Planned/Active always, Completed only with "include completed rounds". Cancelled rounds never. */
+const roundStatusesFor = (includeClosed) => (includeClosed ? ['Planned', 'Active', 'Completed'] : ['Planned', 'Active']);
+
+/**
+ * Owner decision (D6): "Include completed rounds" is ON by default for Discharged and Remaining (discharge happens at the
+ * end of a round), OFF for Estimated and Operational. An explicit value ('1'/'true'/'0'/'false') always wins.
+ */
+const parseIncludeClosed = (raw, tab) => {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(s)) return true;
+  if (['0', 'false', 'no', 'off'].includes(s)) return false;
+  return tab === 'discharged' || tab === 'remaining';
+};
+
+/**
+ * D7: Estimated and Operational list every open vessel/round that has a live voyage even with 0 bookings (so booking can
+ * start from there). Discharged/Remaining, partner users, and any booking-level filter list only what has bookings.
+ */
+const wantsZeroRows = (tab, { scoped = false, search = '', agentId = '', partnerId = '', status = '' } = {}) =>
+  (tab === 'estimated' || tab === 'operational') && !scoped && !search && !agentId && !partnerId && !status;
+
+const roundOrder = (a, b) => {
+  const act = (b.roundStatus === 'Active') - (a.roundStatus === 'Active');
+  if (act !== 0) return act;
+  const t = (d) => (d ? new Date(d).getTime() : Infinity);
+  const [ta, tb] = [t(a.startDate), t(b.startDate)];
+  if (ta !== tb) return ta < tb ? -1 : 1;
+  return String(a.roundNumber || '').localeCompare(String(b.roundNumber || ''));
+};
+
+/**
+ * One row per round. rounds: [{_id, vesselId, roundNumber, roundName, status, startDate}], voyages: [{_id, roundId, status}],
+ * totals: Map(voyageId -> {bookings, totalFreight, totalTEU}). A round is kept when it has bookings, or (zeroRows) when it
+ * has at least one non-Cancelled voyage. `voyages` counts the non-Cancelled voyages.
+ */
+const rollupRounds = ({ rounds, voyages, totals, zeroRows }) => {
+  const byRound = new Map();
+  for (const v of voyages) {
+    const k = String(v.roundId);
+    if (!byRound.has(k)) byRound.set(k, []);
+    byRound.get(k).push(v);
+  }
+  const out = [];
+  for (const r of rounds) {
+    const vs = byRound.get(String(r._id)) || [];
+    let bookings = 0; let freight = 0; let teu = 0;
+    for (const v of vs) {
+      const t = totals.get(String(v._id));
+      if (t) { bookings += t.bookings; freight += t.totalFreight; teu += t.totalTEU; }
+    }
+    const live = vs.filter((v) => v.status !== 'Cancelled').length;
+    if (!(bookings > 0 || (zeroRows && live > 0))) continue;
+    out.push({
+      roundId: r._id, vesselId: r.vesselId, roundNumber: r.roundNumber, roundName: r.roundName || null,
+      roundStatus: r.status, startDate: r.startDate || null,
+      voyages: live, bookings, totalTEU: teu, totalFreight: money(freight),
+    });
+  }
+  return out.sort(roundOrder);
+};
+
+/** One row per vessel from the round rows; `vessels` = Map(vesselId -> {vesselCode, vesselName}). Sorted by vessel name. */
+const rollupVessels = (roundRows, vessels) => {
+  const out = new Map();
+  for (const r of roundRows) {
+    const k = String(r.vesselId);
+    const v = vessels.get(k);
+    if (!v) continue; // a round without a vessel record cannot be shown
+    const cur = out.get(k) || { vesselId: r.vesselId, vesselCode: v.vesselCode, vesselName: v.vesselName, rounds: 0, voyages: 0, bookings: 0, totalTEU: 0, totalFreight: 0 };
+    cur.rounds += 1; cur.voyages += r.voyages; cur.bookings += r.bookings; cur.totalTEU += r.totalTEU; cur.totalFreight += r.totalFreight;
+    out.set(k, cur);
+  }
+  return [...out.values()]
+    .map((v) => ({ ...v, totalFreight: money(v.totalFreight) }))
+    .sort((a, b) => String(a.vesselName).localeCompare(String(b.vesselName)) || String(a.vesselId).localeCompare(String(b.vesselId)));
+};
+
+module.exports = { TABS, STATUSES, portFilter, roundStatusesFor, parseIncludeClosed, wantsZeroRows, rollupRounds, rollupVessels, summariseEstimated, summariseOperational, summariseByStatus, portMatch, sortRows, money };

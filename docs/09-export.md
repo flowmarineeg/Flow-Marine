@@ -13,6 +13,7 @@ Both go through `rbac('export')` then `checkModuleExportPermission`: the caller 
 ## Exportable modules (`ALLOWED_MODULES` = keys of `COLUMNS`)
 `vessels, agents, containerTypes, expenseTypes, services, rounds, voyages, bookings (Layer 2), manualBookings (Layer 1), expenses, invoices, tracking, auditLogs`.
 Not exportable: users, roles, locations, partners, ledger, agent accounts.
+> `bookings` and `manualBookings` also accept `filters.roundId` (2026-11-23): all voyages of that round; an explicit `filters.voyageId` wins. Used by the Bookings page level-3 Export button.
 > `manualBookings` is not an RBAC module; its export is governed by the `bookings` `export` permission (audit F-08, fixed 2026-10-25).
 
 ## Output

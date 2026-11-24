@@ -28,6 +28,23 @@ const voyageSummary = async (req, res, next) => {
   } catch (err) { fail(res, next, err); }
 };
 
+// GET /bookings/vessel-summary?tab=&search=&agentId=&partnerId=&status=&includeClosed=&page=&limit=
+// One row per vessel with open rounds: rounds, voyages, bookings, total TEU, total freight. includeClosed defaults ON for discharged/remaining.
+const vesselSummary = async (req, res, next) => {
+  try {
+    const { data, total, page, limit, includeClosed } = await summary.vesselSummary(req.query, scopeOf(req.user));
+    return success(res, data, 'Vessel summary retrieved', 200, { ...paginate(total, page, limit), includeClosed });
+  } catch (err) { fail(res, next, err); }
+};
+
+// GET /bookings/round-summary?tab=&vesselId=|roundId=&…  — one row per round of that vessel (or the one round)
+const roundSummary = async (req, res, next) => {
+  try {
+    const { data, total, page, limit, includeClosed } = await summary.roundSummary(req.query, scopeOf(req.user));
+    return success(res, data, 'Round summary retrieved', 200, { ...paginate(total, page, limit), includeClosed });
+  } catch (err) { fail(res, next, err); }
+};
+
 const getById = async (req, res, next) => {
   try {
     return success(res, await bookingService.getById(req.params.id, scopeOf(req.user)));
@@ -111,4 +128,4 @@ const exportDischargeList = async (req, res, next) => {
   } catch (err) { fail(res, next, err); }
 };
 
-module.exports = { move, list, voyageSummary, getById, getVoyagePorts, create, update, remove, resolveVoyage, getLookups, dischargeList, exportDischargeList };
+module.exports = { move, list, voyageSummary, vesselSummary, roundSummary, getById, getVoyagePorts, create, update, remove, resolveVoyage, getLookups, dischargeList, exportDischargeList };

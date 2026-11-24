@@ -64,8 +64,19 @@ Header `bookingNumber, voyageId (server-assigned), agentId, customerId, polId, p
 | GET | `/bookings/discharge-list?roundId=&polId=&podId=&agentId=&voyageId=` | `bookings` read, **staff only** |
 | GET | `/bookings/export/discharge-list` (same query) | `bookings:export`, **staff only** |
 | GET | `/bookings/voyage-ports/:voyageId` | `bookings` (legacy) |
+| GET | `/bookings/voyage-summary?tab=&roundId=&…` | `bookings` — one row per voyage with bookings of that kind (kept; the screens no longer use it) |
+| GET | `/bookings/vessel-summary?tab=&search=&agentId=&partnerId=&status=&includeClosed=&page=&limit=` | `bookings` — one row per vessel (rounds, voyages, bookings, total TEU, freight); see "Bookings page: vessel first" |
+| GET | `/bookings/round-summary?tab=&vesselId=\|roundId=&…` | `bookings` — one row per round of a vessel (or the one round) |
 | GET/POST | `/bookings`, GET/PUT/DELETE `/bookings/:id` | `bookings` |
 Fixed-path routes are declared before `/:id`. List filters: `page, limit, search (booking no, shipper, consignee, container), roundId, voyageId, agentId, partnerId, status (comma list), dateFrom, dateTo, dischargeStatus`.
+
+## Bookings page: vessel first (2026-11-23; sprint `sprints/vessel-first-navigation-2026-11-23-sprint.md`)
+Each section (**Estimated** = Layer 1, **Operational** = Layer 2, **Discharged**, **Remaining**) opens on vessels, then rounds, then the existing booking tables. The place is in the URL: `/bookings?tab=estimated|operational|discharged|remaining&vessel=&round=&voyage=&closed=` (an old `?tab=manual` still lands on Estimated), so Back goes up one level.
+- **Level 1 `vessel-summary`**, **level 2 `round-summary`**, **level 3** = `GET /bookings` / `/bookings/manual` with `roundId` (+ optional `voyageId` from the Voyage filter, staff only). `bookingSummary.service.js` has one filter builder (`bookingMatch`, same rules and partner scope as the lists) and one totals step (`totalsByVoyage`: Layer 1 stored `totalTEU`; Layer 2 container size through `teuResolver`) used by the voyage, round and vessel summaries, so a vessel row = the sum of its round rows = the list totals = the `voyage-summary` rows (pure roll-ups in `bookingSummary.logic.js`: `rollupRounds`, `rollupVessels`).
+- **Which rounds:** Planned and Active; Completed only with **`includeClosed`**; Cancelled never. `includeClosed` defaults to **ON for Discharged / Remaining** (discharge happens at the end of a round) and **OFF for Estimated / Operational**; an explicit `1/0` wins; the response echoes the value in `pagination.includeClosed`; the screen has an "Include completed rounds" checkbox.
+- **Zero rows:** Estimated and Operational also list vessels/rounds with **0 bookings** (a round needs at least one non-Cancelled voyage) so booking can start there. Discharged / Remaining list only what has bookings. Any booking-level filter (search, agent, partner, status) or a partner user switches zero rows off.
+- **Partner users:** only their own partner's bookings, so only vessels where they have a booking of that kind; never the rest of the fleet.
+- Level 3 Export sends `roundId`; the Excel export (`bookings`, `manualBookings`) turns it into all voyages of the round, an explicit `voyageId` wins ([09](09-export.md)).
 
 ## Create / update / delete rules
 - **Create (L2 and L1):** body `{roundId, polId, podId, agentId, …}` (+ optional `polLegKey/podLegKey`, `voyageId` pick, `partnerId`). Round must exist, be Planned/Active and not closed; the voyage is resolved as above; round-lock; optional capacity pre-flight (env `ENABLE_CAPACITY_ENFORCEMENT`); then `invalidateRoundCache` and `bookingItem.scheduleSync({voyageIds})`.
@@ -109,3 +120,4 @@ Scope = **Round + Agent + POD (the port where the discharge happened) [+ POL] [+
 
 ## Tests and probes
 `npm test` includes `voyageMatch.logic.test.js` (10) and `importRules.logic.test.js` (8). `node scripts/audit-probes/bookings-probe.js` (39 checks against a running dev server on the disposable DB: east/west/intermediate, ambiguity, FL-02/03/04, discharge scope, partner label, partner-user isolation). `seed:test-data` creates bookings through the new API shape (intermediate-port bookings, partner labels, partner role + `partner@logistics.com` / `Demo@123456`).
+`scripts/audit-probes/vessel-drill-probe.js` (92 checks, read-only, 2026-11-23): vessel-summary / round-summary for all four tabs x includeClosed (exact vessel set against the DB; vessel row = round rows = list totals = voyage-summary rows), zero rows, filters, paging, 400/401, partner user, export by roundId. Unit tests: `bookingSummary.logic.test.js` (roll-ups, `parseIncludeClosed`, `wantsZeroRows`).

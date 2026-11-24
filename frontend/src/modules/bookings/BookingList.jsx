@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { showErrorToast } from '@/utils/errorToast';
 import { bookingsService } from '@/services/bookings.service';
-import { useRounds }        from '@/hooks/useRounds';
+import { voyagesService }   from '@/services/voyages.service';
 import { useBookingLookups } from '@/hooks/useBookingLookups';
 import { usePermission }    from '@/context/PermissionContext';
 import { BOOKING_STATUS }   from '@/utils/constants';
@@ -21,39 +21,45 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import FormPage         from '@/components/ui/FormPage';
 import ExportButton  from '@/components/ui/ExportButton';
 import BookingForm   from '@/modules/bookings/BookingForm';
-import BookingVoyageList from '@/modules/bookings/BookingVoyageList';
+import BookingVesselList from '@/modules/bookings/BookingVesselList';
+import BookingRoundList  from '@/modules/bookings/BookingRoundList';
+import DrillCrumb        from '@/components/ui/DrillCrumb';
 import BookingsTable from '@/modules/bookings/BookingsTable';
 import ManualBookingsTable from '@/modules/bookings/ManualBookingsTable';
 import DischargeListExportModal from '@/modules/bookings/DischargeListExportModal';
 
 const fmt      = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-/** "← Voyages / round / voyage" bar shown above the bookings of an opened voyage. */
-function VoyageCrumb({ drill, onBack }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 mb-3 text-[13px]">
-      <button type="button" onClick={onBack} className="font-semibold text-teal-600 hover:text-teal-800 transition">← Voyages</button>
-      <span className="text-gray-300">/</span>
-      <span className="text-gray-600">{drill.roundNumber}{drill.roundName ? ` — ${drill.roundName}` : ''}</span>
-      <span className="text-gray-300">/</span>
-      <span className="mono font-semibold text-gray-800">{getVoyageLabel(drill)}{drill.voyageName ? ` (${drill.voyageNumber})` : ''}</span>
-    </div>
-  );
-}
+// URL <-> section keys. The section lives in the URL (?tab=&vessel=&round=&voyage=&closed=) so Back goes one level up.
+const URL_TO_TAB = { estimated: 'manual', operational: 'detail', discharged: 'discharged', remaining: 'remaining' };
+const TAB_TO_URL = { manual: 'estimated', detail: 'operational', discharged: 'discharged', remaining: 'remaining' };
 
 export default function BookingList() {
   const router  = useRouter();
   const qc      = useQueryClient();
   const { can } = usePermission();
 
-  const [activeTab,    setActiveTab]    = useState('manual');
+  const searchParams = useSearchParams();
+  const activeTab  = URL_TO_TAB[searchParams.get('tab')] || 'manual';
+  const summaryTab = TAB_TO_URL[activeTab];
+  const vesselId   = searchParams.get('vessel') || '';
+  const roundId    = searchParams.get('round') || '';
+  const voyageFilter = searchParams.get('voyage') || '';
+  const closedRaw  = searchParams.get('closed');
+  // "Include completed rounds": ON by default for Discharged / Remaining, OFF for Estimated / Operational (owner decision D6)
+  const includeClosed = closedRaw === '1' ? true : closedRaw === '0' ? false : (summaryTab === 'discharged' || summaryTab === 'remaining');
+  const level = roundId ? 3 : vesselId ? 2 : 1;
+  const go = (patch) => {
+    const p = new URLSearchParams(searchParams.toString());
+    for (const [k, v] of Object.entries(patch)) { if (v === null || v === undefined || v === '') p.delete(k); else p.set(k, v); }
+    router.push(`/bookings?${p.toString()}`);
+  };
+
   const [page,         setPage]         = useState(1);
   const [search,       setSearch]       = useState('');
   const [status,       setStatus]       = useState('');
-  const [roundId,      setRoundId]      = useState('');
   const [agentId,      setAgentId]      = useState('');
   const [partnerId,    setPartnerId]    = useState(''); // staff filter: bookings given to us by a partner
-  const [drill,        setDrill]        = useState(null); // the voyage row opened from the voyage list (null = voyage list)
   const [selected,     setSelected]     = useState([]);
   const [modal,        setModal]        = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -74,47 +80,88 @@ export default function BookingList() {
   // pattern for "reset state when a value changes") rather than in a
   // useEffect, which would cost an extra render-after-commit and trip the
   // react-hooks/set-state-in-effect lint rule.
-  const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
-  if (activeTab !== prevActiveTab) {
-    setPrevActiveTab(activeTab);
+  const [prevActiveTab, setPrevActiveTab] = useState(activeTab + '|' + roundId);
+  if (activeTab + '|' + roundId !== prevActiveTab) {
+    setPrevActiveTab(activeTab + '|' + roundId);
     setSelected([]);
     setManualSelected([]);
-    setDrill(null); // every tab starts at its voyage rows
+    setPage(1);
+    setManualPage(1);
   }
 
   // Layer 2 — 'detail' (Operational), 'discharged' and 'remaining' (Sprint 045) all
   // share this same query/table, just scoped by dischargeStatus.
   const dischargeStatusParam = activeTab === 'discharged' ? 'Discharged' : activeTab === 'remaining' ? 'Remaining' : '';
-  const drillId = drill?.voyageId || '';
   const { data, isLoading } = useQuery({
-    queryKey: ['bookings', page, search, status, drillId, agentId, partnerId, dischargeStatusParam],
-    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, voyageId: drillId, agentId, partnerId, dischargeStatus: dischargeStatusParam }).then(r => r.data),
-    enabled:  ['detail', 'discharged', 'remaining'].includes(activeTab) && !!drillId,
+    queryKey: ['bookings', page, search, status, roundId, voyageFilter, agentId, partnerId, dischargeStatusParam],
+    queryFn:  () => bookingsService.list({ page, limit: 20, search, status, roundId, voyageId: voyageFilter, agentId, partnerId, dischargeStatus: dischargeStatusParam }).then(r => r.data),
+    enabled:  ['detail', 'discharged', 'remaining'].includes(activeTab) && !!roundId,
   });
 
   // Layer 1 — Manual Bookings
   const [manualPage,     setManualPage]     = useState(1);
   const [manualSearch,   setManualSearch]   = useState('');
   const [manualStatus,   setManualStatus]   = useState('');
-  const [manualRoundId,  setManualRoundId]  = useState(''); // Sprint 030
   const [manualAgentId,  setManualAgentId]  = useState('');
   const [manualKind,     setManualKind]     = useState(''); // '' | Estimate | Allocation
 
   const { data: manualData, isLoading: manualLoading } = useQuery({
-    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, drillId, manualAgentId, partnerId, manualKind],
-    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, voyageId: drillId, agentId: manualAgentId, partnerId, kind: manualKind }).then(r => r.data),
-    enabled:  activeTab === 'manual' && !!drillId,
+    queryKey: ['manual-bookings', manualPage, manualSearch, manualStatus, roundId, voyageFilter, manualAgentId, partnerId, manualKind],
+    queryFn:  () => bookingsService.listManual({ page: manualPage, limit: 20, search: manualSearch, status: manualStatus, roundId, voyageId: voyageFilter, agentId: manualAgentId, partnerId, kind: manualKind }).then(r => r.data),
+    enabled:  activeTab === 'manual' && !!roundId,
   });
 
-  // Sprint 030: Round → Voyage cascading filters (both tabs)
-  // Bookings sprint 2026-11-10: partner users only reach /bookings, so every pick-list comes from the lookups
-  // endpoint; staff keep the full round list (any status) and the per-round voyage filter.
+  // Partner users only reach /bookings, so every pick-list comes from the lookups endpoint.
   const lookups = useBookingLookups();
   const isPartnerUser = lookups.isPartnerUser;
-  const { rounds: staffRounds } = useRounds({}, { enabled: !isPartnerUser });
-  const rounds = isPartnerUser ? lookups.rounds : staffRounds;
   const agents        = lookups.agents;
   const partners      = lookups.partners;
+
+  // Names for the breadcrumb on levels 2 and 3 (any round of the vessel, completed ones too, so a deep link always resolves).
+  const ctxQ = useQuery({
+    queryKey: ['booking-ctx', summaryTab, vesselId, roundId],
+    queryFn:  () => bookingsService.roundSummary({ tab: summaryTab, ...(roundId ? { roundId } : { vesselId }), includeClosed: 1, limit: 100 }).then(r => r.data.data),
+    enabled:  level > 1,
+    staleTime: 60 * 1000,
+  });
+  const ctxRound  = ctxQ.data?.find(r => r.roundId === roundId) || null;
+  const ctxVessel = ctxQ.data?.[0] || null;
+  const crumbVesselId = vesselId || ctxRound?.vesselId || '';
+
+  // Voyage filter on level 3: the voyages of the opened round (staff only; partner users cannot read voyages).
+  const canListVoyages = !isPartnerUser && can('voyages', 'read');
+  const { data: roundVoyages } = useQuery({
+    queryKey: ['round-voyages-filter', roundId],
+    queryFn:  () => voyagesService.list({ roundId, limit: 200 }).then(r => r.data.data),
+    enabled:  level === 3 && canListVoyages,
+    staleTime: 60 * 1000,
+  });
+
+  const crumb = level === 1 ? null : (
+    <DrillCrumb items={[
+      { label: 'Vessels', onClick: () => go({ vessel: null, round: null, voyage: null }) },
+      level === 3 && crumbVesselId
+        ? { label: ctxVessel?.vesselName || 'Vessel', onClick: () => go({ vessel: crumbVesselId, round: null, voyage: null }) }
+        : { label: ctxVessel?.vesselName || 'Vessel' },
+      ...(level === 3 ? [{ label: ctxRound ? `${ctxRound.roundNumber}${ctxRound.roundName ? ` — ${ctxRound.roundName}` : ''}` : 'Round' }] : []),
+    ]} />
+  );
+
+  const sc = 'text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:border-teal-500 cursor-pointer';
+
+  // The same search / agent / partner / status narrow the vessel and round rows as the table below
+  const closedToggle = (
+    <label className="flex items-center gap-1.5 text-[13px] text-gray-600 cursor-pointer select-none">
+      <input type="checkbox" checked={includeClosed} onChange={e => go({ closed: e.target.checked ? '1' : '0' })} className="w-3.5 h-3.5 cursor-pointer accent-teal-600" />
+      Include completed rounds
+    </label>
+  );
+  const voyageSelect = level === 3 && canListVoyages && (
+    <select value={voyageFilter} onChange={e => { go({ voyage: e.target.value }); setPage(1); setManualPage(1); }} className={sc}>
+      <option value="">All voyages of the round</option>
+      {(roundVoyages || []).map(v => <option key={v._id} value={v._id}>{getVoyageLabel(v)}</option>)}
+    </select>
+  );
 
   const cancelMutation = useMutation({
     mutationFn: (id) => bookingsService.update(id, { status: 'Cancelled' }),
@@ -205,8 +252,6 @@ export default function BookingList() {
   const manualToggleSelect = (id) => setManualSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   const manualToggleAll    = ()   => setManualSelected(p => p.length === manualBookings.length ? [] : manualBookings.map(m => m._id));
 
-  const sc = 'text-[13px] border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:border-teal-500 cursor-pointer';
-
   return (
     /* min-w-0 prevents the flex child from reporting its intrinsic table width
        to the parent, which is what caused the page-level overflow */
@@ -247,7 +292,7 @@ export default function BookingList() {
         ].map(t => (
           <button
             key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => go({ tab: TAB_TO_URL[t.key], vessel: null, round: null, voyage: null, closed: null })}
             className={`px-5 py-2.5 text-[13px] font-semibold border-b-2 transition ${
               activeTab === t.key ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-400 hover:text-gray-700'
             }`}
@@ -265,12 +310,7 @@ export default function BookingList() {
           <div className="flex-1 min-w-[200px]">
             <SearchBar value={search} onChange={v => { setSearch(v); setPage(1); setSelected([]); }} placeholder="Search booking no, shipper, consignee…" />
           </div>
-          {!drill && (
-            <select value={roundId} onChange={e => { setRoundId(e.target.value); setPage(1); }} className={sc}>
-              <option value="">All Rounds</option>
-              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
-            </select>
-          )}
+          {level < 3 ? closedToggle : voyageSelect}
           <select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} className={sc}>
             <option value="">All Agents</option>
             {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode}</option>)}
@@ -285,7 +325,7 @@ export default function BookingList() {
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          {!isPartnerUser && <ExportButton module="bookings" filters={{ voyageId: drillId, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />}
+          {!isPartnerUser && <ExportButton module="bookings" filters={{ roundId, voyageId: voyageFilter, agentId, status }} selectedIds={selected} onClear={() => setSelected([])} />}
           {/* Sprint 047 — bulk delete */}
           {selected.length > 0 && can('bookings', 'delete') && (
             <Button variant="danger" size="sm" onClick={() => setBulkConfirm(true)}>
@@ -306,15 +346,28 @@ export default function BookingList() {
           )}
         </div>
 
-        {!drill ? (
-          <BookingVoyageList
-            key={`${activeTab}|${search}|${roundId}|${agentId}|${partnerId}|${status}`}
-            tab={activeTab === 'detail' ? 'operational' : activeTab}
-            filters={{ search, roundId, agentId, partnerId, status }}
-            onOpen={setDrill}
-          />
-        ) : (<>
-        <VoyageCrumb drill={drill} onBack={() => setDrill(null)} />
+        {level < 3 ? (<>
+          {crumb}
+          {level === 1 ? (
+            <BookingVesselList
+              key={`${summaryTab}|${search}|${agentId}|${partnerId}|${status}|${includeClosed}`}
+              tab={summaryTab}
+              filters={{ search, agentId, partnerId, status }}
+              includeClosed={includeClosed}
+              onOpen={(r) => go({ vessel: r.vesselId, round: null, voyage: null })}
+            />
+          ) : (
+            <BookingRoundList
+              key={`${summaryTab}|${vesselId}|${search}|${agentId}|${partnerId}|${status}|${includeClosed}`}
+              tab={summaryTab}
+              vesselId={vesselId}
+              filters={{ search, agentId, partnerId, status }}
+              includeClosed={includeClosed}
+              onOpen={(r) => go({ vessel: vesselId, round: r.roundId, voyage: null })}
+            />
+          )}
+        </>) : (<>
+        {crumb}
 
         {/* Table — overflow-x-auto clips the table, min-w-0 on the card prevents page blowout */}
         <div className="card overflow-hidden min-w-0">
@@ -364,12 +417,7 @@ export default function BookingList() {
           <div className="flex-1 min-w-[200px]">
             <SearchBar value={manualSearch} onChange={v => { setManualSearch(v); setManualPage(1); }} placeholder="Search MB-number…" />
           </div>
-          {!drill && (
-            <select value={manualRoundId} onChange={e => { setManualRoundId(e.target.value); setManualPage(1); }} className={sc}>
-              <option value="">All Rounds</option>
-              {rounds.map(r => <option key={r._id} value={r._id}>{r.roundNumber} — {r.roundName || '(unnamed)'}</option>)}
-            </select>
-          )}
+          {level < 3 ? closedToggle : voyageSelect}
           <select value={manualAgentId} onChange={e => { setManualAgentId(e.target.value); setManualPage(1); }} className={sc}>
             <option value="">All Agents</option>
             {agents.map(a => <option key={a._id} value={a._id}>{a.agentCode}</option>)}
@@ -383,7 +431,7 @@ export default function BookingList() {
             <option value="">All Statuses</option>
             {BOOKING_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          {!isPartnerUser && <ExportButton module="manualBookings" filters={{ voyageId: drillId, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />}
+          {!isPartnerUser && <ExportButton module="manualBookings" filters={{ roundId, voyageId: voyageFilter, agentId: manualAgentId, status: manualStatus }} selectedIds={[]} />}
           {/* Sprint 047 — bulk delete */}
           {manualSelected.length > 0 && can('bookings', 'delete') && (
             <Button variant="danger" size="sm" onClick={() => setManualBulkConfirm(true)}>
@@ -392,15 +440,28 @@ export default function BookingList() {
           )}
         </div>
 
-        {!drill ? (
-          <BookingVoyageList
-            key={`manual|${manualSearch}|${manualRoundId}|${manualAgentId}|${partnerId}|${manualStatus}`}
-            tab="estimated"
-            filters={{ search: manualSearch, roundId: manualRoundId, agentId: manualAgentId, partnerId, status: manualStatus }}
-            onOpen={setDrill}
-          />
-        ) : (<>
-        <VoyageCrumb drill={drill} onBack={() => setDrill(null)} />
+        {level < 3 ? (<>
+          {crumb}
+          {level === 1 ? (
+            <BookingVesselList
+              key={`manual|${manualSearch}|${manualAgentId}|${partnerId}|${manualStatus}|${includeClosed}`}
+              tab="estimated"
+              filters={{ search: manualSearch, agentId: manualAgentId, partnerId, status: manualStatus }}
+              includeClosed={includeClosed}
+              onOpen={(r) => go({ vessel: r.vesselId, round: null, voyage: null })}
+            />
+          ) : (
+            <BookingRoundList
+              key={`manual|${vesselId}|${manualSearch}|${manualAgentId}|${partnerId}|${manualStatus}|${includeClosed}`}
+              tab="estimated"
+              vesselId={vesselId}
+              filters={{ search: manualSearch, agentId: manualAgentId, partnerId, status: manualStatus }}
+              includeClosed={includeClosed}
+              onOpen={(r) => go({ vessel: vesselId, round: r.roundId, voyage: null })}
+            />
+          )}
+        </>) : (<>
+        {crumb}
 
         <div className="card overflow-hidden min-w-0">
           {manualLoading ? (

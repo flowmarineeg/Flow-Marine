@@ -482,6 +482,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       const q = { ...idFilter };
       if (filters.status)   q.status   = filters.status;
       if (filters.voyageId) q.voyageId = filters.voyageId;
+      if (filters.roundId && !filters.voyageId && /^[a-f0-9]{24}$/i.test(String(filters.roundId))) q.voyageId = { $in: await require('../voyages/voyage.model').find({ roundId: filters.roundId }).distinct('_id') }; // Bookings page level 3: one round
       if (filters.agentId)  q.agentId  = filters.agentId;
       const rows = await Booking.find(q)
         .populate('voyageId',        'voyageNumber voyageName')
@@ -523,6 +524,7 @@ const fetchData = async (moduleName, filters = {}, selectedIds = []) => {
       const q = { ...idFilter };
       if (filters.status)   q.status   = filters.status;
       if (filters.voyageId) q.voyageId = filters.voyageId;
+      if (filters.roundId && !filters.voyageId && /^[a-f0-9]{24}$/i.test(String(filters.roundId))) q.voyageId = { $in: await require('../voyages/voyage.model').find({ roundId: filters.roundId }).distinct('_id') }; // Bookings page level 3: one round
       if (filters.agentId)  q.agentId  = filters.agentId;
       const rows = await ManualBooking.find(q)
         .populate('voyageId', 'voyageNumber voyageName')

@@ -13,6 +13,10 @@ router.use(auth);
 // Round route-ports lookup — BEFORE /:id to avoid shadowing
 router.get('/round-ports/:roundId', rbac('voyages'), ctrl.getRoundRoutePorts);
 
+// Vessel-first pages — BEFORE /:id
+router.get('/vessel-overview',            rbac('voyages'), ctrl.vesselOverview);
+router.get('/vessel-overview/:vesselId',  rbac('voyages'), ctrl.vesselOverviewDetail);
+
 router.get('/',       rbac('voyages'), ctrl.list);
 router.get('/:id/summary', rbac('voyages'), ctrl.summary);
 router.get('/:id',    rbac('voyages'), ctrl.getById);

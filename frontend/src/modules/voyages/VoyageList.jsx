@@ -150,7 +150,8 @@ export default function VoyageList() {
     <div className="animate-fadeIn">
       <PageHeader
         title="Voyages"
-        subtitle="Voyages (runs over a round's legs, with direction), grouped by Round"
+        subtitle="Every voyage (runs over a round's legs, with direction), grouped by Round — history included"
+        action={<button type="button" onClick={() => router.push('/voyages')} className="text-[13px] font-semibold text-teal-600 hover:text-teal-800 transition">← Vessels with open voyages</button>}
       />
 
       {/* Toolbar */}

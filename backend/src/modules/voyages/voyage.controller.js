@@ -2,6 +2,7 @@
 
 const voyageService = require('./voyage.service');
 const voyageSummary = require('./voyageSummary.service');
+const vesselOverviewService = require('./vesselOverview.service');
 const rbac = require('../../middleware/rbac');
 const { success, created, error, paginate } = require('../../utils/responseHelper');
 
@@ -26,6 +27,21 @@ const summary = async (req, res, next) => {
   try {
     const canSeeRevenue = (await rbac.hasPermission(req, 'invoices', 'read')) || (await rbac.hasPermission(req, 'reports', 'read'));
     return success(res, await voyageSummary.getSummary(req.params.id, { canSeeRevenue }), 'Voyage summary retrieved');
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+// GET /voyages/vessel-overview  — Voyages page level 1: vessels with an open round and an open voyage
+const vesselOverview = async (req, res, next) => {
+  try {
+    const { data, total, page, limit } = await vesselOverviewService.vesselList(req.query);
+    return success(res, data, 'Vessels retrieved', 200, paginate(total, page, limit));
+  } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
+};
+
+// GET /voyages/vessel-overview/:vesselId  — level 2: that vessel's open rounds and voyages
+const vesselOverviewDetail = async (req, res, next) => {
+  try {
+    return success(res, await vesselOverviewService.vesselDetail(req.params.vesselId), 'Vessel voyages retrieved');
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
@@ -73,4 +89,4 @@ const remove = async (req, res, next) => {
   } catch (err) { if (err.status) return error(res, err.message, err.status); next(err); }
 };
 
-module.exports = { list, getById, summary, getRoundRoutePorts, create, refreshPortCalls, update, remove };
+module.exports = { list, vesselOverview, vesselOverviewDetail, getById, summary, getRoundRoutePorts, create, refreshPortCalls, update, remove };
